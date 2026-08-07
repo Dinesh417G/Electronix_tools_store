@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                select coalesce(c.id::text, 'uncategorised')        as \"bucket_key!\",\n                       coalesce(c.name, '(uncategorised)')          as \"bucket_label!\",\n                       sum(-l.delta_qty)                            as \"qty!\",\n                       coalesce(sum(-l.delta_qty * coalesce(l.unit_cost, 0)), 0)::numeric(14,2)\n                                                                    as \"value!\",\n                       count(*)                                     as \"txn_count!\"\n                  from stock_ledger l\n                  join items i on i.id = l.item_id\n                  left join item_categories c on c.id = i.category_id\n                 where l.txn_type in ('ISSUE', 'SCRAP')\n                   and ($1::timestamptz is null or l.created_at >= $1)\n                   and ($2::timestamptz is null or l.created_at < $2)\n                 group by c.id, c.name\n                having sum(-l.delta_qty) <> 0\n                 order by sum(-l.delta_qty) desc\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bucket_key!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "bucket_label!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "qty!",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 3,
+        "name": "value!",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 4,
+        "name": "txn_count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "b44c4b0dfca5abda18b98e4eb20a33b2510b16ef85e3f45555d09dcaeb792d6a"
+}

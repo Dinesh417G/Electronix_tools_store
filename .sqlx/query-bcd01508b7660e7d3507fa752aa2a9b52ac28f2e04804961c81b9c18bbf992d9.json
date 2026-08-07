@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update items set unit_cost = 250.00 where id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bcd01508b7660e7d3507fa752aa2a9b52ac28f2e04804961c81b9c18bbf992d9"
+}

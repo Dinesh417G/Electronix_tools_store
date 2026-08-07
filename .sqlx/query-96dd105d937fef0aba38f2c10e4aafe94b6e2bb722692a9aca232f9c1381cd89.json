@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        select id           as \"id!\",\n               device_id    as \"device_id!\",\n               zk_user_id   as \"zk_user_id!\",\n               device_ts,\n               received_at  as \"received_at!\",\n               verify_mode,\n               claimed      as \"claimed!\"\n          from punches\n         order by received_at desc\n         limit $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "device_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "zk_user_id!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "device_ts",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "received_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "verify_mode",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "claimed!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "96dd105d937fef0aba38f2c10e4aafe94b6e2bb722692a9aca232f9c1381cd89"
+}

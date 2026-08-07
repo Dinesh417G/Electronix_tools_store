@@ -68,7 +68,10 @@ async fn migrate_run_then_revert_leaves_a_clean_schema(pool: PgPool) {
 
     let tables = table_names(&pool).await;
     for expected in EXPECTED_TABLES {
-        assert!(tables.contains(&expected.to_string()), "missing table {expected}");
+        assert!(
+            tables.contains(&expected.to_string()),
+            "missing table {expected}"
+        );
     }
 
     let functions = function_names(&pool).await;
@@ -80,13 +83,13 @@ async fn migrate_run_then_revert_leaves_a_clean_schema(pool: PgPool) {
     }
 
     // And all the way back down.
-    store_db::MIGRATOR.undo(&pool, 0).await.expect("migrate revert");
+    store_db::MIGRATOR
+        .undo(&pool, 0)
+        .await
+        .expect("migrate revert");
 
     let tables = table_names(&pool).await;
-    assert!(
-        tables.is_empty(),
-        "revert left tables behind: {tables:?}"
-    );
+    assert!(tables.is_empty(), "revert left tables behind: {tables:?}");
 
     // pg_trgm functions belong to the extension, which 0001's down migration
     // deliberately leaves in place; only our own functions must be gone.
@@ -125,9 +128,18 @@ async fn reference_data_is_seeded(pool: PgPool) {
 
     // §6 names these exactly.
     for expected in [
-        "BREAKAGE", "FOUND", "NEW_JOB", "PURCHASE", "RETURN_FROM_SHOP", "REWORK", "TRIAL",
+        "BREAKAGE",
+        "FOUND",
+        "NEW_JOB",
+        "PURCHASE",
+        "RETURN_FROM_SHOP",
+        "REWORK",
+        "TRIAL",
         "WEAR",
     ] {
-        assert!(codes.contains(&expected.to_string()), "missing reason {expected}");
+        assert!(
+            codes.contains(&expected.to_string()),
+            "missing reason {expected}"
+        );
     }
 }

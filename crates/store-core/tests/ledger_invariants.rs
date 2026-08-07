@@ -41,7 +41,11 @@ impl Op {
             // Adjustments are the one signed case; alternate direction on parity
             // so the sequence exercises both.
             TxnType::Adjust => {
-                let signed = if self.milli % 2 == 0 { magnitude } else { -magnitude };
+                let signed = if self.milli % 2 == 0 {
+                    magnitude
+                } else {
+                    -magnitude
+                };
                 Movement::adjust(item(), signed).unwrap()
             }
         }
@@ -90,7 +94,11 @@ fn replay(ops: &[Op], allow_negative: bool) -> usize {
                     );
                 }
             }
-            Err(CoreError::InsufficientStock { on_hand: reported, requested, .. }) => {
+            Err(CoreError::InsufficientStock {
+                on_hand: reported,
+                requested,
+                ..
+            }) => {
                 refused += 1;
                 assert!(!allow_negative, "guard fired on an allow_negative item");
                 assert_eq!(reported, on_hand, "error reported a stale balance");
@@ -150,7 +158,11 @@ fn the_guard_actually_fires_in_a_random_run() {
     // Issue-heavy input from an empty store must hit it.
     let ops: Vec<Op> = (0..1000)
         .map(|i| Op {
-            txn_type: if i % 4 == 0 { TxnType::Receipt } else { TxnType::Issue },
+            txn_type: if i % 4 == 0 {
+                TxnType::Receipt
+            } else {
+                TxnType::Issue
+            },
             milli: 1_000 + (i as i64 % 97) * 13,
         })
         .collect();
@@ -165,7 +177,12 @@ fn the_guard_actually_fires_in_a_random_run() {
 #[test]
 fn a_reversal_returns_the_balance_to_where_it_started() {
     let mut on_hand = Decimal::ZERO;
-    on_hand = apply(on_hand, &Movement::opening(item(), Qty::new(Decimal::new(100, 0)).unwrap()), false).unwrap();
+    on_hand = apply(
+        on_hand,
+        &Movement::opening(item(), Qty::new(Decimal::new(100, 0)).unwrap()),
+        false,
+    )
+    .unwrap();
 
     let issue = Movement::issue(item(), Qty::new(Decimal::new(40, 0)).unwrap());
     on_hand = apply(on_hand, &issue, false).unwrap();

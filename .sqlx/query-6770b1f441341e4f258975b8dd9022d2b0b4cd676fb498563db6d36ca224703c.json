@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into item_categories (name, sort_order) values ($1, $2)\n             on conflict (name) do update set sort_order = excluded.sort_order\n             returning id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6770b1f441341e4f258975b8dd9022d2b0b4cd676fb498563db6d36ca224703c"
+}

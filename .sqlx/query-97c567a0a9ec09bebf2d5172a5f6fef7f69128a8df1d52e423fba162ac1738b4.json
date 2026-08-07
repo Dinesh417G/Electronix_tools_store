@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        select id as \"id!\", emp_code as \"emp_code!\", full_name as \"full_name!\",\n               zk_user_id, role as \"role!\", department, active as \"active!\"\n          from operators where id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "emp_code!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "full_name!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "zk_user_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "role!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "department",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "active!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "97c567a0a9ec09bebf2d5172a5f6fef7f69128a8df1d52e423fba162ac1738b4"
+}

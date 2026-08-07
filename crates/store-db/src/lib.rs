@@ -10,6 +10,7 @@
 #![forbid(unsafe_code)]
 
 pub mod alerts;
+pub mod auth;
 pub mod error;
 pub mod items;
 pub mod ledger;

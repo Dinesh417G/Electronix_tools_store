@@ -184,7 +184,10 @@ pub const MAX_BARCODE_LEN: usize = 64;
 /// *not* strip anything else — a payload that needs more mangling than this is
 /// a payload we should not be silently guessing at.
 pub fn normalize_barcode(raw: &str) -> String {
-    raw.trim().trim_matches(['\r', '\n']).trim().to_ascii_uppercase()
+    raw.trim()
+        .trim_matches(['\r', '\n'])
+        .trim()
+        .to_ascii_uppercase()
 }
 
 /// True when `c` is encodable in Code128 subsets A/B — printable 7-bit ASCII.
@@ -266,13 +269,16 @@ mod tests {
 
     #[test]
     fn item_code_accepts_ordinary_shop_codes() {
-        assert_eq!(validate_item_code("cnmg-120408-tn2000").unwrap(), "CNMG-120408-TN2000");
+        assert_eq!(
+            validate_item_code("cnmg-120408-tn2000").unwrap(),
+            "CNMG-120408-TN2000"
+        );
         assert_eq!(validate_item_code("EM 06 4F").unwrap(), "EM 06 4F");
     }
 
     #[test]
     fn vendor_barcodes_may_be_longer_than_our_own() {
-        let vendor = "4" .repeat(MAX_ITEM_CODE_LEN + 4);
+        let vendor = "4".repeat(MAX_ITEM_CODE_LEN + 4);
         assert!(validate_item_code(&vendor).is_err());
         assert!(validate_barcode(&vendor).is_ok());
     }

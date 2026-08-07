@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        select distinct on (p.zk_user_id)\n               p.id          as \"punch_id!\",\n               p.zk_user_id  as \"zk_user_id!\",\n               d.serial_no   as \"device_serial!\",\n               p.received_at as \"received_at!\",\n               count(*) over (partition by p.zk_user_id) as \"occurrences!\"\n          from punches p\n          join devices d on d.id = p.device_id\n         where not exists (\n                 select 1 from operators o\n                  where o.zk_user_id = p.zk_user_id and o.active)\n         order by p.zk_user_id, p.received_at desc\n         limit $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "punch_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "zk_user_id!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "device_serial!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "received_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "occurrences!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "fbb3fd6ac0461bc5463f2c0f72da498af48dac7a5bcfe8e4824b5f4d2c51d066"
+}

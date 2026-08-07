@@ -109,7 +109,7 @@ pub async fn record(pool: &PgPool, new: &NewMovement) -> Result<MovementReceipt>
             coalesce($9, (select unit_cost from items where id = $1)),
             $10, $11, $12
         )
-        returning id, created_at
+        returning id, created_at, delta_qty
         "#,
         new.movement.item_id,
         new.movement.delta_qty,
@@ -145,7 +145,9 @@ pub async fn record(pool: &PgPool, new: &NewMovement) -> Result<MovementReceipt>
     Ok(MovementReceipt {
         ledger_id: inserted.id,
         item_id: new.movement.item_id,
-        delta_qty: new.movement.delta_qty,
+        // Read back rather than echoed: the stored value is the one the ledger
+        // will be reconciled against, and it carries the column's scale.
+        delta_qty: inserted.delta_qty,
         on_hand: stock.on_hand,
         alert_state: stock.alert_state,
         crossed_threshold,

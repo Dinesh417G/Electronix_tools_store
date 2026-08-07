@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update operators set active = $2 where id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "94687eabcb56a227b35c9f3a6024c78be5c860e83925e4a32abbabeb2cc992b9"
+}

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select alert_state as \"s!\" from item_stock where item_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "s!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e7f50e0b741720e02794a5a0ffb7ed66472ad8c5efcf1006ce3797855bbe592f"
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update sessions\n                set opened_at = opened_at - make_interval(secs => $2::double precision)\n              where id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5d92dd2085dd1cdc343118f7c1d60f72f57577ce7c22a2dcdb12f9f0249a32d0"
+}

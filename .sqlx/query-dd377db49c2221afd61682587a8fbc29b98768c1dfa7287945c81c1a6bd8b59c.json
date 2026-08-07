@@ -1,0 +1,94 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        select a.id            as \"id!\",\n               a.item_id       as \"item_id!\",\n               i.item_code     as \"item_code!\",\n               i.description   as \"description!\",\n               i.bin_location,\n               a.level         as \"level!\",\n               s.on_hand       as \"on_hand!\",\n               i.reorder_level as \"reorder_level!\",\n               i.reorder_qty,\n               a.raised_at     as \"raised_at!\",\n               a.acknowledged_at,\n               a.acknowledged_by,\n               a.resolved_at\n          from stock_alerts a\n          join items i      on i.id = a.item_id\n          join item_stock s on s.item_id = a.item_id\n         where a.resolved_at is null\n           and ($1::bool or a.acknowledged_at is null)\n         order by case a.level when 'EMPTY' then 0 else 1 end, a.raised_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "item_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "item_code!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "description!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "bin_location",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "level!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "on_hand!",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 7,
+        "name": "reorder_level!",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 8,
+        "name": "reorder_qty",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 9,
+        "name": "raised_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "acknowledged_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "acknowledged_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 12,
+        "name": "resolved_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "dd377db49c2221afd61682587a8fbc29b98768c1dfa7287945c81c1a6bd8b59c"
+}

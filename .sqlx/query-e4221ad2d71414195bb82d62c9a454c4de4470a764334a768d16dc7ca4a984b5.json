@@ -1,0 +1,45 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        insert into stock_ledger (\n            item_id, delta_qty, txn_type, operator_id, session_id,\n            machine_id, reason_id, note, unit_cost, device_ts,\n            reverses_id, client_txn_uuid\n        )\n        values (\n            $1, $2, $3, $4, $5, $6, $7, $8,\n            coalesce($9, (select unit_cost from items where id = $1)),\n            $10, $11, $12\n        )\n        returning id, created_at, delta_qty\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "delta_qty",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Numeric",
+        "Text",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Numeric",
+        "Timestamptz",
+        "Int8",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "e4221ad2d71414195bb82d62c9a454c4de4470a764334a768d16dc7ca4a984b5"
+}

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select level as \"level!\" from stock_alerts\n            where item_id = $1 and resolved_at is null",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "level!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7239ea20966ff9151cc950806335389f07db4b7164fbf40cebf0509023bb2a1f"
+}

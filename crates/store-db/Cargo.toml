@@ -9,9 +9,12 @@ publish.workspace = true
 [dependencies]
 store-core = { workspace = true }
 
+argon2 = { workspace = true }
 chrono = { workspace = true }
+rand = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
+sha2 = { workspace = true }
 sqlx = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }

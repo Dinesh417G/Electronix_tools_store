@@ -320,11 +320,7 @@ pub fn apply(on_hand: Decimal, movement: &Movement, allow_negative: bool) -> Res
 ///
 /// Returns the final on-hand. Used by tests and by `store-cli reconcile` to
 /// recompute a balance from raw history.
-pub fn fold(
-    opening: Decimal,
-    movements: &[Movement],
-    allow_negative: bool,
-) -> Result<Decimal> {
+pub fn fold(opening: Decimal, movements: &[Movement], allow_negative: bool) -> Result<Decimal> {
     movements
         .iter()
         .try_fold(opening, |acc, m| apply(acc, m, allow_negative))
@@ -492,7 +488,10 @@ mod tests {
 
     #[test]
     fn extended_cost_uses_magnitude_not_sign() {
-        assert_eq!(extended_cost(dec!(-5), Some(dec!(120.50))), Some(dec!(602.50)));
+        assert_eq!(
+            extended_cost(dec!(-5), Some(dec!(120.50))),
+            Some(dec!(602.50))
+        );
         assert_eq!(extended_cost(dec!(5), None), None);
     }
 

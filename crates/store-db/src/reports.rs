@@ -48,7 +48,9 @@ impl std::str::FromStr for GroupBy {
             "operator" => Ok(GroupBy::Operator),
             "category" => Ok(GroupBy::Category),
             "month" => Ok(GroupBy::Month),
-            other => Err(crate::DbError::Invalid(format!("unknown group_by {other:?}"))),
+            other => Err(crate::DbError::Invalid(format!(
+                "unknown group_by {other:?}"
+            ))),
         }
     }
 }

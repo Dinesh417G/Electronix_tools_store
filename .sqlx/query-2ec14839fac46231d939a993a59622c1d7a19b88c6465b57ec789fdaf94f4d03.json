@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select reverses_id from stock_ledger where id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "reverses_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "2ec14839fac46231d939a993a59622c1d7a19b88c6465b57ec789fdaf94f4d03"
+}

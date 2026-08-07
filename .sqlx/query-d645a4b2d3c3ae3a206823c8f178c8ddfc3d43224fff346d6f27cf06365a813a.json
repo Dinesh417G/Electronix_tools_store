@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        select o.id from punches p\n          join operators o on o.zk_user_id = p.zk_user_id and o.active\n         where p.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d645a4b2d3c3ae3a206823c8f178c8ddfc3d43224fff346d6f27cf06365a813a"
+}

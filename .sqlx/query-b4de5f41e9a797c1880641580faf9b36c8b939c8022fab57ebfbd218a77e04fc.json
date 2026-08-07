@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        update sessions\n           set state = 'ACTIVE',\n               tablet_id = $2,\n               claimed_at = coalesce(claimed_at, now()),\n               last_activity_at = now()\n         where id = $1\n           and (state = 'UNCLAIMED' or (state = 'ACTIVE' and tablet_id = $2))\n        returning id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b4de5f41e9a797c1880641580faf9b36c8b939c8022fab57ebfbd218a77e04fc"
+}

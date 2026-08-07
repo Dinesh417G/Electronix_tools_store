@@ -96,7 +96,10 @@ impl DbError {
 
     /// True when the caller may retry the operation unchanged.
     pub fn is_transient(&self) -> bool {
-        matches!(self, DbError::Sqlx(sqlx::Error::PoolTimedOut | sqlx::Error::Io(_)))
+        matches!(
+            self,
+            DbError::Sqlx(sqlx::Error::PoolTimedOut | sqlx::Error::Io(_))
+        )
     }
 }
 

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into machines (code, name) values ($1, $2)\n             on conflict (code) do nothing",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "be1de578fe824b4bf036c6f47cf7167b0769df217e2a3e13b880ec0edde3294c"
+}

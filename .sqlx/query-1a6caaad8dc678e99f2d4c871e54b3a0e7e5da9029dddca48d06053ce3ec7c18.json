@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update tablets set last_seen_at = now() where tablet_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1a6caaad8dc678e99f2d4c871e54b3a0e7e5da9029dddca48d06053ce3ec7c18"
+}

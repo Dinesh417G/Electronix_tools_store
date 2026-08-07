@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        insert into api_tokens (token_hash, kind, operator_id, expires_at)\n        values ($1, 'OPERATOR', $2, now() + interval '12 hours')\n        returning issued_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "issued_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "09084ca2cd7935b081613ab3cbbad4c2b59f9d5ff0d30c7f17b0fe518b9a41fc"
+}

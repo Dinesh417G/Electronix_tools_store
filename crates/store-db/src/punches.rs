@@ -64,7 +64,11 @@ pub async fn touch_device(pool: &PgPool, serial_no: &str) -> Result<Uuid> {
 ///
 /// Returns `(punch_id, is_new)`. `is_new` is false for a duplicate, which lets
 /// the caller skip opening a second session without having to guess.
-pub async fn record(pool: &PgPool, device_id: Uuid, event: &IdentityEvent) -> Result<(Uuid, bool)> {
+pub async fn record(
+    pool: &PgPool,
+    device_id: Uuid,
+    event: &IdentityEvent,
+) -> Result<(Uuid, bool)> {
     let inserted = sqlx::query_scalar!(
         r#"
         insert into punches (device_id, zk_user_id, device_ts, verify_mode, raw)

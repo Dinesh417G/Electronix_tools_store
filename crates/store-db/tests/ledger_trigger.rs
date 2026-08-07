@@ -99,7 +99,9 @@ async fn on_hand_tracks_the_sum_of_deltas_after_every_movement(pool: PgPool) {
     ];
 
     for (m, expected) in steps {
-        let receipt = ledger::record(&pool, &movement(m, op)).await.expect("record");
+        let receipt = ledger::record(&pool, &movement(m, op))
+            .await
+            .expect("record");
         assert_eq!(receipt.on_hand, expected);
         assert_eq!(on_hand(&pool, it).await, expected);
         // The invariant, after every single one.
@@ -233,10 +235,15 @@ async fn a_row_cannot_be_reversed_twice(pool: PgPool) {
         .await
         .unwrap();
 
-    ledger::reverse(&pool, issue.ledger_id, op, None).await.unwrap();
+    ledger::reverse(&pool, issue.ledger_id, op, None)
+        .await
+        .unwrap();
     let second = ledger::reverse(&pool, issue.ledger_id, op, None).await;
 
-    assert!(matches!(second, Err(DbError::Conflict(_))), "got {second:?}");
+    assert!(
+        matches!(second, Err(DbError::Conflict(_))),
+        "got {second:?}"
+    );
     assert_eq!(on_hand(&pool, it).await, dec!(100), "double correction");
 }
 
@@ -251,7 +258,9 @@ async fn a_reversal_cannot_itself_be_reversed(pool: PgPool) {
     let issue = ledger::record(&pool, &movement(Movement::issue(it, qty(dec!(10))), op))
         .await
         .unwrap();
-    let rev = ledger::reverse(&pool, issue.ledger_id, op, None).await.unwrap();
+    let rev = ledger::reverse(&pool, issue.ledger_id, op, None)
+        .await
+        .unwrap();
 
     let err = ledger::reverse(&pool, rev.ledger_id, op, None).await;
     assert!(matches!(err, Err(DbError::Invalid(_))), "got {err:?}");
@@ -272,7 +281,10 @@ async fn crossing_the_reorder_level_raises_low_then_empty(pool: PgPool) {
         .await
         .unwrap();
     assert_eq!(r.alert_state, "LOW");
-    assert!(r.crossed_threshold, "the tablet needs to show the LOW banner");
+    assert!(
+        r.crossed_threshold,
+        "the tablet needs to show the LOW banner"
+    );
 
     let r = ledger::record(&pool, &movement(Movement::issue(it, qty(dec!(5))), op))
         .await
@@ -348,7 +360,10 @@ async fn an_offline_outbox_replay_does_not_double_book(pool: PgPool) {
     let first = ledger::record(&pool, &queued).await.unwrap();
     let replay = ledger::record(&pool, &queued).await.unwrap();
 
-    assert_eq!(first.ledger_id, replay.ledger_id, "replay created a second row");
+    assert_eq!(
+        first.ledger_id, replay.ledger_id,
+        "replay created a second row"
+    );
     assert_eq!(on_hand(&pool, it).await, dec!(93));
     assert_eq!(on_hand(&pool, it).await, ledger_sum(&pool, it).await);
 }
@@ -364,13 +379,13 @@ async fn concurrent_issues_cannot_oversell_the_last_insert(pool: PgPool) {
 
     let ma = movement(Movement::issue(it, qty(dec!(1))), op);
     let mb = movement(Movement::issue(it, qty(dec!(1))), op);
-    let (ra, rb) = tokio::join!(
-        ledger::record(&pool, &ma),
-        ledger::record(&pool, &mb)
-    );
+    let (ra, rb) = tokio::join!(ledger::record(&pool, &ma), ledger::record(&pool, &mb));
 
     let winners = [ra.is_ok(), rb.is_ok()].iter().filter(|ok| **ok).count();
-    assert_eq!(winners, 1, "both tablets were allowed to take the last insert");
+    assert_eq!(
+        winners, 1,
+        "both tablets were allowed to take the last insert"
+    );
 
     assert_eq!(on_hand(&pool, it).await, Decimal::ZERO);
     assert_eq!(on_hand(&pool, it).await, ledger_sum(&pool, it).await);

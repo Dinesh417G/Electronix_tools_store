@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        insert into sessions (\n            operator_id, punch_id, state, manual_identity,\n            tablet_id, claimed_at, last_activity_at\n        )\n        values ($1, null, 'ACTIVE', true, $2, now(), now())\n        returning id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "84ffc9fa6e69a4c3cad53ebc496ec97af2c2ca7eb572b2879eeb388cc01621f3"
+}

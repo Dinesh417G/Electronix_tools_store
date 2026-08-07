@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        select t.kind, t.tablet_id, t.operator_id,\n               o.emp_code as \"emp_code?\", o.role as \"role?\",\n               o.active   as \"operator_active?\"\n          from api_tokens t\n          left join operators o on o.id = t.operator_id\n         where t.token_hash = $1\n           and t.revoked_at is null\n           and (t.expires_at is null or t.expires_at > now())\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "kind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "tablet_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "operator_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "emp_code?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "role?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "operator_active?",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "bfecc61010b3ce8e3879e65abf1fb329f143a7e771d20899cba78f124fe0ee53"
+}

@@ -31,12 +31,17 @@ pub struct UnclaimedSession {
     pub expires_in_secs: i64,
 }
 
-/// Reconstruct the pure aggregate from a row.
-fn to_session(
+/// A `sessions` row, exactly as stored.
+///
+/// Kept as a struct rather than loose arguments so that adding a column is a
+/// change in one place, and so the conversion below reads as a mapping rather
+/// than as an eleven-argument call nobody can check at the call site.
+#[derive(Debug)]
+struct SessionRow {
     id: Uuid,
     operator_id: Uuid,
     punch_id: Option<Uuid>,
-    state: &str,
+    state: String,
     tablet_id: Option<String>,
     close_reason: Option<String>,
     manual_identity: bool,
@@ -44,95 +49,119 @@ fn to_session(
     claimed_at: Option<DateTime<Utc>>,
     closed_at: Option<DateTime<Utc>>,
     last_activity_at: DateTime<Utc>,
-) -> Result<Session> {
-    let tablet = tablet_id.map(TabletId);
+}
 
-    let state = match state {
-        "UNCLAIMED" => SessionState::Unclaimed,
-        "EXPIRED" => SessionState::Expired,
-        "ACTIVE" => SessionState::Active {
-            tablet_id: tablet.ok_or_else(|| {
-                DbError::Invalid("ACTIVE session with no tablet_id".into())
-            })?,
-        },
-        "CLOSED" => SessionState::Closed {
-            tablet_id: tablet.ok_or_else(|| {
-                DbError::Invalid("CLOSED session with no tablet_id".into())
-            })?,
-            reason: close_reason
-                .ok_or_else(|| DbError::Invalid("CLOSED session with no reason".into()))?
-                .parse()?,
-        },
-        other => return Err(DbError::Invalid(format!("unknown session state {other:?}"))),
-    };
+impl TryFrom<SessionRow> for Session {
+    type Error = DbError;
 
-    Ok(Session {
-        id,
-        operator_id,
-        punch_id,
-        state,
-        identity: if manual_identity {
-            IdentityStrength::Manual
-        } else {
-            IdentityStrength::Verified
-        },
-        opened_at,
-        claimed_at,
-        closed_at,
-        last_activity_at,
-    })
+    /// Reconstruct the pure aggregate.
+    ///
+    /// The `ok_or_else` arms are unreachable in practice — `0002_identity`'s
+    /// check constraints make an ACTIVE row without a tablet impossible — but
+    /// they are here rather than as `unwrap()` because a corrupt row should
+    /// surface as an error an operator can be told about, not a panic that
+    /// takes the store offline.
+    fn try_from(r: SessionRow) -> Result<Self> {
+        let tablet = r.tablet_id.map(TabletId);
+
+        let state = match r.state.as_str() {
+            "UNCLAIMED" => SessionState::Unclaimed,
+            "EXPIRED" => SessionState::Expired,
+            "ACTIVE" => SessionState::Active {
+                tablet_id: tablet.ok_or_else(|| {
+                    DbError::Invalid("ACTIVE session with no tablet_id".into())
+                })?,
+            },
+            "CLOSED" => SessionState::Closed {
+                tablet_id: tablet.ok_or_else(|| {
+                    DbError::Invalid("CLOSED session with no tablet_id".into())
+                })?,
+                reason: r
+                    .close_reason
+                    .ok_or_else(|| DbError::Invalid("CLOSED session with no reason".into()))?
+                    .parse()?,
+            },
+            other => return Err(DbError::Invalid(format!("unknown session state {other:?}"))),
+        };
+
+        Ok(Session {
+            id: r.id,
+            operator_id: r.operator_id,
+            punch_id: r.punch_id,
+            state,
+            identity: if r.manual_identity {
+                IdentityStrength::Manual
+            } else {
+                IdentityStrength::Verified
+            },
+            opened_at: r.opened_at,
+            claimed_at: r.claimed_at,
+            closed_at: r.closed_at,
+            last_activity_at: r.last_activity_at,
+        })
+    }
 }
 
 /// Load one session.
 pub async fn get(pool: &PgPool, id: Uuid) -> Result<Session> {
-    let r = sqlx::query!(
+    sqlx::query_as!(
+        SessionRow,
         r#"
-        select id, operator_id, punch_id, state, tablet_id, close_reason,
-               manual_identity, opened_at, claimed_at, closed_at, last_activity_at
+        select id             as "id!",
+               operator_id    as "operator_id!",
+               punch_id,
+               state          as "state!",
+               tablet_id,
+               close_reason,
+               manual_identity as "manual_identity!",
+               opened_at      as "opened_at!",
+               claimed_at,
+               closed_at,
+               last_activity_at as "last_activity_at!"
           from sessions where id = $1
         "#,
         id
     )
     .fetch_optional(pool)
     .await?
-    .or_not_found("session")?;
+    .or_not_found("session")?
+    .try_into()
+}
 
-    to_session(
-        r.id,
-        r.operator_id,
-        r.punch_id,
-        &r.state,
-        r.tablet_id,
-        r.close_reason,
-        r.manual_identity,
-        r.opened_at,
-        r.claimed_at,
-        r.closed_at,
-        r.last_activity_at,
-    )
+/// What happened when we tried to offer a session for a punch.
+///
+/// Three outcomes, kept distinct because the caller must treat them
+/// differently: only a genuinely new offer should wake the tablets, and only an
+/// unknown user should raise an admin notice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionOffer {
+    /// A new session is on the claim screen.
+    Opened(Uuid),
+    /// This punch had already offered a session. A device retry, or the ADMS
+    /// listener and the identity consumer both reaching the same row.
+    AlreadyOffered(Uuid),
+    /// §9.4: the punch is on record, but its `zk_user_id` maps to no active
+    /// operator, so there is nobody to offer a session to.
+    UnknownOperator,
 }
 
 /// Open an UNCLAIMED session from a punch.
 ///
-/// Returns `None` when the punch's `zk_user_id` maps to no operator. §9.4: the
-/// punch itself is still on record — we simply have nobody to offer a session
-/// to, and the admin gets a notice about the unknown user.
-///
 /// The `punch_id` unique constraint means a replayed punch cannot offer a
-/// second session, so this is safe to call more than once.
-pub async fn open_from_punch(pool: &PgPool, punch_id: Uuid) -> Result<Option<Uuid>> {
+/// second session, so this is safe — and meaningful — to call more than once.
+/// That idempotency is load-bearing: the ADMS listener persists punches on the
+/// hot path (§9.2) and the identity consumer processes the same punch again
+/// off it, so this function is genuinely called twice for every real punch.
+pub async fn open_from_punch(pool: &PgPool, punch_id: Uuid) -> Result<SessionOffer> {
     let mut tx = pool.begin().await?;
 
-    let existing = sqlx::query_scalar!(
-        "select id from sessions where punch_id = $1",
-        punch_id
-    )
-    .fetch_optional(&mut *tx)
-    .await?;
+    let existing = sqlx::query_scalar!("select id from sessions where punch_id = $1", punch_id)
+        .fetch_optional(&mut *tx)
+        .await?;
 
     if let Some(id) = existing {
         tx.commit().await?;
-        return Ok(Some(id));
+        return Ok(SessionOffer::AlreadyOffered(id));
     }
 
     let operator_id = sqlx::query_scalar!(
@@ -148,7 +177,7 @@ pub async fn open_from_punch(pool: &PgPool, punch_id: Uuid) -> Result<Option<Uui
 
     let Some(operator_id) = operator_id else {
         tx.commit().await?;
-        return Ok(None);
+        return Ok(SessionOffer::UnknownOperator);
     };
 
     let session_id = sqlx::query_scalar!(
@@ -169,7 +198,7 @@ pub async fn open_from_punch(pool: &PgPool, punch_id: Uuid) -> Result<Option<Uui
         .await?;
 
     tx.commit().await?;
-    Ok(Some(session_id))
+    Ok(SessionOffer::Opened(session_id))
 }
 
 /// The claim screen: every UNCLAIMED punch from the last 90 seconds (§10).
@@ -221,7 +250,12 @@ pub async fn claim(pool: &PgPool, id: Uuid, tablet_id: &TabletId) -> Result<Sess
         return Err(DbError::Domain(TransitionError::SessionExpired.into()));
     }
 
-    session.apply(&SessionEvent::Claim { tablet_id: tablet_id.clone() }, now)?;
+    session.apply(
+        &SessionEvent::Claim {
+            tablet_id: tablet_id.clone(),
+        },
+        now,
+    )?;
 
     let updated = sqlx::query!(
         r#"
@@ -246,7 +280,10 @@ pub async fn claim(pool: &PgPool, id: Uuid, tablet_id: &TabletId) -> Result<Sess
         let winner = get(pool, id).await?;
         return match winner.state.tablet_id() {
             Some(holder) if holder != tablet_id => Err(DbError::Domain(
-                TransitionError::AlreadyClaimed { claimed_by: holder.clone() }.into(),
+                TransitionError::AlreadyClaimed {
+                    claimed_by: holder.clone(),
+                }
+                .into(),
             )),
             _ => Err(DbError::Domain(TransitionError::SessionClosed.into())),
         };
@@ -339,34 +376,52 @@ pub async fn expire(pool: &PgPool, id: Uuid) -> Result<()> {
 
 /// The reaper: expire stale claims and close idle sessions.
 ///
-/// Returns `(expired, idle_closed)`. Run on a timer by `store-server`. The
-/// window bounds come from `store-core` so there is one definition of 90 and
-/// 180 seconds rather than one per layer.
-pub async fn reap(pool: &PgPool) -> Result<(u64, u64)> {
-    let expired = sqlx::query!(
+/// Returns the ids it acted on so the caller can emit `session.closed` events
+/// — a tablet whose session timed out under it needs to be told, not left
+/// showing a screen that no longer works.
+///
+/// The window bounds come from `store-core`, so there is one definition of 90
+/// and 180 seconds rather than one per layer.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Reaped {
+    pub expired: Vec<Uuid>,
+    pub idle_closed: Vec<Uuid>,
+}
+
+impl Reaped {
+    pub fn is_empty(&self) -> bool {
+        self.expired.is_empty() && self.idle_closed.is_empty()
+    }
+}
+
+pub async fn reap(pool: &PgPool) -> Result<Reaped> {
+    let expired = sqlx::query_scalar!(
         r#"
         update sessions set state = 'EXPIRED', closed_at = now()
          where state = 'UNCLAIMED'
            and opened_at <= now() - make_interval(secs => $1::double precision)
+        returning id
         "#,
         CLAIM_WINDOW_SECS as f64,
     )
-    .execute(pool)
-    .await?
-    .rows_affected();
+    .fetch_all(pool)
+    .await?;
 
-    let idle_closed = sqlx::query!(
+    let idle_closed = sqlx::query_scalar!(
         r#"
         update sessions
            set state = 'CLOSED', close_reason = 'IDLE_TIMEOUT', closed_at = now()
          where state = 'ACTIVE'
            and last_activity_at <= now() - make_interval(secs => $1::double precision)
+        returning id
         "#,
         IDLE_TIMEOUT_SECS as f64,
     )
-    .execute(pool)
-    .await?
-    .rows_affected();
+    .fetch_all(pool)
+    .await?;
 
-    Ok((expired, idle_closed))
+    Ok(Reaped {
+        expired,
+        idle_closed,
+    })
 }

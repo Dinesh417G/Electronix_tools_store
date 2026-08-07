@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  # Format and the offline build. Deliberately has no database: this job is what
+  # proves the checked-in .sqlx data is current, so a contributor who changes a
+  # query without re-running `cargo sqlx prepare` finds out here.
+  check:
+    name: fmt + offline build
+    runs-on: ubuntu-latest
+    env:
+      SQLX_OFFLINE: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo fmt
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  # The real work. §14: integration tests run against a real throwaway Postgres,
+  # never a mocked database.
+  test:
+    name: test (postgres 16)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: electronix_store
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/electronix_store
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install sqlx-cli
+        run: cargo install sqlx-cli --version 0.8.6 --no-default-features --features rustls,postgres --locked
+
+      - name: Run migrations
+        run: sqlx migrate run --source crates/store-db/migrations
+
+      # M0's gate. Run explicitly as well as in the test suite, because a
+      # migration that cannot be reverted is a migration nobody can back out of
+      # at 6pm on a Friday.
+      - name: Migrations revert cleanly
+        run: |
+          sqlx migrate revert --source crates/store-db/migrations --target-version 0
+          sqlx migrate run --source crates/store-db/migrations
+
+      - name: cargo test
+        run: cargo test --workspace --all-targets
+
+      - name: Doc tests
+        run: cargo test --workspace --doc
+
+      # §7: any drift is a bug. Proving it on an empty database is cheap and
+      # catches a broken trigger before it reaches a shop floor.
+      - name: Ledger reconciles
+        run: cargo run -p store-cli -- reconcile
+
+  # §14: "Keep the raw ADMS capture from M2 as a fixture and replay it in CI
+  # forever. When firmware changes, that fixture is how you find out."
+  adms-fixtures:
+    name: ADMS protocol fixtures
+    runs-on: ubuntu-latest
+    env:
+      SQLX_OFFLINE: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Replay captured device traffic
+        run: cargo test -p store-adms

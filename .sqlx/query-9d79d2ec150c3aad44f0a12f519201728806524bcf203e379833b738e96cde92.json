@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select unit_cost from stock_ledger where item_id = $1 order by id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "unit_cost",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "9d79d2ec150c3aad44f0a12f519201728806524bcf203e379833b738e96cde92"
+}

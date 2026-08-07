@@ -21,9 +21,7 @@ pub enum CoreError {
     #[error("quantity {0} exceeds the numeric(12,3) column range")]
     QuantityOutOfRange(Decimal),
 
-    #[error(
-        "insufficient stock for item {item_id}: {on_hand} on hand, {requested} requested"
-    )]
+    #[error("insufficient stock for item {item_id}: {on_hand} on hand, {requested} requested")]
     InsufficientStock {
         item_id: Uuid,
         on_hand: Decimal,

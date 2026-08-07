@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            select s.id from sessions s\n              join operators o on o.id = s.operator_id\n             where s.state = 'UNCLAIMED' and o.zk_user_id = $1\n             order by s.opened_at desc\n             limit 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b071000d738329958a2d8bc51f84bac008cdcb8107ec98dd96450a7fb64a9249"
+}

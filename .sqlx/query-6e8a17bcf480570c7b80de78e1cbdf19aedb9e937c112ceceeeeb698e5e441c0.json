@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        select count(*) filter (where level = 'LOW')   as \"low!\",\n               count(*) filter (where level = 'EMPTY') as \"empty!\"\n          from stock_alerts where resolved_at is null\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "low!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "empty!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "6e8a17bcf480570c7b80de78e1cbdf19aedb9e937c112ceceeeeb698e5e441c0"
+}

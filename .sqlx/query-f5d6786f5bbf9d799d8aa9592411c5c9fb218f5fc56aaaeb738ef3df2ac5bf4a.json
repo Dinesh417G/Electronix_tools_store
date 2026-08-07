@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update item_stock set on_hand = 999 where item_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f5d6786f5bbf9d799d8aa9592411c5c9fb218f5fc56aaaeb738ef3df2ac5bf4a"
+}

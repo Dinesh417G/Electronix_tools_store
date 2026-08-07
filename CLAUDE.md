@@ -196,9 +196,14 @@ stock_ledger(
   unit_cost    numeric(12,2),            -- snapshot at txn time
   device_ts    timestamptz,              -- what the terminal claimed
   created_at   timestamptz not null default now(),   -- what the server observed
-  reverses_id  bigint fk stock_ledger(id)            -- set on correction rows
+  reverses_id  bigint fk stock_ledger(id),           -- set on correction rows
+  client_txn_uuid uuid unique            -- §12 outbox dedup; added at M4
 )
 create index on stock_ledger(item_id, created_at desc);
+-- Enforced by trigger, not convention: UPDATE and DELETE on stock_ledger are
+-- refused outright. A mistake is corrected by a reversing row (§7).
+-- At most one reversal per row, so a correction applied twice cannot
+-- silently double-count.
 
 -- ── Derived, trigger-maintained. Never written by application code. ─
 item_stock(
@@ -218,7 +223,26 @@ punches(id uuid pk, device_id uuid fk, zk_user_id text not null,
 
 sessions(id uuid pk, operator_id uuid fk, punch_id uuid fk unique,
          state text not null,          -- UNCLAIMED | ACTIVE | CLOSED | EXPIRED
+         manual_identity bool not null default false,  -- §10; added at M4
+         last_activity_at timestamptz not null,        -- idle timeout is measured
+                                                       -- from here, not opened_at
          opened_at, claimed_at, closed_at, tablet_id text, close_reason text)
+-- punch_id is null exactly when manual_identity is true, and the state/timestamp
+-- combinations the machine can produce are pinned by check constraints, so a
+-- row the state machine could not have produced cannot be stored.
+
+-- ── Auth (§11). Added at M4; §6 stopped at the domain. ───────────────
+tablets(id uuid pk, tablet_id text unique not null, name text, location text,
+        registered_at timestamptz, last_seen_at timestamptz, active bool)
+
+api_tokens(id uuid pk, token_hash text unique not null,
+           kind text not null,          -- TABLET | OPERATOR
+           tablet_id text fk, operator_id uuid fk,
+           issued_at, last_used_at, expires_at, revoked_at timestamptz)
+-- Only the hash is stored. Tokens are 256 bits of randomness, so SHA-256 is
+-- right for them; operator PINs are short and guessable, so those go through
+-- argon2 in operators.pin_hash. Using a slow KDF for the first would cost
+-- latency for nothing; using a fast hash for the second would be a real hole.
 
 -- ── Alerts ──────────────────────────────────────────────────────────
 stock_alerts(id uuid pk, item_id uuid fk, level text,     -- LOW | EMPTY
@@ -385,10 +409,14 @@ Model this as an exhaustive `match` over `(SessionState, SessionEvent)` returnin
 
 ```
 POST   /api/v1/auth/tablet                 register tablet, get long-lived token
-GET    /api/v1/sessions/stream             SSE: session.opened | session.closed | alert.raised
+POST   /api/v1/auth/operator               emp_code + PIN → 12h token (admin app login)
+GET    /api/v1/sessions/stream             SSE: session.opened | session.claimed |
+                                                session.closed | alert.raised |
+                                                punch.unknown_user | heartbeat
 GET    /api/v1/sessions/unclaimed          name cards for the claim screen
+GET    /api/v1/sessions/{id}
 POST   /api/v1/sessions/{id}/claim         body: { tablet_id }
-POST   /api/v1/sessions/manual             body: { emp_code, pin } → session
+POST   /api/v1/sessions/manual             body: { emp_code, pin, tablet_id } → session
 POST   /api/v1/sessions/{id}/close
 
 GET    /api/v1/items/lookup?barcode=       resolve scan → item + on_hand + bin  (must be <100ms)
@@ -402,6 +430,8 @@ POST   /api/v1/txn/{id}/reverse            admin only; inserts the reversing row
 GET    /api/v1/stock                       filters: low, empty, category, bin
 GET    /api/v1/ledger                      filters: item, operator, machine, date range; paginated
 GET    /api/v1/alerts                      + POST /api/v1/alerts/{id}/ack
+GET    /api/v1/alerts/summary              counts by level — the tablet idle banner
+GET    /api/v1/machines, /reason-codes     pickers for the optional step (§12.6)
 GET    /api/v1/reports/consumption         group_by: item | machine | operator | category | month
 GET    /api/v1/reports/consumption.csv
 
@@ -413,6 +443,18 @@ GET    /api/v1/admin/health                DB, device last-seen, ledger reconcil
 
 Auth: tablets hold a device token; admin uses operator login. Every write carries an
 `operator_id` — there are no anonymous ledger rows.
+
+A tablet is **not** an operator: it acts *for* whoever claimed the session, so a ledger
+write from a tablet takes its `operator_id` from the session, never from the token. The
+`Auth` extractor returns `None` for a tablet's operator id to force this at compile time.
+
+Status codes the tablet UX depends on:
+
+| Situation | Code | What the tablet does |
+|---|---|---|
+| ISSUE past zero (§7) | `409` | *"Only 3 left in system — count the bin and adjust"* |
+| Submit after close (§10) | `410` | re-opens the claim screen, keeps the typing |
+| Second tablet claims (§10) | `409` | shows which tablet holds it |
 
 ---
 
@@ -441,6 +483,9 @@ are visibly marked pending. Server deduplicates on a client-generated `txn_uuid`
 ---
 
 ## 13. Milestones — each gated by its acceptance test
+
+Status as of the current branch: **M0–M4 complete and gated; M8's server half done.**
+M5–M7 and M9 need the Tauri clients, which are not built yet — see the README.
 
 | # | Deliverable | Acceptance gate |
 |---|---|---|

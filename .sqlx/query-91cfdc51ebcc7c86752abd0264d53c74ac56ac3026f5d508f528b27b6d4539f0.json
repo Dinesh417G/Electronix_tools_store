@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            select i.item_code, s.on_hand, s.alert_state,\n                   coalesce(sum(l.delta_qty), 0) as \"ledger_sum!\"\n              from item_stock s\n              join items i on i.id = s.item_id\n              left join stock_ledger l on l.item_id = s.item_id\n             group by i.item_code, s.on_hand, s.alert_state\n             order by i.item_code\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "item_code",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "on_hand",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 2,
+        "name": "alert_state",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "ledger_sum!",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "91cfdc51ebcc7c86752abd0264d53c74ac56ac3026f5d508f528b27b6d4539f0"
+}

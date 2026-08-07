@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update items set active = false where id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5a91a19e7585fabd88d542cff5a1e87ffd69d88f7f0ae37c598a12603c3ad35b"
+}

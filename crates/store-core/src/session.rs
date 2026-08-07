@@ -116,17 +116,15 @@ impl SessionState {
 
     /// True when no further work can be accepted against this session.
     pub const fn is_terminal(&self) -> bool {
-        matches!(
-            self,
-            SessionState::Closed { .. } | SessionState::Expired
-        )
+        matches!(self, SessionState::Closed { .. } | SessionState::Expired)
     }
 
     /// The tablet this session is bound to, if any.
     pub const fn tablet_id(&self) -> Option<&TabletId> {
         match self {
-            SessionState::Active { tablet_id }
-            | SessionState::Closed { tablet_id, .. } => Some(tablet_id),
+            SessionState::Active { tablet_id } | SessionState::Closed { tablet_id, .. } => {
+                Some(tablet_id)
+            }
             SessionState::Unclaimed | SessionState::Expired => None,
         }
     }
@@ -372,8 +370,7 @@ impl Session {
 
     /// True when an unclaimed punch has sat past its 90 s window.
     pub fn should_expire(&self, now: DateTime<Utc>) -> bool {
-        matches!(self.state, SessionState::Unclaimed)
-            && now - self.opened_at >= claim_window()
+        matches!(self.state, SessionState::Unclaimed) && now - self.opened_at >= claim_window()
     }
 
     /// True when an active session has gone 180 s without input.
@@ -391,11 +388,9 @@ impl Session {
     pub fn accepts_work_from(&self, tablet_id: &TabletId) -> Result<(), TransitionError> {
         match &self.state {
             SessionState::Active { tablet_id: bound } if bound == tablet_id => Ok(()),
-            SessionState::Active { tablet_id: bound } => {
-                Err(TransitionError::AlreadyClaimed {
-                    claimed_by: bound.clone(),
-                })
-            }
+            SessionState::Active { tablet_id: bound } => Err(TransitionError::AlreadyClaimed {
+                claimed_by: bound.clone(),
+            }),
             SessionState::Unclaimed => Err(TransitionError::NotClaimed),
             SessionState::Closed { .. } => Err(TransitionError::SessionClosed),
             SessionState::Expired => Err(TransitionError::SessionExpired),
@@ -416,7 +411,12 @@ mod tests {
     }
 
     fn unclaimed() -> Session {
-        Session::opened(Uuid::from_u128(1), Uuid::from_u128(2), Uuid::from_u128(3), t(0))
+        Session::opened(
+            Uuid::from_u128(1),
+            Uuid::from_u128(2),
+            Uuid::from_u128(3),
+            t(0),
+        )
     }
 
     #[test]
@@ -431,7 +431,12 @@ mod tests {
     fn claiming_binds_the_session_to_one_tablet() {
         let mut s = unclaimed();
         s.apply(&SessionEvent::claim("TAB-1"), t(5)).unwrap();
-        assert_eq!(s.state, SessionState::Active { tablet_id: tab("TAB-1") });
+        assert_eq!(
+            s.state,
+            SessionState::Active {
+                tablet_id: tab("TAB-1")
+            }
+        );
         assert_eq!(s.claimed_at, Some(t(5)));
     }
 
@@ -440,9 +445,19 @@ mod tests {
         let mut s = unclaimed();
         s.apply(&SessionEvent::claim("TAB-1"), t(5)).unwrap();
         let err = s.apply(&SessionEvent::claim("TAB-2"), t(6)).unwrap_err();
-        assert_eq!(err, TransitionError::AlreadyClaimed { claimed_by: tab("TAB-1") });
+        assert_eq!(
+            err,
+            TransitionError::AlreadyClaimed {
+                claimed_by: tab("TAB-1")
+            }
+        );
         // The refusal left the binding intact.
-        assert_eq!(s.state, SessionState::Active { tablet_id: tab("TAB-1") });
+        assert_eq!(
+            s.state,
+            SessionState::Active {
+                tablet_id: tab("TAB-1")
+            }
+        );
     }
 
     #[test]
@@ -450,14 +465,29 @@ mod tests {
         let mut s = unclaimed();
         s.apply(&SessionEvent::claim("TAB-1"), t(5)).unwrap();
         s.apply(&SessionEvent::claim("TAB-1"), t(9)).unwrap();
-        assert_eq!(s.state, SessionState::Active { tablet_id: tab("TAB-1") });
+        assert_eq!(
+            s.state,
+            SessionState::Active {
+                tablet_id: tab("TAB-1")
+            }
+        );
     }
 
     #[test]
     fn tailgating_is_two_offers_and_two_independent_claims() {
         // Two people walk in; the terminal reports two punches.
-        let mut a = Session::opened(Uuid::from_u128(10), Uuid::from_u128(1), Uuid::from_u128(100), t(0));
-        let mut b = Session::opened(Uuid::from_u128(11), Uuid::from_u128(2), Uuid::from_u128(101), t(1));
+        let mut a = Session::opened(
+            Uuid::from_u128(10),
+            Uuid::from_u128(1),
+            Uuid::from_u128(100),
+            t(0),
+        );
+        let mut b = Session::opened(
+            Uuid::from_u128(11),
+            Uuid::from_u128(2),
+            Uuid::from_u128(101),
+            t(1),
+        );
 
         // Each taps their own card, on the same tablet, one after the other.
         a.apply(&SessionEvent::claim("TAB-1"), t(3)).unwrap();
@@ -465,7 +495,12 @@ mod tests {
         b.apply(&SessionEvent::claim("TAB-1"), t(25)).unwrap();
 
         assert!(matches!(a.state, SessionState::Closed { .. }));
-        assert_eq!(b.state, SessionState::Active { tablet_id: tab("TAB-1") });
+        assert_eq!(
+            b.state,
+            SessionState::Active {
+                tablet_id: tab("TAB-1")
+            }
+        );
         // The two sessions carry different operators — nobody's issue lands on
         // the other person's name.
         assert_ne!(a.operator_id, b.operator_id);
@@ -548,7 +583,9 @@ mod tests {
         assert!(s.accepts_work_from(&tab("TAB-1")).is_ok());
         assert_eq!(
             s.accepts_work_from(&tab("TAB-2")).unwrap_err(),
-            TransitionError::AlreadyClaimed { claimed_by: tab("TAB-1") }
+            TransitionError::AlreadyClaimed {
+                claimed_by: tab("TAB-1")
+            }
         );
     }
 
@@ -564,7 +601,12 @@ mod tests {
     #[test]
     fn manual_sessions_start_claimed_and_are_flagged_as_weaker_evidence() {
         let s = Session::manual(Uuid::from_u128(1), Uuid::from_u128(2), tab("TAB-1"), t(0));
-        assert_eq!(s.state, SessionState::Active { tablet_id: tab("TAB-1") });
+        assert_eq!(
+            s.state,
+            SessionState::Active {
+                tablet_id: tab("TAB-1")
+            }
+        );
         assert!(s.identity.is_manual());
         assert!(s.punch_id.is_none());
         assert!(s.accepts_work_from(&tab("TAB-1")).is_ok());
@@ -582,7 +624,10 @@ mod tests {
             SessionEvent::ClaimWindowElapsed,
         ] {
             assert_eq!(transition(&closed, &e).unwrap(), closed);
-            assert_eq!(transition(&SessionState::Expired, &e).unwrap(), SessionState::Expired);
+            assert_eq!(
+                transition(&SessionState::Expired, &e).unwrap(),
+                SessionState::Expired
+            );
         }
         for e in [SessionEvent::claim("TAB-9"), SessionEvent::Submit] {
             assert!(transition(&closed, &e).is_err());
@@ -597,7 +642,9 @@ mod tests {
     fn every_state_event_pair_has_an_explicit_outcome() {
         let states = [
             SessionState::Unclaimed,
-            SessionState::Active { tablet_id: tab("TAB-1") },
+            SessionState::Active {
+                tablet_id: tab("TAB-1"),
+            },
             SessionState::Closed {
                 tablet_id: tab("TAB-1"),
                 reason: CloseReason::Submitted,

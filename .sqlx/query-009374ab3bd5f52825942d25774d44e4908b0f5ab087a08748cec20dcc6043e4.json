@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        select s.id          as \"session_id!\",\n               o.id          as \"operator_id!\",\n               o.emp_code    as \"emp_code!\",\n               o.full_name   as \"full_name!\",\n               o.department,\n               s.opened_at   as \"opened_at!\",\n               greatest(\n                 0,\n                 ceil(extract(epoch from (s.opened_at + make_interval(secs => $1::double precision)) - now()))\n               )::bigint     as \"expires_in_secs!\"\n          from sessions s\n          join operators o on o.id = s.operator_id\n         where s.state = 'UNCLAIMED'\n           and s.opened_at > now() - make_interval(secs => $1::double precision)\n         order by s.opened_at desc\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "session_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "operator_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "emp_code!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "full_name!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "department",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "opened_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "expires_in_secs!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "009374ab3bd5f52825942d25774d44e4908b0f5ab087a08748cec20dcc6043e4"
+}

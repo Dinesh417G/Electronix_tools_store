@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update punches set claimed = true where id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e4cc6d5475151af084b9e9c83b67b4a721516632ca17e3ce485e98fc4d4b1a86"
+}

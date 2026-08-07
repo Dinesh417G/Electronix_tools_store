@@ -6,6 +6,7 @@
 //! hardware present, which in turn is what lets §14's "testable on a laptop on
 //! a plane" rule hold.
 
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -96,6 +97,8 @@ pub struct MockIdentitySource {
     source_id: String,
     device_serial: String,
     subscribers: Arc<Mutex<Vec<mpsc::UnboundedSender<IdentityEvent>>>>,
+    /// Last device timestamp issued, in microseconds since the epoch.
+    last_stamp_us: Arc<AtomicI64>,
 }
 
 impl MockIdentitySource {
@@ -104,15 +107,38 @@ impl MockIdentitySource {
             source_id: source_id.into(),
             device_serial: device_serial.into(),
             subscribers: Arc::new(Mutex::new(Vec::new())),
+            last_stamp_us: Arc::new(AtomicI64::new(0)),
         }
+    }
+
+    /// A device timestamp that strictly increases, the way a real terminal's
+    /// clock does across distinct punches.
+    ///
+    /// This matters more than it looks: the dedup key is
+    /// `(device, user, device_ts)`, so a mock that stamped every punch
+    /// identically would have the *second* punch from one operator silently
+    /// swallowed as a retry — and a test built on that would be testing
+    /// deduplication while believing it was testing something else.
+    fn next_device_ts(&self) -> DateTime<Utc> {
+        let now_us = Utc::now().timestamp_micros();
+        let stamp = self
+            .last_stamp_us
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |last| {
+                Some(now_us.max(last + 1))
+            })
+            .map_or(now_us, |last| now_us.max(last + 1));
+
+        DateTime::from_timestamp_micros(stamp).unwrap_or_else(Utc::now)
     }
 
     /// Simulate a fingerprint punch by `zk_user_id`.
     ///
-    /// Returns the event that was published so a test can assert against the
-    /// exact payload the server will see.
+    /// Carries a device timestamp, as a real terminal does. Returns the event
+    /// that was published so a test can assert against the exact payload the
+    /// server will see.
     pub fn punch(&self, zk_user_id: impl Into<String>) -> IdentityEvent {
-        self.punch_with(zk_user_id, VerifyMode::Fingerprint, None)
+        let ts = self.next_device_ts();
+        self.punch_with(zk_user_id, VerifyMode::Fingerprint, Some(ts))
     }
 
     pub fn punch_with(
@@ -212,6 +238,33 @@ mod tests {
 
             assert_eq!(a.next().await.unwrap().external_user_id, "1042");
             assert_eq!(b.next().await.unwrap().external_user_id, "1042");
+        });
+    }
+
+    #[test]
+    fn consecutive_punches_carry_distinct_device_timestamps() {
+        // The dedup key is (device, user, device_ts). Two punches from one
+        // operator must be two punches, not a retry.
+        futures::executor::block_on(async {
+            let src = MockIdentitySource::new("mock-1", "SN-TEST-001");
+            let a = src.punch("1042");
+            let b = src.punch("1042");
+            assert!(a.device_ts.is_some());
+            assert!(
+                b.device_ts > a.device_ts,
+                "{:?} !> {:?}",
+                b.device_ts,
+                a.device_ts
+            );
+        });
+    }
+
+    #[test]
+    fn a_punch_may_still_be_stamped_explicitly() {
+        futures::executor::block_on(async {
+            let src = MockIdentitySource::new("mock-1", "SN-TEST-001");
+            let clockless = src.punch_with("1042", VerifyMode::Card, None);
+            assert_eq!(clockless.device_ts, None);
         });
     }
 

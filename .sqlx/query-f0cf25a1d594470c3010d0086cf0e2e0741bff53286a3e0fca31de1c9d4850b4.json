@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        update stock_alerts\n           set acknowledged_at = now(), acknowledged_by = $2\n         where id = $1 and acknowledged_at is null\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f0cf25a1d594470c3010d0086cf0e2e0741bff53286a3e0fca31de1c9d4850b4"
+}

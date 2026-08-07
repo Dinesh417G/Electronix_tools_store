@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        update sessions\n           set state = 'CLOSED', close_reason = $2, closed_at = now()\n         where id = $1 and state = 'ACTIVE'\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4302d33246e2149d20cba0b3b6a38ffae6e80352e58fcc01ee99ccc0fdb2c967"
+}

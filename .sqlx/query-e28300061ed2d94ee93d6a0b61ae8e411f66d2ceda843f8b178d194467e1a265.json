@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        update items\n           set item_code = $2, description = $3, category_id = $4, uom = $5,\n               iso_code = $6, grade = $7, manufacturer = $8, mfr_part_no = $9,\n               diameter_mm = $10, flutes = $11,\n               reorder_level = $12, reorder_qty = $13, bin_location = $14,\n               unit_cost = $15, allow_negative = $16\n         where id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Numeric",
+        "Int4",
+        "Numeric",
+        "Numeric",
+        "Text",
+        "Numeric",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e28300061ed2d94ee93d6a0b61ae8e411f66d2ceda843f8b178d194467e1a265"
+}

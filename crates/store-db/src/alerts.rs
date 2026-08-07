@@ -119,5 +119,8 @@ pub async fn summary(pool: &PgPool) -> Result<AlertSummary> {
     .fetch_one(pool)
     .await?;
 
-    Ok(AlertSummary { low: row.low, empty: row.empty })
+    Ok(AlertSummary {
+        low: row.low,
+        empty: row.empty,
+    })
 }

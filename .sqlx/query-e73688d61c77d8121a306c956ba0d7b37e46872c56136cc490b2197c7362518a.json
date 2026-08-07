@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        insert into items (item_code, description, uom, reorder_level, allow_negative, unit_cost)\n        values ($1, $2, 'NOS', $3, $4, 120.50)\n        returning id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Numeric",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e73688d61c77d8121a306c956ba0d7b37e46872c56136cc490b2197c7362518a"
+}

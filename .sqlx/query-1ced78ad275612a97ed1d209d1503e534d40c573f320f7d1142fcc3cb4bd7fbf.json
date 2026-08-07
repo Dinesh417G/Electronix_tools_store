@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        update sessions set state = 'EXPIRED', closed_at = now()\n         where id = $1 and state = 'UNCLAIMED'\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1ced78ad275612a97ed1d209d1503e534d40c573f320f7d1142fcc3cb4bd7fbf"
+}

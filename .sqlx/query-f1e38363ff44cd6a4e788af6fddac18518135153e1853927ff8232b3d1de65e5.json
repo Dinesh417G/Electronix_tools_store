@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update api_tokens set revoked_at = now()\n          where tablet_id = $1 and revoked_at is null",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f1e38363ff44cd6a4e788af6fddac18518135153e1853927ff8232b3d1de65e5"
+}

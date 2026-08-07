@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        select s.item_id                             as \"item_id!\",\n               i.item_code                           as \"item_code!\",\n               s.on_hand                             as \"cached_on_hand!\",\n               coalesce(sum(l.delta_qty), 0)         as \"ledger_sum!\"\n          from item_stock s\n          join items i on i.id = s.item_id\n          left join stock_ledger l on l.item_id = s.item_id\n         group by s.item_id, i.item_code, s.on_hand\n        having s.on_hand <> coalesce(sum(l.delta_qty), 0)\n         order by i.item_code\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "item_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "item_code!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "cached_on_hand!",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 3,
+        "name": "ledger_sum!",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "9558fdccd1d94c8bc88c68a309ae79d25b2e76f866ae9ff648da8d7fcacd2b32"
+}

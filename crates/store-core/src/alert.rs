@@ -45,7 +45,9 @@ impl std::str::FromStr for AlertLevel {
             "OK" => Ok(AlertLevel::Ok),
             "LOW" => Ok(AlertLevel::Low),
             "EMPTY" => Ok(AlertLevel::Empty),
-            other => Err(crate::error::CoreError::UnknownSessionState(other.to_owned())),
+            other => Err(crate::error::CoreError::UnknownSessionState(
+                other.to_owned(),
+            )),
         }
     }
 }
@@ -146,7 +148,11 @@ mod tests {
         // The M8 gate, as a unit test.
         assert_eq!(evaluate(dec!(20), dec!(10)), AlertLevel::Ok);
         assert_eq!(evaluate(dec!(11), dec!(10)), AlertLevel::Ok);
-        assert_eq!(evaluate(dec!(10), dec!(10)), AlertLevel::Low, "at the level");
+        assert_eq!(
+            evaluate(dec!(10), dec!(10)),
+            AlertLevel::Low,
+            "at the level"
+        );
         assert_eq!(evaluate(dec!(1), dec!(10)), AlertLevel::Low);
         assert_eq!(evaluate(dec!(0), dec!(10)), AlertLevel::Empty);
     }
@@ -180,8 +186,20 @@ mod tests {
         assert_eq!(action(Ok, Ok), AlertAction::Unchanged);
         assert_eq!(action(Ok, Low), AlertAction::Raise(Low));
         assert_eq!(action(Ok, Empty), AlertAction::Raise(Empty));
-        assert_eq!(action(Low, Empty), AlertAction::Escalate { from: Low, to: Empty });
-        assert_eq!(action(Empty, Low), AlertAction::Escalate { from: Empty, to: Low });
+        assert_eq!(
+            action(Low, Empty),
+            AlertAction::Escalate {
+                from: Low,
+                to: Empty
+            }
+        );
+        assert_eq!(
+            action(Empty, Low),
+            AlertAction::Escalate {
+                from: Empty,
+                to: Low
+            }
+        );
         assert_eq!(action(Low, Ok), AlertAction::Resolve);
         assert_eq!(action(Empty, Ok), AlertAction::Resolve);
         assert_eq!(action(Empty, Empty), AlertAction::Unchanged);

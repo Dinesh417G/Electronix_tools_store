@@ -1,0 +1,131 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        select l.id           as \"id!\",\n               l.item_id      as \"item_id!\",\n               i.item_code    as \"item_code!\",\n               i.description  as \"description!\",\n               l.delta_qty    as \"delta_qty!\",\n               l.txn_type     as \"txn_type!\",\n               l.operator_id  as \"operator_id!\",\n               o.full_name    as \"operator_name!\",\n               l.session_id,\n               l.machine_id,\n               m.code         as \"machine_code?\",\n               l.reason_id,\n               r.code         as \"reason_code?\",\n               l.note,\n               l.unit_cost,\n               l.device_ts,\n               l.created_at   as \"created_at!\",\n               l.reverses_id\n          from stock_ledger l\n          join items i     on i.id = l.item_id\n          join operators o on o.id = l.operator_id\n          left join machines m     on m.id = l.machine_id\n          left join reason_codes r on r.id = l.reason_id\n         where ($1::uuid is null or l.item_id = $1)\n           and ($2::uuid is null or l.operator_id = $2)\n           and ($3::uuid is null or l.machine_id = $3)\n           and ($4::text is null or l.txn_type = $4)\n           and ($5::timestamptz is null or l.created_at >= $5)\n           and ($6::timestamptz is null or l.created_at < $6)\n         order by l.created_at desc, l.id desc\n         limit $7 offset $8\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "item_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "item_code!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "description!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "delta_qty!",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 5,
+        "name": "txn_type!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "operator_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 7,
+        "name": "operator_name!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "session_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 9,
+        "name": "machine_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 10,
+        "name": "machine_code?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "reason_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 12,
+        "name": "reason_code?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "note",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "unit_cost",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 15,
+        "name": "device_ts",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 17,
+        "name": "reverses_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Timestamptz",
+        "Timestamptz",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "105055bc8d0c1f9610e9fc86a02e9c1de34e8d5f881db634a9f43a657577b7b3"
+}

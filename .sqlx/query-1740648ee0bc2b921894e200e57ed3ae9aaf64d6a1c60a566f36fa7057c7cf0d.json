@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        insert into devices (serial_no, name, last_seen_at, firmware, timezone_offset_min)\n        values ($1, $1, now(), $2, $3)\n        on conflict (serial_no) do update\n           set last_seen_at = now(),\n               firmware = coalesce(excluded.firmware, devices.firmware),\n               timezone_offset_min = coalesce(\n                 excluded.timezone_offset_min, devices.timezone_offset_min)\n        returning id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1740648ee0bc2b921894e200e57ed3ae9aaf64d6a1c60a566f36fa7057c7cf0d"
+}

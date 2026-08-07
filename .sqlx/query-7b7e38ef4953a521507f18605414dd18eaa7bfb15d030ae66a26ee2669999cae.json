@@ -1,0 +1,124 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        select i.id                as \"id!\",\n               i.item_code         as \"item_code!\",\n               i.description       as \"description!\",\n               i.uom               as \"uom!\",\n               i.category_id,\n               c.name              as \"category_name?\",\n               i.iso_code,\n               i.grade,\n               i.manufacturer,\n               i.mfr_part_no,\n               i.bin_location,\n               i.unit_cost,\n               i.reorder_level     as \"reorder_level!\",\n               i.reorder_qty,\n               i.allow_negative    as \"allow_negative!\",\n               i.active            as \"active!\",\n               coalesce(s.on_hand, 0)        as \"on_hand!\",\n               coalesce(s.alert_state, 'OK') as \"alert_state!\"\n          from items i\n          left join item_categories c on c.id = i.category_id\n          left join item_stock s      on s.item_id = i.id\n         where i.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "item_code!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "description!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "uom!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "category_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "category_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "iso_code",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "grade",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "manufacturer",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "mfr_part_no",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "bin_location",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "unit_cost",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 12,
+        "name": "reorder_level!",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 13,
+        "name": "reorder_qty",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 14,
+        "name": "allow_negative!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 15,
+        "name": "active!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 16,
+        "name": "on_hand!",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 17,
+        "name": "alert_state!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "7b7e38ef4953a521507f18605414dd18eaa7bfb15d030ae66a26ee2669999cae"
+}

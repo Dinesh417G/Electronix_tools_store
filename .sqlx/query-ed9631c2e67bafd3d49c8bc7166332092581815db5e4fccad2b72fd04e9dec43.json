@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update operators set pin_hash = $2 where id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ed9631c2e67bafd3d49c8bc7166332092581815db5e4fccad2b72fd04e9dec43"
+}

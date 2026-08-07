@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        insert into api_tokens (token_hash, kind, tablet_id)\n        values ($1, 'TABLET', $2)\n        returning issued_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "issued_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "236b78e272cd2c7de4928c82c1331ac71afd741f572d3e005ad9fc3ce0bb6be4"
+}
