@@ -1,0 +1,492 @@
+# CLAUDE.md — ElectronIx Tool Store
+
+> Build spec for Claude Code. **Read this file completely before writing any code.**
+> Work milestone-by-milestone (§13). Never advance past a milestone whose acceptance gate fails.
+> Where this file and your instincts disagree, this file wins. Where this file is silent, ask.
+
+---
+
+## 1. What this is
+
+**ElectronIx Tool Store** is a tool-crib management system for a CNC tooling store —
+carbide inserts, end mills, drills, taps, holders and shop consumables.
+
+The physical loop it digitises:
+
+```
+Operator puts finger on the door terminal
+        → terminal verifies and unlocks the door itself
+        → terminal pushes "user 1042 verified at 14:32:11" to our server
+        → tablet inside the store wakes with "Welcome, R. Kumar" and an IN / OUT panel
+        → operator scans a bin barcode (or searches), enters qty, optionally taps
+          machine + reason, submits
+        → stock ledger updated, on-hand recalculated, low-stock alert raised if crossed
+```
+
+Everything else in the product — reports, alerts, admin — is a read of that ledger.
+
+Three binaries in one Cargo workspace:
+
+1. **`store-server`** — Rust/Axum service on the store's server PC. Owns Postgres, the
+   ZKTeco ADMS listener, the session state machine and the REST API.
+2. **`store-tablet`** — Tauri 2 **Android** app. The issue/receipt terminal mounted in the store.
+3. **`store-admin`** — Tauri 2 **desktop** app (Windows, runs on the server PC). Catalog,
+   barcode labels, stock dashboard, reports, alert console.
+
+---
+
+## 2. Locked decisions — do not relitigate
+
+| Decision | Value | Why |
+|---|---|---|
+| Backend language | Rust, Axum, tokio | House stack (ElectronIx DNC / MES) |
+| Database | **PostgreSQL 16** on the server PC | Multiple tablets write concurrently; SQLite's single-writer model is wrong here |
+| DB access | `sqlx` with compile-time checked queries, `sqlx::migrate!` | Same as DNC |
+| Door hardware | Standalone **ZKTeco (or eSSL rebadge) terminal speaking ADMS "Push"** | Device pushes over plain HTTP — no vendor DLL, no Windows-only SDK |
+| Who unlocks the door | **The terminal, on its own.** Never our software | Door must work when the server PC is off. We are observers, not the lock |
+| Tablet client | **Tauri 2 Mobile, Android** | Shares the Rust client core; native `barcode-scanner` plugin |
+| Tool lifecycle | **Consumed only.** No return, regrind or tool-life tracking | Scope decision |
+| Item selection | **Both** barcode/QR scan **and** manual search-and-enter | Scope decision |
+| Issue fields | Quantity mandatory. Machine/job + reason **optional, with a Skip button** | Scope decision |
+| Stock inward | **Storekeeper enters IN on the tablet.** No PO/GRN, no Tally/ERP import | Scope decision |
+| Alerts | **In-app only** — tablet banner + admin dashboard. No email, SMS or WhatsApp | Scope decision |
+| Stock representation | **Append-only ledger.** No mutable `qty` column, ever | §7 — this is the core invariant |
+
+---
+
+## 3. Physical setup this software assumes
+
+- **1× ZKTeco access terminal** at the store door (IN01-A / F18 / iClock class):
+  fingerprint + RFID, TCP/IP, ADMS push, and its own relay outputs for the EM lock,
+  exit button and door sensor.
+- **1× server PC** inside the plant, static LAN IP, running Postgres + `store-server` + `store-admin`.
+- **1–2 Android tablets** wall-mounted inside the store, on the same LAN.
+- Optional **label printer** for bin barcodes (Code 128 of `item_code`).
+
+The terminal is configured to point its ADMS server address at the server PC's IP and
+our listener port. That is the entire integration surface.
+
+---
+
+## 4. Topology
+
+```
+ ┌──────────────────┐   ADMS/HTTP push    ┌───────────────────────────────┐
+ │  ZK door terminal│ ──────────────────► │  store-server (Axum, :8080)   │
+ │  (owns the lock) │  POST /iclock/cdata │                               │
+ └──────────────────┘                     │  ┌─────────────────────────┐  │
+                                          │  │ adms listener           │  │
+ ┌──────────────────┐   REST + SSE        │  │ session state machine   │  │
+ │  store-tablet    │ ◄─────────────────► │  │ ledger service          │  │
+ │  (Android, LAN)  │                     │  │ alert engine            │  │
+ └──────────────────┘                     │  └───────────┬─────────────┘  │
+                                          └──────────────┼────────────────┘
+ ┌──────────────────┐   REST                             │
+ │  store-admin     │ ◄──────────────────────────────────┤
+ │  (Windows)       │                              ┌─────▼─────┐
+ └──────────────────┘                              │ Postgres  │
+                                                   └───────────┘
+```
+
+Tablets subscribe to `GET /api/v1/sessions/stream` (SSE). When a punch arrives the server
+emits an `session.opened` event and the tablet foregrounds the IN/OUT panel. No polling.
+
+---
+
+## 5. Repo layout
+
+```
+electronix-tool-store/
+├── CLAUDE.md                  ← this file
+├── Cargo.toml                 ← workspace
+├── crates/
+│   ├── store-core/            ← domain library. NO I/O, NO sqlx, NO axum
+│   │   ├── item.rs            ← Item, Category, Uom, barcode rules
+│   │   ├── ledger.rs          ← LedgerEntry, TxnType, apply(), invariants
+│   │   ├── session.rs         ← SessionState machine (pure)
+│   │   ├── alert.rs           ← reorder evaluation
+│   │   └── error.rs
+│   ├── store-adms/            ← ZKTeco ADMS protocol. Depends on store-core only
+│   │   ├── protocol.rs        ← request/response parsing (plain text, NOT json)
+│   │   ├── routes.rs          ← axum Router for /iclock/*
+│   │   ├── commands.rs        ← outbound command queue to device
+│   │   └── mock_device.rs     ← test harness that behaves like a real terminal
+│   ├── store-db/              ← sqlx repositories + migrations
+│   │   └── migrations/
+│   ├── store-server/          ← binary: composes adms + db + api
+│   ├── store-cli/             ← binary: seed, reconcile, export, device probe
+│   ├── store-tablet/          ← Tauri 2 Android
+│   │   ├── src-tauri/
+│   │   └── ui/                ← React + TypeScript + Tailwind
+│   └── store-admin/           ← Tauri 2 desktop
+│       ├── src-tauri/
+│       └── ui/
+└── .claude/agents/            ← §15
+```
+
+**Dependency rule:** `store-core` depends on nothing in this workspace. Everything depends
+inward toward it. If you find yourself importing `sqlx` into `store-core`, you have made a
+mistake — stop and restructure.
+
+---
+
+## 6. Data model
+
+Postgres. All timestamps `timestamptz`. All money `numeric(12,2)`. All quantities
+`numeric(12,3)` (inserts are whole numbers, but coolant and bar stock are not).
+
+```sql
+-- ── People ──────────────────────────────────────────────────────────
+operators(
+  id            uuid pk,
+  emp_code      text unique not null,
+  full_name     text not null,
+  zk_user_id    text unique,          -- the PIN/user id programmed into the terminal
+  pin_hash      text,                 -- argon2, for the fallback path only
+  role          text not null,        -- OPERATOR | STOREKEEPER | ADMIN
+  department    text,
+  active        bool not null default true
+)
+
+-- ── Catalog ─────────────────────────────────────────────────────────
+item_categories(id uuid pk, name text unique not null, sort_order int)
+
+items(
+  id             uuid pk,
+  item_code      text unique not null,   -- our internal code; the barcode payload
+  description    text not null,
+  category_id    uuid fk,
+  uom            text not null,          -- NOS | SET | BOX | LTR | KG
+  -- tooling-specific, all nullable:
+  iso_code       text,                   -- e.g. CNMG120408
+  grade          text,                   -- e.g. TN2000
+  manufacturer   text,
+  mfr_part_no    text,
+  diameter_mm    numeric(8,3),
+  flutes         int,
+  -- stock control:
+  reorder_level  numeric(12,3) not null default 0,
+  reorder_qty    numeric(12,3),
+  bin_location   text,                   -- rack/shelf, printed on the label
+  unit_cost      numeric(12,2),
+  allow_negative bool not null default false,
+  active         bool not null default true,
+  created_at, updated_at
+)
+
+item_barcodes(id uuid pk, item_id uuid fk, code text unique not null, kind text)
+-- kind: OWN | MFR_EAN | VENDOR. Lets a vendor's printed barcode resolve to our item.
+
+machines(id uuid pk, code text unique not null, name text, active bool)
+reason_codes(id uuid pk, code text unique, label text, applies_to text, sort_order int)
+-- seed: NEW_JOB, BREAKAGE, WEAR, TRIAL, REWORK  (applies_to = ISSUE)
+--       PURCHASE, RETURN_FROM_SHOP, FOUND       (applies_to = RECEIPT)
+
+-- ── The ledger. Append only. ────────────────────────────────────────
+stock_ledger(
+  id           bigserial pk,
+  item_id      uuid fk not null,
+  delta_qty    numeric(12,3) not null,   -- negative = out, positive = in. NEVER zero
+  txn_type     text not null,            -- ISSUE | RECEIPT | ADJUST | OPENING | SCRAP
+  operator_id  uuid fk not null,
+  session_id   uuid fk,                  -- null for admin-side adjustments
+  machine_id   uuid fk,                  -- optional
+  reason_id    uuid fk,                  -- optional
+  note         text,
+  unit_cost    numeric(12,2),            -- snapshot at txn time
+  device_ts    timestamptz,              -- what the terminal claimed
+  created_at   timestamptz not null default now(),   -- what the server observed
+  reverses_id  bigint fk stock_ledger(id)            -- set on correction rows
+)
+create index on stock_ledger(item_id, created_at desc);
+
+-- ── Derived, trigger-maintained. Never written by application code. ─
+item_stock(
+  item_id      uuid pk fk,
+  on_hand      numeric(12,3) not null default 0,
+  last_txn_at  timestamptz,
+  alert_state  text not null default 'OK'   -- OK | LOW | EMPTY
+)
+
+-- ── Door / identity ─────────────────────────────────────────────────
+devices(id uuid pk, serial_no text unique, name text, location text,
+        last_seen_at timestamptz, firmware text, timezone_offset_min int)
+
+punches(id uuid pk, device_id uuid fk, zk_user_id text not null,
+        device_ts timestamptz, received_at timestamptz not null default now(),
+        verify_mode text, raw text, claimed bool not null default false)
+
+sessions(id uuid pk, operator_id uuid fk, punch_id uuid fk unique,
+         state text not null,          -- UNCLAIMED | ACTIVE | CLOSED | EXPIRED
+         opened_at, claimed_at, closed_at, tablet_id text, close_reason text)
+
+-- ── Alerts ──────────────────────────────────────────────────────────
+stock_alerts(id uuid pk, item_id uuid fk, level text,     -- LOW | EMPTY
+             raised_at timestamptz, resolved_at timestamptz,
+             acknowledged_at timestamptz, acknowledged_by uuid fk)
+```
+
+---
+
+## 7. The ledger rule — the most important thing in this spec
+
+**Stock is never stored as a number you update. Stock is the sum of a ledger.**
+
+- Every movement inserts exactly one `stock_ledger` row. No `UPDATE` on quantities, ever.
+- A mistake is corrected by inserting a **reversing row** with `reverses_id` pointing at the
+  original — never by editing or deleting the original.
+- `item_stock.on_hand` is a cached read model maintained by an `AFTER INSERT` trigger on
+  `stock_ledger`. Application code **reads** it and never writes it.
+- `store-cli reconcile` recomputes `SUM(delta_qty) GROUP BY item_id` and compares against
+  `item_stock.on_hand`. **Any drift is a bug, not a data-entry problem.**
+
+This single decision is what makes "log history" and "current stock" the same object rather
+than two things that quietly disagree after six months. It is also what makes the audit
+trail defensible when someone asks where forty inserts went.
+
+Guard: an `ISSUE` that would push `on_hand` below zero is rejected with `409 Conflict`
+unless `items.allow_negative` is true. The tablet surfaces this as *"Only 3 left in system —
+count the bin and adjust"*, not as a silent failure.
+
+---
+
+## 8. Identity: the `IdentitySource` trait
+
+Do **not** wire the ADMS listener directly into the session service. Put it behind a trait,
+exactly as ElectronIx DNC puts FTP and raw-TCP behind `Transport`:
+
+```rust
+#[async_trait]
+pub trait IdentitySource: Send + Sync {
+    /// Stream of verified-identity events from a physical reader.
+    async fn subscribe(&self) -> BoxStream<'static, IdentityEvent>;
+    fn source_id(&self) -> &str;
+}
+
+pub struct IdentityEvent {
+    pub external_user_id: String,   // zk_user_id
+    pub device_serial: String,
+    pub device_ts: Option<DateTime<Utc>>,
+    pub verify_mode: VerifyMode,    // Fingerprint | Card | Face | Password
+    pub raw: String,
+}
+```
+
+Three implementations in v1:
+
+| Impl | Use |
+|---|---|
+| `AdmsIdentitySource` | The real terminal |
+| `ManualPinSource` | Fallback — operator types emp code + PIN on the tablet when the push never arrives |
+| `MockIdentitySource` | Tests and demos. Must be able to drive a full issue flow with no hardware present |
+
+Every integration test runs against `MockIdentitySource`. **No test may require a physical
+door terminal.**
+
+---
+
+## 9. ZKTeco ADMS protocol notes
+
+The device is the client; our server is the ADMS host. It is plain HTTP with `key=value` and
+tab-separated bodies — **not** REST, **not** JSON. Do not try to make it pretty.
+
+Endpoints to implement in `store-adms`:
+
+```
+GET  /iclock/cdata?SN=<serial>&options=all&pushver=...
+     → device handshake on boot. Respond with a plain-text option block:
+       GET OPTION FROM: <SN>
+       ATTLOGStamp=0
+       OPERLOGStamp=0
+       ErrorDelay=30
+       Delay=10
+       TransTimes=00:00;14:00
+       TransInterval=1
+       TransFlag=111111111111
+       Realtime=1
+       ServerVer=3.0.1
+       TimeZone=<offset>
+
+POST /iclock/cdata?SN=<serial>&table=ATTLOG
+     → body is one record per line, tab-separated:
+       <userid>\t<yyyy-MM-dd HH:mm:ss>\t<status>\t<verify>\t<workcode>\t<reserved>
+     → MUST respond with exactly:  OK: <n>
+       (a non-OK or slow response makes the device retry and duplicate records)
+
+GET  /iclock/getrequest?SN=<serial>
+     → device polls for queued commands. Respond "OK" when nothing queued,
+       or a command line such as:
+       C:<cmdid>:DATA UPDATE USERINFO PIN=<id>\tName=<name>\tPri=0
+
+POST /iclock/devicecmd?SN=<serial>
+     → device reports command results: ID=<cmdid>&Return=0&CMD=DATA
+```
+
+Hard requirements:
+
+1. **Idempotency.** The device retries on any non-`OK`. Deduplicate on
+   `(device_serial, zk_user_id, device_ts)` with a unique index. A retried batch must be a
+   no-op, not a second punch.
+2. **Respond fast.** Persist-then-acknowledge, but keep the handler under ~200 ms. Never do
+   session logic inline in the ADMS handler — push onto a channel and return.
+3. **Distrust device clocks.** Indian half-hour offsets are a known trouble spot on some ZK
+   firmwares; a device on Wi-Fi can silently drift off +05:30. Always store `received_at`
+   alongside `device_ts`, and **use `received_at` for all business logic and reporting.**
+   `device_ts` is diagnostic only.
+4. **Unknown users.** A punch whose `zk_user_id` maps to no operator is still recorded, and
+   raises an admin notice. Never drop data because the master is incomplete.
+
+> ⚠️ **Verify before you trust this section.** Firmware families vary in casing, parameter
+> names and stamp semantics. At M2, run `store-cli device-probe --listen 8080`, point a real
+> terminal at it, and dump every raw request to disk. Reconcile this spec against that
+> capture and update this file if they differ. Do not assume.
+
+---
+
+## 10. Session claim state machine (pure, in `store-core`)
+
+The problem: two people can walk in on one punch, and a punch can arrive with no one at the
+tablet. So a punch does not *become* a session — it *offers* one.
+
+```
+              punch received
+                    │
+                    ▼
+             ┌─────────────┐   no claim in 90s    ┌─────────┐
+             │  UNCLAIMED  │ ───────────────────► │ EXPIRED │
+             └──────┬──────┘                      └─────────┘
+              tablet claims
+                    │
+                    ▼
+             ┌─────────────┐  submit / cancel /   ┌─────────┐
+             │   ACTIVE    │  180s idle           │ CLOSED  │
+             └─────────────┘ ───────────────────► └─────────┘
+```
+
+Rules:
+
+- The tablet's home screen lists **all `UNCLAIMED` punches from the last 90 s** as name
+  cards. Tailgating is solved socially: each person taps their own card.
+- A claimed session is bound to one `tablet_id`. A second tablet cannot claim it.
+- `ACTIVE` closes on submit, on explicit Done, or after 180 s idle.
+- Transactions submitted after close are rejected `410 Gone`. The tablet then re-opens the
+  claim screen rather than silently discarding the operator's typing.
+- If no punch arrives (device down, network down), the tablet offers **"Enter manually"** →
+  emp code + PIN via `ManualPinSource`. Those sessions are flagged `manual_identity = true`
+  and shown distinctly in reports, because they are weaker evidence.
+
+Model this as an exhaustive `match` over `(SessionState, SessionEvent)` returning
+`Result<SessionState, TransitionError>`. Every illegal pair must be an explicit arm, not a
+`_ => unreachable!()`.
+
+---
+
+## 11. API surface (`store-server`)
+
+```
+POST   /api/v1/auth/tablet                 register tablet, get long-lived token
+GET    /api/v1/sessions/stream             SSE: session.opened | session.closed | alert.raised
+GET    /api/v1/sessions/unclaimed          name cards for the claim screen
+POST   /api/v1/sessions/{id}/claim         body: { tablet_id }
+POST   /api/v1/sessions/manual             body: { emp_code, pin } → session
+POST   /api/v1/sessions/{id}/close
+
+GET    /api/v1/items/lookup?barcode=       resolve scan → item + on_hand + bin  (must be <100ms)
+GET    /api/v1/items/search?q=             typeahead across item_code, description, iso_code, grade
+GET    /api/v1/items/{id}
+
+POST   /api/v1/txn/issue                   { session_id, item_id, qty, machine_id?, reason_id?, note? }
+POST   /api/v1/txn/receipt                 { session_id, item_id, qty, unit_cost?, reason_id?, note? }
+POST   /api/v1/txn/{id}/reverse            admin only; inserts the reversing row
+
+GET    /api/v1/stock                       filters: low, empty, category, bin
+GET    /api/v1/ledger                      filters: item, operator, machine, date range; paginated
+GET    /api/v1/alerts                      + POST /api/v1/alerts/{id}/ack
+GET    /api/v1/reports/consumption         group_by: item | machine | operator | category | month
+GET    /api/v1/reports/consumption.csv
+
+# admin
+CRUD   /api/v1/admin/items, /operators, /machines, /devices, /reason-codes
+POST   /api/v1/admin/labels/print          Code128 label batch → PDF
+GET    /api/v1/admin/health                DB, device last-seen, ledger reconciliation status
+```
+
+Auth: tablets hold a device token; admin uses operator login. Every write carries an
+`operator_id` — there are no anonymous ledger rows.
+
+---
+
+## 12. Tablet UX (`store-tablet`)
+
+Design for a shop-floor operator with oily gloves and no patience.
+
+1. **Idle** — clock, store name, on-screen keyboard hidden. Low-stock banner if any EMPTY items.
+2. **Claim** — punch arrives → large name cards, photo if available. Auto-advance if only one card.
+3. **Direction** — two enormous buttons: **TAKE OUT** (red) / **PUT IN** (green). Nothing else.
+4. **Item** — camera opens immediately for scanning (`tauri-plugin-barcode-scanner`).
+   A permanent **"Search instead"** button switches to typeahead. Both paths land on the
+   same item card showing description, bin location and current on-hand.
+5. **Quantity** — big numeric pad, `+1 / +5 / +10` chips. Default 1.
+6. **Optional** — machine picker and reason chips, with a prominent **SKIP** button. Skipping
+   must never be slower than filling.
+7. **Confirm** — one line summary, big CONFIRM. Success screen shows the new on-hand and,
+   if it crossed the reorder level, a clear *"This item is now LOW — storekeeper notified."*
+8. Auto-return to idle after 15 s.
+
+Target: **scan → qty → confirm in under 8 seconds.** If a screen doesn't serve that, cut it.
+
+Offline: writes queue to a local SQLite outbox and flush when the LAN returns. Queued rows
+are visibly marked pending. Server deduplicates on a client-generated `txn_uuid`.
+
+---
+
+## 13. Milestones — each gated by its acceptance test
+
+| # | Deliverable | Acceptance gate |
+|---|---|---|
+| **M0** | Workspace, Postgres via Docker, sqlx migrations, CI (fmt, clippy `-D warnings`, test) | `cargo test` green; `migrate run` then `revert` leaves a clean schema |
+| **M1** | `store-core`: items, ledger, invariants | Property test: 10 000 random ledger ops — `item_stock.on_hand` equals `SUM(delta_qty)` after every single one. Negative-stock guard holds |
+| **M2** | `store-adms` + `mock_device` + `store-cli device-probe` | Mock device completes handshake, pushes 500 ATTLOG rows including a full duplicate retry batch → exactly 500 punches persisted |
+| **M3** | Session state machine | Exhaustive transition tests: tailgating (2 unclaimed, 2 claims), expiry, double-claim rejection, post-close submit → `410` |
+| **M4** | `store-server`: REST, auth, SSE | End-to-end integration test: mock punch → claim → issue 5 → on-hand drops by 5 → ledger row correct → SSE events observed in order |
+| **M5** | `store-tablet` issue flow (scan + search) | Signed APK installs on the tablet; full issue against a live server over LAN; scan-to-confirm timed under 8 s |
+| **M6** | Receipt (PUT IN) flow | Storekeeper adds 100 inserts; on-hand rises; ledger shows `RECEIPT` with unit cost |
+| **M7** | `store-admin`: catalog CRUD, Code128 labels, stock views | Create item → print label → scan that printed label on the tablet → correct item resolves |
+| **M8** | Alerts + reports | Issuing past the reorder level raises `LOW`, then `EMPTY` at zero; both appear on the dashboard and as a tablet banner; consumption-by-machine CSV matches a hand-computed fixture |
+| **M9** | Hardening | Tablet offline outbox survives a 10-minute LAN cut with zero duplicates; nightly `pg_dump`; `store-cli reconcile` reports zero drift; installers built |
+
+Deferred to v2 — do not build: tool return/regrind, tool life, PO/GRN, Tally/ERP sync,
+WhatsApp/email alerts, multi-store, vending-machine integration, mobile app for non-tablet phones.
+
+---
+
+## 14. Testing rules
+
+- `store-core` is pure and must reach high coverage with unit and property tests (`proptest`).
+- Integration tests use `sqlx::test` against a real throwaway Postgres. No mocked database.
+- **No test may require the physical door terminal.** `MockIdentitySource` and `mock_device`
+  exist so the whole system is testable on a laptop on a plane.
+- Keep the raw ADMS capture from M2 as a fixture and replay it in CI forever. When firmware
+  changes, that fixture is how you find out.
+
+---
+
+## 15. Claude Code model routing (`.claude/agents/`)
+
+| Agent | Model | Scope |
+|---|---|---|
+| `scaffolder` | haiku | Boilerplate, migrations, CRUD handlers, React form components |
+| `builder` | sonnet | Default. Feature work, tests, UI |
+| `architect` | opus | The ledger invariants (§7), the ADMS protocol (§9), the session state machine (§10), and any schema change |
+
+Anything touching §7, §9 or §10 goes to `architect`. Those three sections are where a subtle
+bug becomes an inventory that nobody trusts — which is the only way this product fails.
+
+---
+
+## 16. Working agreement
+
+- Small commits, conventional commit messages, one milestone per branch.
+- Update this file when a decision changes. A stale spec is worse than no spec.
+- If a requirement here is ambiguous or looks wrong once you're in the code, **stop and ask**
+  rather than guessing. Guessed inventory rules are expensive to unwind.

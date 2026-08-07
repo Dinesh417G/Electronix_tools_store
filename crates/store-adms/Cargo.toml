@@ -1,0 +1,5 @@
+[package]
+name = "store-adms"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true

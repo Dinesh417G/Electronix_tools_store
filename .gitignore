@@ -1,0 +1,7 @@
+/target
+**/node_modules
+**/dist
+/crates/store-tablet/src-tauri/target
+/crates/store-admin/src-tauri/target
+*.apk
+*.log

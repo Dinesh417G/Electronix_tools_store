@@ -1,0 +1,51 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/store-core",
+    "crates/store-adms",
+    "crates/store-db",
+    "crates/store-server",
+    "crates/store-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+license = "proprietary"
+publish = false
+
+[workspace.dependencies]
+store-core = { path = "crates/store-core" }
+store-adms = { path = "crates/store-adms" }
+store-db = { path = "crates/store-db" }
+
+anyhow = "1"
+async-trait = "0.1"
+axum = { version = "0.8", features = ["macros"] }
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive", "env"] }
+futures = "0.3"
+rust_decimal = { version = "1", features = ["serde-with-str"] }
+rust_decimal_macros = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio",
+    "tls-rustls-ring",
+    "postgres",
+    "macros",
+    "migrate",
+    "uuid",
+    "chrono",
+    "rust_decimal",
+] }
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+tower-http = { version = "0.6", features = ["trace", "cors"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+
+proptest = "1"
