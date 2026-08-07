@@ -92,7 +92,7 @@ jobs:
         run: cargo fmt --all --check
 
       - name: cargo clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   # The real work. §14: integration tests run against a real throwaway
   # Postgres, never a mocked database.
@@ -146,7 +146,7 @@ jobs:
           sqlx migrate run --source crates/store-db/migrations
 
       - name: cargo test
-        run: cargo test --workspace --all-targets
+        run: cargo test --workspace --all-targets --all-features
 
       - name: Doc tests
         run: cargo test --workspace --doc
@@ -171,3 +171,9 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Replay captured device traffic
         run: cargo test -p store-adms
+
+      # M7: a printed label is rastered at print resolution and decoded back by
+      # an independent Code 128 reader. No database needed, so it runs here
+      # rather than holding up the Postgres job.
+      - name: Printed labels scan back
+        run: cargo test -p store-label --all-features

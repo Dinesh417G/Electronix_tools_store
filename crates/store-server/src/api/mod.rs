@@ -50,6 +50,8 @@ pub fn router(state: AppState) -> Router {
         .route("/admin/items/{id}", put(admin::update_item))
         .route("/admin/items/{id}", delete(admin::deactivate_item))
         .route("/admin/items/{id}/barcodes", post(admin::add_barcode))
+        .route("/admin/categories", get(admin::categories))
+        .route("/admin/labels/print", post(admin::print_labels))
         .route("/admin/operators", get(admin::list_operators))
         .route("/admin/operators", post(admin::create_operator))
         .route("/admin/devices", get(admin::devices))

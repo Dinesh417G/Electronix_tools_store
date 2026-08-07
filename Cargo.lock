@@ -2547,6 +2547,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "store-label"
+version = "0.1.0"
+dependencies = [
+ "store-core",
+ "store-label",
+ "thiserror",
+]
+
+[[package]]
 name = "store-server"
 version = "0.1.0"
 dependencies = [
@@ -2567,6 +2576,7 @@ dependencies = [
  "store-adms",
  "store-core",
  "store-db",
+ "store-label",
  "thiserror",
  "tokio",
  "tokio-stream",

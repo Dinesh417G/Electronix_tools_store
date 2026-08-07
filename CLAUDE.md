@@ -73,6 +73,18 @@ Three binaries in one Cargo workspace:
 > hardware scanner wedge, or an iOS device — it wraps this same UI. The REST and
 > SSE contract does not change.
 
+> **Decision changed (M7).** `store-admin` was locked to a Tauri 2 desktop app
+> on the server PC. The admin console is now a section of `store-web`, reached
+> by an operator PIN login and gated to `ADMIN`/`STOREKEEPER` roles.
+>
+> Same reasoning as M5, and one more: the admin runs *on the server PC*, which
+> is where `store-server` already listens. A separate desktop binary would mean
+> a second artifact, a second installer and a second OTA channel to reach the
+> one machine that is by definition already running the thing being updated.
+>
+> Label printing is unaffected by this — it was always a server endpoint (§11),
+> and the PDF opens in the browser's print dialogue.
+
 ---
 
 ## 3. Physical setup this software assumes
@@ -136,13 +148,14 @@ electronix-tool-store/
 │   │   └── migrations/
 │   ├── store-server/          ← binary: composes adms + db + api
 │   ├── store-cli/             ← binary: seed, reconcile, export, device probe
-│   ├── store-web/             ← the terminal + live view. React + TS + Tailwind,
-│   │   │                        built by Vite, embedded into store-server
-│   │   ├── src/screens/       ← Terminal (§12), LiveView, Enrol
-│   │   └── src/lib/           ← api, events (SSE), outbox, scanner
-│   └── store-admin/           ← Tauri 2 desktop (M7, not built yet)
-│       ├── src-tauri/
-│       └── ui/
+│   ├── store-label/           ← Code128 + a minimal PDF writer. Depends on
+│   │                            store-core only. `scan-verify` feature adds a
+│   │                            reader, used only to test our own labels
+│   └── store-web/             ← the terminal, live view and admin console.
+│       │                        React + TS + Tailwind, built by Vite,
+│       │                        embedded into store-server
+│       ├── src/screens/       ← Terminal (§12), LiveView, Admin, Enrol
+│       └── src/lib/           ← api, admin, events (SSE), outbox, scanner
 └── .claude/agents/            ← §15
 ```
 
@@ -459,7 +472,10 @@ GET    /api/v1/reports/consumption.csv
 
 # admin
 CRUD   /api/v1/admin/items, /operators, /machines, /devices, /reason-codes
+GET    /api/v1/admin/categories            picker for the item form
 POST   /api/v1/admin/labels/print          Code128 label batch → PDF
+                                           body: { item_ids[], copies? }
+                                           storekeeper or admin; max 500 labels
 GET    /api/v1/admin/health                DB, device last-seen, ledger reconciliation status
 ```
 
@@ -513,8 +529,9 @@ wall tablet exists, and it moves no stock.
 
 ## 13. Milestones — each gated by its acceptance test
 
-Status as of the current branch: **M0–M6 complete and gated, plus M8's server half
-and M10.** M7 (the admin desktop app) and M9 are not built yet — see the README.
+Status as of the current branch: **M0–M8 and M10 complete and gated.** M9
+(hardening: a 10-minute LAN-cut soak, nightly `pg_dump`, installers) is not built
+yet — see the README.
 
 | # | Deliverable | Acceptance gate |
 |---|---|---|
@@ -525,7 +542,7 @@ and M10.** M7 (the admin desktop app) and M9 are not built yet — see the READM
 | **M4** | `store-server`: REST, auth, SSE | End-to-end integration test: mock punch → claim → issue 5 → on-hand drops by 5 → ledger row correct → SSE events observed in order |
 | **M5** | `store-web` issue flow (scan + search) | Terminal loads on a phone; full issue against a live server over LAN; scan-to-confirm timed under 8 s |
 | **M6** | Receipt (PUT IN) flow | Storekeeper adds 100 inserts; on-hand rises; ledger shows `RECEIPT` with unit cost |
-| **M7** | `store-admin`: catalog CRUD, Code128 labels, stock views | Create item → print label → scan that printed label on the tablet → correct item resolves |
+| **M7** | Admin console: catalog CRUD, Code128 labels, stock views | Create item → print label → scan that printed label on the tablet → correct item resolves. **Software half proven** (label rastered at print resolution and decoded back through `/items/lookup`); the optical half needs a real printer and a real scan |
 | **M8** | Alerts + reports | Issuing past the reorder level raises `LOW`, then `EMPTY` at zero; both appear on the dashboard and as a tablet banner; consumption-by-machine CSV matches a hand-computed fixture |
 | **M9** | Hardening | Terminal offline outbox survives a 10-minute LAN cut with zero duplicates; nightly `pg_dump`; `store-cli reconcile` reports zero drift; installers built |
 | **M10** | CI/CD + OTA | Tagged release publishes a draft to the public releases repo; `store-cli update --apply` verifies sha256, swaps and keeps `.old`; a new build reaches every device on next load. See `OTA-SETUP.md` |

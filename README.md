@@ -8,9 +8,8 @@ where this README and that file disagree, that file wins.
 
 ## What works today
 
-Milestones **M0–M6** are complete and passing their acceptance gates (§13), plus
-the server half of **M8** and the CI/CD + OTA work (**M10**). The physical loop
-runs end to end:
+Milestones **M0–M8** and **M10** are complete and passing their acceptance gates
+(§13). The physical loop runs end to end:
 
 ```
 door terminal pushes a punch  →  server persists it and offers a session
@@ -25,8 +24,8 @@ door terminal pushes a punch  →  server persists it and offers a session
 | `store-db` | Complete. Migrations, repositories, auth. |
 | `store-server` | REST + SSE + ADMS listener, session service, reaper. |
 | `store-cli` | `seed`, `reconcile`, `export`, `device-probe`, `update`. |
-| `store-web` | Mobile-first terminal + live view. Embedded in `store-server`. |
-| `store-admin` | **Not built.** M7 — Tauri 2 desktop. |
+| `store-label` | Code128 + PDF bin labels. |
+| `store-web` | Terminal, live view and admin console. Embedded in `store-server`. |
 
 ### The terminal is a web app now
 
@@ -96,6 +95,30 @@ Point a real terminal at it, punch a few times, then reconcile §9 against what
 the capture actually contains and update `CLAUDE.md` if they differ. Keep the
 capture as a CI fixture (§14) — when firmware changes, that fixture is how you
 find out.
+
+## The admin console
+
+Same address, ⚙ → Admin, then an employee code and PIN (`ADMIN` or
+`STOREKEEPER` only). Catalog CRUD, stock views, the alert console, the ledger
+with one-tap reversal, and Code128 bin labels as a printable PDF.
+
+`CLAUDE.md` §2 originally put this in a Tauri desktop app. It moved here for the
+same reason the terminal did, plus one: the admin runs *on the server PC*, which
+is already running `store-server` — a second binary would mean a second
+installer and a second OTA channel to reach the one machine that is by
+definition already up to date.
+
+### About the label gate
+
+M7's gate is "create item → print label → scan that printed label → correct item
+resolves". The software half is proven in CI: the label PDF is rastered into a
+scan line at 203–1200 dpi and decoded by an independent Code128 reader, then fed
+back through `/api/v1/items/lookup`.
+
+**The optical half is not proven.** Toner spread, printer calibration and camera
+focus need a real sheet and a real scan. Print one before trusting it in
+production — that is a ten-minute job and it is the only thing between here and
+a closed gate.
 
 ## Updates
 

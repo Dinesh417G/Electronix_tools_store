@@ -12,13 +12,16 @@ import {
   type UnclaimedSession,
 } from "./lib/api";
 import { subscribeToEvents, type ConnectionState, type ServerEvent } from "./lib/events";
+import { ADMIN_NAME_KEY, ADMIN_TOKEN_KEY } from "./lib/admin";
 import { count as outboxCount, flush, type QueuedTxn } from "./lib/outbox";
+import { Admin } from "./screens/Admin";
+import { AdminLogin } from "./screens/AdminLogin";
 import { Enrol } from "./screens/Enrol";
 import { LiveView } from "./screens/LiveView";
 import { Terminal } from "./screens/Terminal";
 import { Banner, BigButton } from "./components/ui";
 
-type Mode = "terminal" | "live";
+type Mode = "terminal" | "live" | "admin";
 
 /** CLAUDE.md §10 — an unclaimed punch stays on the claim screen for 90 s. */
 const CLAIM_WINDOW_MS = 90_000;
@@ -37,6 +40,15 @@ export function App() {
   const [lastEvent, setLastEvent] = useState<ServerEvent | null>(null);
   const [dropped, setDropped] = useState<QueuedTxn[]>([]);
   const [updateReady, setUpdateReady] = useState(false);
+
+  // The admin console authenticates separately: a device token is not an
+  // operator, and §11 keeps the two apart on purpose.
+  const [adminToken, setAdminToken] = useState<string | null>(() =>
+    localStorage.getItem(ADMIN_TOKEN_KEY),
+  );
+  const [adminName, setAdminName] = useState<string>(
+    () => localStorage.getItem(ADMIN_NAME_KEY) ?? "",
+  );
 
   const applyUpdate = useRef<(reload?: boolean) => Promise<void>>(async () => {});
 
@@ -257,7 +269,7 @@ export function App() {
         </div>
       )}
 
-      {mode === "terminal" ? (
+      {mode === "terminal" && (
         <Terminal
           cards={cards}
           connection={connection}
@@ -266,9 +278,37 @@ export function App() {
           onRefreshCards={() => void refreshCards()}
           onQueued={() => void outboxCount().then(setPending)}
         />
-      ) : (
+      )}
+
+      {mode === "live" && (
         <LiveView connection={connection} revision={revision} lastEvent={lastEvent} />
       )}
+
+      {mode === "admin" &&
+        (adminToken ? (
+          <Admin
+            token={adminToken}
+            operatorName={adminName}
+            onSignOut={() => {
+              localStorage.removeItem(ADMIN_TOKEN_KEY);
+              localStorage.removeItem(ADMIN_NAME_KEY);
+              setAdminToken(null);
+              switchMode("terminal");
+            }}
+          />
+        ) : (
+          <AdminLogin
+            onSignedIn={(token, name) => {
+              // Session-scoped to this device; the token expires in 12 hours
+              // regardless, so a forgotten admin screen stops working on its own.
+              localStorage.setItem(ADMIN_TOKEN_KEY, token);
+              localStorage.setItem(ADMIN_NAME_KEY, name);
+              setAdminToken(token);
+              setAdminName(name);
+            }}
+            onCancel={() => switchMode("terminal")}
+          />
+        ))}
 
       <ModeSwitch mode={mode} onChange={switchMode} onReset={() => {
         clearCredentials();
@@ -299,16 +339,21 @@ function ModeSwitch({
     <div className="fixed right-3 bottom-3 z-10 flex flex-col items-end gap-2 safe-bottom">
       {open && (
         <div className="w-56 space-y-2 rounded-2xl bg-slate-800 p-3 shadow-xl">
-          <BigButton
-            onClick={() => {
-              onChange(mode === "terminal" ? "live" : "terminal");
-              setOpen(false);
-            }}
-            variant="neutral"
-            className="w-full text-base"
-          >
-            {mode === "terminal" ? "Live view" : "Terminal"}
-          </BigButton>
+          {(["terminal", "live", "admin"] as const)
+            .filter((m) => m !== mode)
+            .map((m) => (
+              <BigButton
+                key={m}
+                onClick={() => {
+                  onChange(m);
+                  setOpen(false);
+                }}
+                variant="neutral"
+                className="w-full text-base capitalize"
+              >
+                {m === "live" ? "Live view" : m}
+              </BigButton>
+            ))}
           <button
             type="button"
             onClick={onReset}

@@ -1,0 +1,24 @@
+[package]
+name = "store-label"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# §5: depends on store-core only. No database, no HTTP — the caller passes in
+# what to print.
+[dependencies]
+store-core = { workspace = true }
+thiserror = { workspace = true }
+
+[features]
+default = []
+# A Code 128 *reader*, plus the PDF-to-scanline rasteriser. Not part of the
+# product — it exists so tests (here and in store-server) can scan a label we
+# just printed and prove it decodes back to its item code.
+scan-verify = []
+
+[dev-dependencies]
+# The integration test scans the labels it prints, which needs the reader.
+store-label = { path = ".", features = ["scan-verify"] }

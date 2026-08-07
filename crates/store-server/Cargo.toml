@@ -19,6 +19,7 @@ path = "src/main.rs"
 store-adms = { workspace = true }
 store-core = { workspace = true }
 store-db = { workspace = true }
+store-label = { workspace = true }
 
 anyhow = { workspace = true }
 async-trait = { workspace = true }
@@ -45,5 +46,7 @@ chrono = { workspace = true }
 
 [dev-dependencies]
 http-body-util = "0.1"
+# The label tests scan the PDFs the API returns, which needs the reader.
+store-label = { workspace = true, features = ["scan-verify"] }
 rust_decimal_macros = { workspace = true }
 tower = { version = "0.5", features = ["util"] }

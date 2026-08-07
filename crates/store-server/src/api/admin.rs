@@ -169,6 +169,110 @@ pub async fn add_barcode(
     ))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct LabelBatchRequest {
+    /// Items to print. Order is preserved, so a storekeeper can lay a sheet out
+    /// rack by rack.
+    pub item_ids: Vec<Uuid>,
+    /// Copies of each label. Useful when one item lives in two bins.
+    #[serde(default)]
+    pub copies: Option<usize>,
+}
+
+/// `POST /api/v1/admin/labels/print` — Code128 label batch → PDF (§11).
+///
+/// The barcode payload is `items.item_code`, which is what
+/// `GET /api/v1/items/lookup` resolves — so a label printed here scans back to
+/// the item it was printed for. That round trip is the M7 gate.
+pub async fn print_labels(
+    State(state): State<AppState>,
+    auth: Auth,
+    Json(body): Json<LabelBatchRequest>,
+) -> ApiResult<impl IntoResponse> {
+    auth.require_storekeeper()?;
+
+    if body.item_ids.is_empty() {
+        return Err(ApiError::BadRequest(
+            "Select at least one item to print.".into(),
+        ));
+    }
+
+    // A batch big enough to be a mistake usually is one — 500 labels is 21
+    // sheets, and nobody means to do that by accident.
+    const MAX_LABELS: usize = 500;
+    let copies = body.copies.unwrap_or(1).clamp(1, 20);
+    if body.item_ids.len() * copies > MAX_LABELS {
+        return Err(ApiError::BadRequest(format!(
+            "That is {} labels. Print at most {MAX_LABELS} at a time.",
+            body.item_ids.len() * copies
+        )));
+    }
+
+    let items = store_db::items::for_label_batch(&state.pool, &body.item_ids).await?;
+    if items.is_empty() {
+        return Err(ApiError::NotFound("items".into()));
+    }
+
+    let specs: Vec<store_label::LabelSpec> = items
+        .iter()
+        .flat_map(|item| {
+            let spec = store_label::LabelSpec {
+                item_code: item.item_code.clone(),
+                description: item.description.clone(),
+                bin_location: item.bin_location.clone(),
+                // The grade and ISO code are what tell two visually identical
+                // insert boxes apart on a rack.
+                detail: match (&item.iso_code, &item.grade) {
+                    (Some(iso), Some(grade)) => Some(format!("{iso} · {grade}")),
+                    (Some(iso), None) => Some(iso.clone()),
+                    (None, Some(grade)) => Some(grade.clone()),
+                    (None, None) => item.manufacturer.clone(),
+                },
+            };
+            std::iter::repeat_n(spec, copies)
+        })
+        .collect();
+
+    let pdf = store_label::render_sheet(&specs, &store_label::SheetLayout::default())
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+
+    tracing::info!(labels = specs.len(), "printed label batch");
+
+    Ok((
+        [
+            (
+                axum::http::header::CONTENT_TYPE,
+                "application/pdf".to_owned(),
+            ),
+            (
+                axum::http::header::CONTENT_DISPOSITION,
+                "attachment; filename=\"bin-labels.pdf\"".to_owned(),
+            ),
+        ],
+        pdf,
+    ))
+}
+
+/// `GET /api/v1/admin/categories`
+pub async fn categories(
+    State(state): State<AppState>,
+    _auth: Auth,
+) -> ApiResult<impl IntoResponse> {
+    let rows = sqlx::query!(
+        "select id, name, sort_order from item_categories order by sort_order, name"
+    )
+    .fetch_all(&state.pool)
+    .await
+    .map_err(store_db::DbError::from)?;
+
+    let json: Vec<_> = rows
+        .into_iter()
+        .map(|r| serde_json::json!({ "id": r.id, "name": r.name, "sort_order": r.sort_order }))
+        .collect();
+
+    Ok(Json(json))
+}
+
 /// `GET /api/v1/admin/operators`
 pub async fn list_operators(
     State(state): State<AppState>,

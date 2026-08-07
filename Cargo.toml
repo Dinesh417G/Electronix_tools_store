@@ -4,6 +4,7 @@ members = [
     "crates/store-core",
     "crates/store-adms",
     "crates/store-db",
+    "crates/store-label",
     "crates/store-server",
     "crates/store-cli",
 ]
@@ -19,6 +20,7 @@ publish = false
 store-core = { path = "crates/store-core" }
 store-adms = { path = "crates/store-adms" }
 store-db = { path = "crates/store-db" }
+store-label = { path = "crates/store-label" }
 
 anyhow = "1"
 argon2 = "0.5"
