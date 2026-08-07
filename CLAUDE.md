@@ -44,13 +44,34 @@ Three binaries in one Cargo workspace:
 | DB access | `sqlx` with compile-time checked queries, `sqlx::migrate!` | Same as DNC |
 | Door hardware | Standalone **ZKTeco (or eSSL rebadge) terminal speaking ADMS "Push"** | Device pushes over plain HTTP — no vendor DLL, no Windows-only SDK |
 | Who unlocks the door | **The terminal, on its own.** Never our software | Door must work when the server PC is off. We are observers, not the lock |
-| Tablet client | **Tauri 2 Mobile, Android** | Shares the Rust client core; native `barcode-scanner` plugin |
+| Tablet client | **Responsive web app (PWA), served by `store-server`** — *changed, see below* | Runs on the phone in your pocket today and the wall tablet later; updates over the air with no signing key, no store review and no device visits |
 | Tool lifecycle | **Consumed only.** No return, regrind or tool-life tracking | Scope decision |
 | Item selection | **Both** barcode/QR scan **and** manual search-and-enter | Scope decision |
 | Issue fields | Quantity mandatory. Machine/job + reason **optional, with a Skip button** | Scope decision |
 | Stock inward | **Storekeeper enters IN on the tablet.** No PO/GRN, no Tally/ERP import | Scope decision |
 | Alerts | **In-app only** — tablet banner + admin dashboard. No email, SMS or WhatsApp | Scope decision |
 | Stock representation | **Append-only ledger.** No mutable `qty` column, ever | §7 — this is the core invariant |
+
+> **Decision changed (M5).** The tablet client was originally locked to Tauri 2
+> Mobile / Android. It is now a mobile-first responsive web app (`store-web`),
+> built with React + TypeScript + Tailwind and embedded in the `store-server`
+> binary.
+>
+> Why: the wall tablet does not exist yet, and waiting for hardware to validate
+> the flow was blocking everything downstream of it. A web terminal runs on a
+> phone today and scales to the tablet unchanged. It also gives the product a
+> genuine OTA story for free — a new build reaches every device on its next
+> load, with no key to lose (see `OTA-SETUP.md`).
+>
+> What this costs, honestly: barcode scanning uses the browser's
+> `BarcodeDetector`, which Android Chrome has and iOS Safari does not. Where it
+> is missing the terminal opens on search instead of pretending the camera will
+> work. §12.4's rule that both paths land on the same item card is what makes
+> that acceptable rather than crippling.
+>
+> Not abandoned: if a native shell is ever wanted — for a kiosk lock, a
+> hardware scanner wedge, or an iOS device — it wraps this same UI. The REST and
+> SSE contract does not change.
 
 ---
 
@@ -115,10 +136,11 @@ electronix-tool-store/
 │   │   └── migrations/
 │   ├── store-server/          ← binary: composes adms + db + api
 │   ├── store-cli/             ← binary: seed, reconcile, export, device probe
-│   ├── store-tablet/          ← Tauri 2 Android
-│   │   ├── src-tauri/
-│   │   └── ui/                ← React + TypeScript + Tailwind
-│   └── store-admin/           ← Tauri 2 desktop
+│   ├── store-web/             ← the terminal + live view. React + TS + Tailwind,
+│   │   │                        built by Vite, embedded into store-server
+│   │   ├── src/screens/       ← Terminal (§12), LiveView, Enrol
+│   │   └── src/lib/           ← api, events (SSE), outbox, scanner
+│   └── store-admin/           ← Tauri 2 desktop (M7, not built yet)
 │       ├── src-tauri/
 │       └── ui/
 └── .claude/agents/            ← §15
@@ -458,16 +480,18 @@ Status codes the tablet UX depends on:
 
 ---
 
-## 12. Tablet UX (`store-tablet`)
+## 12. Terminal UX (`store-web`)
 
 Design for a shop-floor operator with oily gloves and no patience.
 
 1. **Idle** — clock, store name, on-screen keyboard hidden. Low-stock banner if any EMPTY items.
 2. **Claim** — punch arrives → large name cards, photo if available. Auto-advance if only one card.
 3. **Direction** — two enormous buttons: **TAKE OUT** (red) / **PUT IN** (green). Nothing else.
-4. **Item** — camera opens immediately for scanning (`tauri-plugin-barcode-scanner`).
+4. **Item** — camera opens immediately for scanning (browser `BarcodeDetector`).
    A permanent **"Search instead"** button switches to typeahead. Both paths land on the
-   same item card showing description, bin location and current on-hand.
+   same item card showing description, bin location and current on-hand. Where the
+   browser has no barcode detector, the screen opens on search rather than on a
+   camera that will not work.
 5. **Quantity** — big numeric pad, `+1 / +5 / +10` chips. Default 1.
 6. **Optional** — machine picker and reason chips, with a prominent **SKIP** button. Skipping
    must never be slower than filling.
@@ -477,15 +501,20 @@ Design for a shop-floor operator with oily gloves and no patience.
 
 Target: **scan → qty → confirm in under 8 seconds.** If a screen doesn't serve that, cut it.
 
-Offline: writes queue to a local SQLite outbox and flush when the LAN returns. Queued rows
-are visibly marked pending. Server deduplicates on a client-generated `txn_uuid`.
+Offline: writes queue to a local **IndexedDB** outbox and flush when the LAN returns.
+Queued rows are visibly marked pending. Server deduplicates on a client-generated
+`txn_uuid`, generated once before the first attempt and never regenerated.
+
+**Live view.** The same app serves a read-only dashboard — activity, stock, alerts —
+updating off the SSE stream. It is how the store is demonstrated and audited before the
+wall tablet exists, and it moves no stock.
 
 ---
 
 ## 13. Milestones — each gated by its acceptance test
 
-Status as of the current branch: **M0–M4 complete and gated; M8's server half done.**
-M5–M7 and M9 need the Tauri clients, which are not built yet — see the README.
+Status as of the current branch: **M0–M6 complete and gated, plus M8's server half
+and M10.** M7 (the admin desktop app) and M9 are not built yet — see the README.
 
 | # | Deliverable | Acceptance gate |
 |---|---|---|
@@ -494,11 +523,12 @@ M5–M7 and M9 need the Tauri clients, which are not built yet — see the READM
 | **M2** | `store-adms` + `mock_device` + `store-cli device-probe` | Mock device completes handshake, pushes 500 ATTLOG rows including a full duplicate retry batch → exactly 500 punches persisted |
 | **M3** | Session state machine | Exhaustive transition tests: tailgating (2 unclaimed, 2 claims), expiry, double-claim rejection, post-close submit → `410` |
 | **M4** | `store-server`: REST, auth, SSE | End-to-end integration test: mock punch → claim → issue 5 → on-hand drops by 5 → ledger row correct → SSE events observed in order |
-| **M5** | `store-tablet` issue flow (scan + search) | Signed APK installs on the tablet; full issue against a live server over LAN; scan-to-confirm timed under 8 s |
+| **M5** | `store-web` issue flow (scan + search) | Terminal loads on a phone; full issue against a live server over LAN; scan-to-confirm timed under 8 s |
 | **M6** | Receipt (PUT IN) flow | Storekeeper adds 100 inserts; on-hand rises; ledger shows `RECEIPT` with unit cost |
 | **M7** | `store-admin`: catalog CRUD, Code128 labels, stock views | Create item → print label → scan that printed label on the tablet → correct item resolves |
 | **M8** | Alerts + reports | Issuing past the reorder level raises `LOW`, then `EMPTY` at zero; both appear on the dashboard and as a tablet banner; consumption-by-machine CSV matches a hand-computed fixture |
-| **M9** | Hardening | Tablet offline outbox survives a 10-minute LAN cut with zero duplicates; nightly `pg_dump`; `store-cli reconcile` reports zero drift; installers built |
+| **M9** | Hardening | Terminal offline outbox survives a 10-minute LAN cut with zero duplicates; nightly `pg_dump`; `store-cli reconcile` reports zero drift; installers built |
+| **M10** | CI/CD + OTA | Tagged release publishes a draft to the public releases repo; `store-cli update --apply` verifies sha256, swaps and keeps `.old`; a new build reaches every device on next load. See `OTA-SETUP.md` |
 
 Deferred to v2 — do not build: tool return/regrind, tool life, PO/GRN, Tally/ERP sync,
 WhatsApp/email alerts, multi-store, vending-machine integration, mobile app for non-tablet phones.

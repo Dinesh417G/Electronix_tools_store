@@ -8,8 +8,9 @@ where this README and that file disagree, that file wins.
 
 ## What works today
 
-Milestones **M0–M4** are complete and passing their acceptance gates (§13), plus
-the server half of **M8**. The physical loop runs end to end:
+Milestones **M0–M6** are complete and passing their acceptance gates (§13), plus
+the server half of **M8** and the CI/CD + OTA work (**M10**). The physical loop
+runs end to end:
 
 ```
 door terminal pushes a punch  →  server persists it and offers a session
@@ -23,12 +24,24 @@ door terminal pushes a punch  →  server persists it and offers a session
 | `store-adms` | Complete. ADMS protocol, command queue, mock device. |
 | `store-db` | Complete. Migrations, repositories, auth. |
 | `store-server` | REST + SSE + ADMS listener, session service, reaper. |
-| `store-cli` | `seed`, `reconcile`, `export`, `device-probe`. |
-| `store-tablet` | **Not built.** M5/M6 — Tauri 2 Android. |
+| `store-cli` | `seed`, `reconcile`, `export`, `device-probe`, `update`. |
+| `store-web` | Mobile-first terminal + live view. Embedded in `store-server`. |
 | `store-admin` | **Not built.** M7 — Tauri 2 desktop. |
 
-The REST API those two clients need is finished and tested, so they are UI work
-against a stable contract rather than a design problem.
+### The terminal is a web app now
+
+`CLAUDE.md` §2 originally locked the tablet client to Tauri 2 / Android. That
+decision changed, and the file records why: the wall tablet does not exist yet,
+and a web terminal runs on a phone today, scales to the tablet unchanged, and
+updates over the air with no signing key and no device visits.
+
+Open the server's address on any phone on the plant LAN, enrol it once with the
+shared secret, and it is a terminal. Add it to the home screen and it behaves
+like an app.
+
+Barcode scanning uses the browser's `BarcodeDetector` — present on Android
+Chrome, absent on iOS Safari. Where it is missing the terminal opens on search
+instead of a camera that will not work.
 
 ## Running it
 
@@ -39,9 +52,14 @@ createdb electronix_store
 export DATABASE_URL=postgres://localhost/electronix_store
 export STORE_ENROLMENT_SECRET=pick-something-long
 
+cd crates/store-web && npm ci && npm run build && cd ../..
 cargo run -p store-cli -- seed        # demo catalog, operators, machines
 cargo run -p store-server             # migrates on boot, listens on :8080
 ```
+
+Then open `http://<server-ip>:8080` on a phone on the same network, enrol it with
+the secret above, and you have a terminal. The ⚙ button in the corner switches
+between the terminal and the live view.
 
 Point the door terminal's ADMS server address at the server PC and port 8080.
 That is the entire integration surface — the terminal owns the lock and opens
@@ -79,13 +97,38 @@ the capture actually contains and update `CLAUDE.md` if they differ. Keep the
 capture as a CI fixture (§14) — when firmware changes, that fixture is how you
 find out.
 
+## Updates
+
+Two channels, documented in full in [`OTA-SETUP.md`](OTA-SETUP.md):
+
+```sh
+store-cli update --check        # what's available
+sudo systemctl stop store-server
+store-cli update --apply        # verifies sha256, swaps, keeps store-server.old
+sudo systemctl start store-server
+```
+
+Phones and tablets need nothing: the terminal is embedded in the server binary,
+so replacing the server replaces the UI, and each device is offered a reload on
+its next load. Rollback is one rename.
+
 ## Development
 
 ```sh
+# The web terminal (store-server embeds the built bundle)
+cd crates/store-web && npm ci && npm run build
+
 cargo test --workspace          # needs DATABASE_URL; creates throwaway databases
 cargo clippy --workspace --all-targets -- -D warnings
 cargo run -p store-cli -- reconcile
 ```
+
+`store-server` builds without Node installed — it then serves a page saying
+which command is missing, rather than failing to compile. The API and the door
+listener do not depend on the UI.
+
+For UI work, `npm run dev` in `crates/store-web` proxies to a `store-server` on
+:8080 with hot reload.
 
 Queries are compile-time checked (§2). After changing any SQL, regenerate the
 offline data or CI's no-database build will fail:

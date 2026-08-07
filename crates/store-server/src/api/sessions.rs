@@ -14,7 +14,7 @@ use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 use uuid::Uuid;
 
-use crate::auth::Auth;
+use crate::auth::{Auth, StreamAuth};
 use crate::error::{ApiError, ApiResult};
 use crate::events::ServerEvent;
 use crate::state::AppState;
@@ -26,7 +26,7 @@ use crate::state::AppState;
 /// panel before the operator has finished walking over.
 pub async fn stream(
     State(state): State<AppState>,
-    _auth: Auth,
+    _auth: StreamAuth,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let rx = state.bus.subscribe();
 

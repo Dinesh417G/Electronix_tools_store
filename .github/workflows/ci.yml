@@ -1,41 +1,106 @@
+# PR/main checks. Modelled on electronix-dnc's ci.yml — same shape, same
+# SHA-pinning discipline — with one deliberate difference: this product's server
+# is cross-platform and its terminal is a web app, so the loop runs on Linux.
+# DNC pins windows-latest because DNC is a Windows-only desktop product; copying
+# that here would double the bill for nothing.
+
 name: CI
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: ["**"]
-  pull_request:
+
+permissions:
+  contents: read
+
+# Superseded pushes to the same branch/PR cancel the older run (unlike
+# release.yml, where cancellation is forbidden).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: "-D warnings"
 
 jobs:
+  # The web terminal. Built first and cached as an artifact, because
+  # store-server embeds the bundle and the test job needs it present to check
+  # the routes that serve it.
+  web:
+    name: web terminal
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Node 20
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: crates/store-web/package-lock.json
+
+      - name: npm ci
+        run: npm ci
+        working-directory: crates/store-web
+
+      - name: typecheck
+        run: npm run typecheck
+        working-directory: crates/store-web
+
+      - name: build
+        run: npm run build
+        working-directory: crates/store-web
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: store-web-dist
+          path: crates/store-web/dist
+          retention-days: 1
+
   # Format and the offline build. Deliberately has no database: this job is what
   # proves the checked-in .sqlx data is current, so a contributor who changes a
   # query without re-running `cargo sqlx prepare` finds out here.
   check:
-    name: fmt + offline build
+    name: fmt + clippy (offline)
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: web
     env:
       SQLX_OFFLINE: "true"
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v5
 
-      - name: cargo fmt
-        run: cargo fmt --all -- --check
+      # SHA-pinned, following the DNC convention: a moved tag must not be able
+      # to swap action code underneath a job. SHAs resolved 2026-08-07.
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: store-web-dist
+          path: crates/store-web/dist
+
+      - name: cargo fmt --check
+        run: cargo fmt --all --check
 
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-  # The real work. §14: integration tests run against a real throwaway Postgres,
-  # never a mocked database.
+  # The real work. §14: integration tests run against a real throwaway
+  # Postgres, never a mocked database.
   test:
     name: test (postgres 16)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: web
     services:
       postgres:
         image: postgres:16
@@ -52,9 +117,19 @@ jobs:
     env:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/electronix_store
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v5
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: store-web-dist
+          path: crates/store-web/dist
 
       - name: Install sqlx-cli
         run: cargo install sqlx-cli --version 0.8.6 --no-default-features --features rustls,postgres --locked
@@ -86,11 +161,13 @@ jobs:
   adms-fixtures:
     name: ADMS protocol fixtures
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       SQLX_OFFLINE: "true"
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v5
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Replay captured device traffic
         run: cargo test -p store-adms

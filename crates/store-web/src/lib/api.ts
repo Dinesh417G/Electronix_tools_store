@@ -1,0 +1,322 @@
+// Typed client for the store-server REST surface (CLAUDE.md §11).
+//
+// One rule shapes the error handling here: the status codes the spec calls out
+// are load-bearing UX, not incidental. A 409 on an issue means "count the bin",
+// a 410 means "your session closed, tap your name again". Both must survive the
+// trip from Postgres to the operator's screen intact, so `ApiError` keeps the
+// status rather than flattening everything into a string.
+
+export const TOKEN_KEY = "electronix.store.token";
+export const TERMINAL_KEY = "electronix.store.terminal_id";
+
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+
+  /** §7 — an ISSUE that would push stock below zero. */
+  get isStockConflict() {
+    return this.status === 409 && this.code === "conflict";
+  }
+
+  /** §10 — the session closed or expired under the operator. */
+  get isSessionGone() {
+    return this.status === 410;
+  }
+
+  /** The device token is missing, wrong or revoked: re-enrol. */
+  get isUnauthorized() {
+    return this.status === 401;
+  }
+}
+
+/** Thrown when the request never reached the server at all. */
+export class OfflineError extends Error {
+  constructor(cause?: unknown) {
+    super("The store server is not reachable.");
+    this.name = "OfflineError";
+    this.cause = cause;
+  }
+}
+
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function getTerminalId(): string | null {
+  return localStorage.getItem(TERMINAL_KEY);
+}
+
+export function saveCredentials(terminalId: string, token: string) {
+  localStorage.setItem(TERMINAL_KEY, terminalId);
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
+export function clearCredentials() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(TERMINAL_KEY);
+}
+
+async function request<T>(
+  path: string,
+  init: RequestInit = {},
+  { auth = true }: { auth?: boolean } = {},
+): Promise<T> {
+  const headers = new Headers(init.headers);
+  headers.set("accept", "application/json");
+  if (init.body) headers.set("content-type", "application/json");
+
+  if (auth) {
+    const token = getToken();
+    if (!token) throw new ApiError(401, "unauthorized", "This device is not enrolled.");
+    headers.set("authorization", `Bearer ${token}`);
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(path, { ...init, headers });
+  } catch (cause) {
+    // A fetch that throws never reached the server. Distinguishing this from an
+    // error response is what lets the outbox know a write is safe to queue.
+    throw new OfflineError(cause);
+  }
+
+  if (response.status === 204) return undefined as T;
+
+  const text = await response.text();
+  const body = text ? safeJson(text) : null;
+
+  if (!response.ok) {
+    const code = (body?.code as string) ?? "error";
+    const message = (body?.message as string) ?? `Request failed (${response.status}).`;
+    throw new ApiError(response.status, code, message);
+  }
+
+  return body as T;
+}
+
+function safeJson(text: string): Record<string, unknown> | null {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+// ── Types mirroring the server's response shapes ────────────────────────
+//
+// Quantities are strings, not numbers. Postgres `numeric(12,3)` does not fit
+// an IEEE double without rounding, and a tool crib that quietly loses a
+// thousandth of a litre of coolant per transaction is exactly the kind of drift
+// §7 exists to prevent. Format for display; never do arithmetic on these.
+
+export interface UnclaimedSession {
+  session_id: string;
+  operator_id: string;
+  emp_code: string;
+  full_name: string;
+  department: string | null;
+  opened_at: string;
+  expires_in_secs: number;
+}
+
+export interface SessionResponse {
+  session_id: string;
+  operator_id: string;
+  emp_code: string;
+  full_name: string;
+  state: string;
+  manual_identity: boolean;
+  tablet_id: string | null;
+}
+
+export interface Item {
+  id: string;
+  item_code: string;
+  description: string;
+  uom: string;
+  category_id: string | null;
+  category_name: string | null;
+  iso_code: string | null;
+  grade: string | null;
+  manufacturer: string | null;
+  mfr_part_no: string | null;
+  bin_location: string | null;
+  unit_cost: string | null;
+  reorder_level: string;
+  reorder_qty: string | null;
+  allow_negative: boolean;
+  active: boolean;
+  on_hand: string;
+  alert_state: "OK" | "LOW" | "EMPTY";
+}
+
+export interface TxnResponse {
+  ledger_id: number;
+  item_id: string;
+  item_code: string;
+  description: string;
+  delta_qty: string;
+  on_hand: string;
+  alert_state: string;
+  crossed_threshold: boolean;
+}
+
+export interface LedgerRow {
+  id: number;
+  item_id: string;
+  item_code: string;
+  description: string;
+  delta_qty: string;
+  txn_type: string;
+  operator_id: string;
+  operator_name: string;
+  session_id: string | null;
+  machine_code: string | null;
+  reason_code: string | null;
+  note: string | null;
+  unit_cost: string | null;
+  created_at: string;
+  reverses_id: number | null;
+}
+
+export interface AlertRow {
+  id: string;
+  item_id: string;
+  item_code: string;
+  description: string;
+  bin_location: string | null;
+  level: "LOW" | "EMPTY";
+  on_hand: string;
+  reorder_level: string;
+  reorder_qty: string | null;
+  raised_at: string;
+  acknowledged_at: string | null;
+}
+
+export interface AlertSummary {
+  low: number;
+  empty: number;
+}
+
+export interface Machine {
+  id: string;
+  code: string;
+  name: string | null;
+}
+
+export interface ReasonCode {
+  id: string;
+  code: string;
+  label: string;
+  applies_to: "ISSUE" | "RECEIPT";
+  sort_order: number;
+}
+
+export interface VersionInfo {
+  version: string;
+  git_sha: string;
+  built_at: string;
+}
+
+export interface IssueBody {
+  session_id: string;
+  item_id: string;
+  qty: string;
+  machine_id?: string | null;
+  reason_id?: string | null;
+  note?: string | null;
+  client_txn_uuid: string;
+}
+
+export interface ReceiptBody {
+  session_id: string;
+  item_id: string;
+  qty: string;
+  unit_cost?: string | null;
+  reason_id?: string | null;
+  note?: string | null;
+  client_txn_uuid: string;
+}
+
+// ── Endpoints ───────────────────────────────────────────────────────────
+
+export const api = {
+  version: () => request<VersionInfo>("/api/v1/version", {}, { auth: false }),
+
+  enrol: (terminalId: string, name: string, secret: string) =>
+    request<{ tablet_id: string; token: string }>(
+      "/api/v1/auth/tablet",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          tablet_id: terminalId,
+          name,
+          enrolment_secret: secret,
+        }),
+      },
+      { auth: false },
+    ),
+
+  unclaimed: () => request<UnclaimedSession[]>("/api/v1/sessions/unclaimed"),
+
+  claim: (sessionId: string, terminalId: string) =>
+    request<SessionResponse>(`/api/v1/sessions/${sessionId}/claim`, {
+      method: "POST",
+      body: JSON.stringify({ tablet_id: terminalId }),
+    }),
+
+  manualSession: (empCode: string, pin: string, terminalId: string) =>
+    request<SessionResponse>("/api/v1/sessions/manual", {
+      method: "POST",
+      body: JSON.stringify({ emp_code: empCode, pin, tablet_id: terminalId }),
+    }),
+
+  closeSession: (sessionId: string) =>
+    request<SessionResponse>(`/api/v1/sessions/${sessionId}/close`, {
+      method: "POST",
+      body: JSON.stringify({ reason: "DONE" }),
+    }),
+
+  lookup: (barcode: string) =>
+    request<Item>(`/api/v1/items/lookup?barcode=${encodeURIComponent(barcode)}`),
+
+  search: (q: string) =>
+    request<Item[]>(`/api/v1/items/search?q=${encodeURIComponent(q)}&limit=25`),
+
+  issue: (body: IssueBody) =>
+    request<TxnResponse>("/api/v1/txn/issue", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  receipt: (body: ReceiptBody) =>
+    request<TxnResponse>("/api/v1/txn/receipt", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  stock: (params = "") => request<Item[]>(`/api/v1/stock?${params}`),
+
+  ledger: (params = "limit=50") => request<LedgerRow[]>(`/api/v1/ledger?${params}`),
+
+  alerts: () => request<AlertRow[]>("/api/v1/alerts"),
+
+  alertSummary: () => request<AlertSummary>("/api/v1/alerts/summary"),
+
+  machines: () => request<Machine[]>("/api/v1/machines"),
+
+  reasonCodes: () => request<ReasonCode[]>("/api/v1/reason-codes"),
+};
+
+/** Format a server decimal string for display, trimming pointless zeros. */
+export function formatQty(raw: string): string {
+  if (!raw.includes(".")) return raw;
+  const trimmed = raw.replace(/0+$/, "").replace(/\.$/, "");
+  return trimmed === "" || trimmed === "-" ? "0" : trimmed;
+}

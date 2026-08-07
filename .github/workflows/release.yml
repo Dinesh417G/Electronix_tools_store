@@ -1,0 +1,237 @@
+# Release pipeline. Deliberately the same shape as electronix-dnc's release.yml:
+# a version tag builds the artifacts and publishes a DRAFT release to a PUBLIC
+# releases repo. Flipping the draft to published — one tap from a phone — is the
+# staging gate, so nothing reaches a shop floor without a human deciding it
+# should.
+#
+# The version model is DNC's, unchanged and worth restating: **the tag is only
+# the TRIGGER; the committed manifest is the truth.** This workflow refuses to
+# run if the tag does not already equal the version in Cargo.toml. CI never
+# mutates versions.
+#
+# Two OTA channels come out of this, and they are very different animals:
+#
+#   store-server   a binary on the store's server PC. Updated the DNC way:
+#                  sha256-verified download, atomic swap, `.old` kept for a
+#                  one-minute rollback. `store-cli update` does it.
+#
+#   web terminal   every phone and tablet in the shop. Updated by *being served
+#                  a new bundle* — the service worker notices and offers a
+#                  reload. There is no signing key to lose and nothing to
+#                  install, which is the single biggest reason the terminal is
+#                  a web app rather than an APK.
+#
+# Secrets required (Settings → Secrets and variables → Actions):
+#   RELEASES_REPO_TOKEN   fine-grained PAT for the public releases repo
+#                         (Contents: RW). The default GITHUB_TOKEN cannot
+#                         create releases on another repository.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (x.y.z, no leading v) — must equal the version already committed in Cargo.toml"
+        required: true
+        type: string
+      publish_immediately:
+        description: "Publish immediately instead of leaving the release a draft"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+# One release at a time, and NEVER cancel one that is half-published.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  RELEASES_REPO: Dinesh417G/electronix-tool-store-releases
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: electronix_store
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/electronix_store
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Resolve and validate version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            v="${INPUT_VERSION#v}"
+          else
+            v="${GITHUB_REF_NAME#v}"
+          fi
+          if ! printf '%s' "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Version must be plain semver x.y.z (got '$v')."
+            exit 1
+          fi
+
+          # The tag is the trigger; the manifest is the truth.
+          committed=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')
+          if [ "$committed" != "$v" ]; then
+            echo "::error::Tag v$v does not match the version committed in Cargo.toml ($committed). Bump the manifest and commit it first — this pipeline never mutates versions."
+            exit 1
+          fi
+
+          web=$(node -p "require('./crates/store-web/package.json').version")
+          if [ "$web" != "$v" ]; then
+            echo "::error::crates/store-web/package.json is $web, expected $v."
+            exit 1
+          fi
+
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          # Tag refs cannot reuse caches saved by other tags, so make this run's
+          # cache saveable even if a later step fails.
+          cache-on-failure: true
+
+      - name: Install Node 20
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: crates/store-web/package-lock.json
+
+      - name: Build the web terminal
+        run: |
+          npm ci
+          npm run build
+        working-directory: crates/store-web
+
+      # The test gate, as separate visible steps. A release that skips these is
+      # a release nobody can vouch for.
+      - name: Install sqlx-cli
+        run: cargo install sqlx-cli --version 0.8.6 --no-default-features --features rustls,postgres --locked
+
+      - name: Run migrations
+        run: sqlx migrate run --source crates/store-db/migrations
+
+      - name: Test gate
+        run: cargo test --workspace --all-targets
+
+      - name: Lint gate
+        run: |
+          cargo fmt --all --check
+          cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Build release binaries
+        env:
+          # Makes a rebuild of the same commit byte-identical, which is what
+          # makes the sha256 below worth checking.
+          SOURCE_DATE_EPOCH: ${{ github.event.repository.pushed_at }}
+        run: cargo build --release -p store-server -p store-cli
+
+      - name: Stage artifacts and write the OTA manifest
+        id: stage
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+
+          cp target/release/store-server "dist/store-server-${VERSION}-linux-x86_64"
+          cp target/release/store-cli "dist/store-cli-${VERSION}-linux-x86_64"
+
+          server_sha=$(sha256sum "dist/store-server-${VERSION}-linux-x86_64" | cut -d' ' -f1)
+          cli_sha=$(sha256sum "dist/store-cli-${VERSION}-linux-x86_64" | cut -d' ' -f1)
+
+          # server.json is what `store-cli update` reads. Same idea as DNC's
+          # daemon.json: the client verifies sha256 before swapping anything in,
+          # so a truncated download can never become a running binary.
+          cat > dist/server.json <<JSON
+          {
+            "version": "${VERSION}",
+            "notes": "https://github.com/${{ env.RELEASES_REPO }}/releases/tag/v${VERSION}",
+            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "platforms": {
+              "linux-x86_64": {
+                "url": "https://github.com/${{ env.RELEASES_REPO }}/releases/download/v${VERSION}/store-server-${VERSION}-linux-x86_64",
+                "sha256": "${server_sha}"
+              }
+            },
+            "cli": {
+              "linux-x86_64": {
+                "url": "https://github.com/${{ env.RELEASES_REPO }}/releases/download/v${VERSION}/store-cli-${VERSION}-linux-x86_64",
+                "sha256": "${cli_sha}"
+              }
+            }
+          }
+          JSON
+
+          # The web bundle ships embedded in store-server, so there is no
+          # separate web artifact to publish. It is archived here anyway so a
+          # shop can serve it from its own reverse proxy if it ever wants to.
+          tar -czf "dist/store-web-${VERSION}.tar.gz" -C crates/store-web dist
+
+          sha256sum dist/* > dist/SHA256SUMS
+          cat dist/server.json
+
+      - name: Publish draft release to the public releases repo
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_REPO_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PUBLISH_NOW: ${{ inputs.publish_immediately }}
+        run: |
+          set -euo pipefail
+          draft_flag="--draft"
+          if [ "${PUBLISH_NOW:-false}" = "true" ]; then draft_flag=""; fi
+
+          gh release create "v${VERSION}" \
+            --repo "${{ env.RELEASES_REPO }}" \
+            --title "ElectronIx Tool Store ${VERSION}" \
+            --notes "Server, CLI and the web terminal (embedded in the server binary).
+
+          Update an existing install with:
+
+              store-cli update --apply
+
+          The web terminal updates itself: every phone and tablet picks up the new
+          bundle on its next load and offers a reload." \
+            $draft_flag \
+            dist/store-server-${VERSION}-linux-x86_64 \
+            dist/store-cli-${VERSION}-linux-x86_64 \
+            dist/store-web-${VERSION}.tar.gz \
+            dist/server.json \
+            dist/SHA256SUMS
+
+      - name: Push the tag back (dispatch path only)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git tag "v${VERSION}"
+          git push origin "v${VERSION}"

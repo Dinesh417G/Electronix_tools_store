@@ -1,6 +1,11 @@
 /target
 **/node_modules
-**/dist
+# The web bundle is a build artifact, but the directory itself is committed:
+# rust-embed needs it to exist, and store-server must stay buildable without
+# Node installed (it then serves a page saying exactly which command is
+# missing, rather than failing to compile).
+/crates/store-web/dist/*
+!/crates/store-web/dist/.gitkeep
 /crates/store-tablet/src-tauri/target
 /crates/store-admin/src-tauri/target
 *.apk

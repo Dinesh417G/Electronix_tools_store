@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+/* Shop-floor defaults.
+ *
+ * §12: "Design for a shop-floor operator with oily gloves and no patience."
+ * Everything here serves that: no text selection to fight with, no tap
+ * highlight flash, no accidental pull-to-refresh mid-transaction, and touch
+ * targets that a gloved thumb actually hits. */
+
+@theme {
+  --color-take-out: oklch(0.55 0.21 25);
+  --color-take-out-dark: oklch(0.45 0.19 25);
+  --color-put-in: oklch(0.6 0.16 150);
+  --color-put-in-dark: oklch(0.5 0.15 150);
+}
+
+:root {
+  color-scheme: dark;
+  -webkit-text-size-adjust: 100%;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-slate-950);
+  color: var(--color-slate-100);
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  /* A stray swipe must not reload the page in the middle of an issue. */
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Text selection is never useful here and always in the way. Inputs keep it. */
+body :not(input):not(textarea) {
+  user-select: none;
+}
+
+.safe-top {
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+}
+.safe-bottom {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+/* Minimum comfortable target for a gloved hand. */
+.tap {
+  min-height: 3.5rem;
+  touch-action: manipulation;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

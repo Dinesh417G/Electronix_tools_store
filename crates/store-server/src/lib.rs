@@ -19,6 +19,7 @@ pub mod config;
 pub mod error;
 pub mod events;
 pub mod state;
+pub mod web;
 
 use std::sync::Arc;
 
@@ -45,7 +46,10 @@ pub fn app(state: AppState) -> (Router, Arc<dyn IdentitySource>) {
 
     let router = Router::new()
         .merge(api::router(state))
-        .merge(store_adms::router(adms));
+        .merge(store_adms::router(adms))
+        // The web terminal is merged last: its `/{*path}` fallback would
+        // otherwise shadow the API and `/iclock/*` routes.
+        .merge(web::router());
 
     (router, source)
 }
