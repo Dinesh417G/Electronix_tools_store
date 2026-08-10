@@ -538,12 +538,26 @@ async fn an_offline_outbox_replay_does_not_double_book(pool: sqlx::PgPool) {
     let first = h
         .post_json(TABLET_A, "/api/v1/txn/issue", body.clone())
         .await;
-    // The replay arrives after the session has already closed on submit, so it
-    // must be answered from the dedup path rather than being refused — the
-    // tablet is retrying something the server already accepted.
+
+    // The replay arrives after the session has closed on submit (§10). It must
+    // be answered from the ledger, not refused: the tablet is retrying a
+    // request the server already committed, and telling it "gone" would have
+    // the operator re-enter the issue by hand — a real duplicate, created by
+    // the mechanism meant to prevent one.
     let (status, replay) = h.post_raw(TABLET_A, "/api/v1/txn/issue", body).await;
 
-    assert_eq!(status, 410, "expected the closed-session refusal: {replay}");
+    assert_eq!(
+        status, 200,
+        "the replay should be answered, not refused: {replay}"
+    );
+    assert_eq!(
+        replay["ledger_id"], first["ledger_id"],
+        "the replay should return the row that already exists"
+    );
+    assert_eq!(
+        replay["crossed_threshold"], false,
+        "a replay is not a fresh threshold crossing"
+    );
 
     // Either way, exactly one row and one deduction.
     assert_eq!(dec_of(&first["on_hand"]), dec!(93));

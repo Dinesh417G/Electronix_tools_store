@@ -156,7 +156,12 @@ pub async fn record(pool: &PgPool, new: &NewMovement) -> Result<MovementReceipt>
 }
 
 /// Look up a previously recorded movement by the tablet's own transaction id.
-async fn find_by_client_uuid(
+///
+/// Public because the API layer has to answer a replay *before* it authorises
+/// the session: an idempotency key means "this exact request was already
+/// processed", and re-authorising it would refuse a transaction that is already
+/// in the ledger.
+pub async fn find_by_client_uuid(
     pool: &PgPool,
     client_txn_uuid: Uuid,
 ) -> Result<Option<MovementReceipt>> {

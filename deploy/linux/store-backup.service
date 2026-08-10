@@ -1,0 +1,29 @@
+# The nightly pg_dump (CLAUDE.md §13, M9). Triggered by store-backup.timer.
+#
+# `store-cli backup` does more than pg_dump: it reconciles the ledger first,
+# restores the dump into a scratch database to prove it is restorable, and
+# rotates old ones. A backup nobody has ever restored is a hope, not a backup.
+
+[Unit]
+Description=ElectronIx Tool Store nightly backup
+After=postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=oneshot
+User=electronix
+Group=electronix
+EnvironmentFile=/etc/electronix-store/server.env
+ExecStart=/opt/electronix-store/store-cli backup --out-dir /var/backups/electronix-store --keep 14
+
+# A failed backup must be visible. journalctl -u store-backup shows why, and
+# the unit's failed state is what a monitoring check looks at.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/backups/electronix-store
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=store-backup

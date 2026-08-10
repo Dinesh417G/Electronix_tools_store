@@ -477,6 +477,9 @@ POST   /api/v1/admin/labels/print          Code128 label batch → PDF
                                            body: { item_ids[], copies? }
                                            storekeeper or admin; max 500 labels
 GET    /api/v1/admin/health                DB, device last-seen, ledger reconciliation status
+
+# store-cli — operations, not HTTP
+store-cli seed | reconcile | export | device-probe | backup | update
 ```
 
 Auth: tablets hold a device token; admin uses operator login. Every write carries an
@@ -529,9 +532,9 @@ wall tablet exists, and it moves no stock.
 
 ## 13. Milestones — each gated by its acceptance test
 
-Status as of the current branch: **M0–M8 and M10 complete and gated.** M9
-(hardening: a 10-minute LAN-cut soak, nightly `pg_dump`, installers) is not built
-yet — see the README.
+Status as of the current branch: **M0–M10 complete and gated.** What remains is
+not code: the ADMS capture against real firmware (§9's warning), and printing a
+label sheet to close M7's optical half. See the README.
 
 | # | Deliverable | Acceptance gate |
 |---|---|---|
@@ -544,7 +547,7 @@ yet — see the README.
 | **M6** | Receipt (PUT IN) flow | Storekeeper adds 100 inserts; on-hand rises; ledger shows `RECEIPT` with unit cost |
 | **M7** | Admin console: catalog CRUD, Code128 labels, stock views | Create item → print label → scan that printed label on the tablet → correct item resolves. **Software half proven** (label rastered at print resolution and decoded back through `/items/lookup`); the optical half needs a real printer and a real scan |
 | **M8** | Alerts + reports | Issuing past the reorder level raises `LOW`, then `EMPTY` at zero; both appear on the dashboard and as a tablet banner; consumption-by-machine CSV matches a hand-computed fixture |
-| **M9** | Hardening | Terminal offline outbox survives a 10-minute LAN cut with zero duplicates; nightly `pg_dump`; `store-cli reconcile` reports zero drift; installers built |
+| **M9** | Hardening | Terminal offline outbox survives a LAN cut with zero duplicates — including the case where the request commits and the acknowledgement is lost; `store-cli backup` dumps, restores into a scratch database and compares before rotating; `store-cli reconcile` reports zero drift; installers for Linux (systemd) and Windows (WinSW) |
 | **M10** | CI/CD + OTA | Tagged release publishes a draft to the public releases repo; `store-cli update --apply` verifies sha256, swaps and keeps `.old`; a new build reaches every device on next load. See `OTA-SETUP.md` |
 
 Deferred to v2 — do not build: tool return/regrind, tool life, PO/GRN, Tally/ERP sync,

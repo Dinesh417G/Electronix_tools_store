@@ -8,7 +8,7 @@ where this README and that file disagree, that file wins.
 
 ## What works today
 
-Milestones **M0–M8** and **M10** are complete and passing their acceptance gates
+All ten milestones (**M0–M10**) are complete and passing their acceptance gates
 (§13). The physical loop runs end to end:
 
 ```
@@ -120,6 +120,36 @@ focus need a real sheet and a real scan. Print one before trusting it in
 production — that is a ten-minute job and it is the only thing between here and
 a closed gate.
 
+## Installing on a store PC
+
+```sh
+# Linux
+sudo deploy/linux/install.sh
+
+# Windows (elevated PowerShell, with WinSW beside the script)
+.\deploy\windows\Install-StoreServer.ps1 -WinSwPath .\WinSW-x64.exe
+```
+
+Both install the server as a service, generate an enrolment secret, and schedule
+the nightly backup for 02:15. Neither touches PostgreSQL — a tool crib's database
+should be set up deliberately, with a password somebody chose.
+
+Re-running upgrades in place and keeps `store-server.old`, so a rollback is one
+rename. Uninstalling leaves the database, the config and the backups alone.
+
+## Backups
+
+```sh
+store-cli backup --out-dir /var/backups/electronix-store --keep 14
+```
+
+More than a `pg_dump`: it reconciles the ledger first (a drifted database is
+still backed up, but the filename says `DRIFTED`), restores the dump into a
+scratch database, and checks the restored ledger against the original before
+rotating. A backup nobody has ever restored is a hope, not a backup.
+
+Installed as a systemd timer or a scheduled task, nightly at 02:15.
+
 ## Updates
 
 Two channels, documented in full in [`OTA-SETUP.md`](OTA-SETUP.md):
@@ -159,6 +189,24 @@ offline data or CI's no-database build will fail:
 ```sh
 cargo sqlx prepare --workspace -- --all-targets
 ```
+
+### The offline outbox
+
+§12 queues writes to IndexedDB when the LAN drops and flushes them when it
+returns. The failure that matters is not the request that never arrives — it is
+the one that **arrives, commits, and whose acknowledgement is lost**. The tablet
+cannot tell those apart, so it retries.
+
+The server answers such a retry from the ledger, *before* it authorises the
+session. That ordering is load-bearing: §10 closes a session on submit, so every
+replay arrives at a closed session, and authorising first would answer `410 Gone`
+for a transaction already recorded. The operator would be told it was not saved
+and would re-enter it by hand — a real duplicate, created by the mechanism meant
+to prevent one.
+
+Proven both ways: `crates/store-server/tests/outbox_soak.rs` for the server
+property, and `crates/store-web/tests/outbox-soak.mjs`, which drives a real
+browser through a real cut including a deliberately discarded acknowledgement.
 
 ### The one rule to internalise
 

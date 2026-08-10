@@ -17,7 +17,6 @@
 //! the service worker. That is the whole reason the terminal is a web app.
 
 use std::io::Write;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
@@ -246,8 +245,7 @@ fn swap_in(target: &Path, bytes: &[u8]) -> Result<()> {
         file.sync_all()?;
     }
 
-    std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o755))
-        .context("could not make the new binary executable")?;
+    make_executable(&staged).context("could not make the new binary executable")?;
 
     let backup = PathBuf::from(format!("{}.old", target.display()));
     if target.exists() {
@@ -269,14 +267,35 @@ fn swap_in(target: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
+/// Mark a freshly written binary as executable.
+///
+/// A no-op on Windows, where executability comes from the `.exe` extension
+/// rather than from a permission bit. Skipping the whole call there would be
+/// simpler to write and worse to read — this way the swap sequence is the same
+/// on both platforms, and the difference lives in one named place.
+#[cfg(unix)]
+fn make_executable(path: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
+}
+
+#[cfg(not(unix))]
+fn make_executable(_path: &Path) -> std::io::Result<()> {
+    Ok(())
+}
+
 /// Where the running server most likely lives.
 fn default_server_path() -> Result<PathBuf> {
     let exe = std::env::current_exe().context("could not find our own path")?;
     let dir = exe.parent().context("executable has no parent directory")?;
-    let candidate = dir.join("store-server");
-
-    if candidate.exists() {
-        return Ok(candidate);
+    // On Windows the server is store-server.exe; everywhere else it has no
+    // extension. Checking both means `--target` is only needed for genuinely
+    // unusual layouts.
+    for name in ["store-server", "store-server.exe"] {
+        let candidate = dir.join(name);
+        if candidate.exists() {
+            return Ok(candidate);
+        }
     }
 
     bail!(
@@ -388,8 +407,12 @@ mod tests {
         );
 
         // And it is executable, or the swap would have bricked the service.
-        let mode = std::fs::metadata(&target).unwrap().permissions().mode();
-        assert_eq!(mode & 0o111, 0o111, "new binary is not executable");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&target).unwrap().permissions().mode();
+            assert_eq!(mode & 0o111, 0o111, "new binary is not executable");
+        }
 
         std::fs::remove_dir_all(&dir).ok();
     }

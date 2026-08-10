@@ -1,0 +1,20 @@
+# Nightly, at 02:15 local time.
+#
+# Not on the hour: 02:00 is when every other cron job on the machine fires, and
+# a pg_dump competing with a log rotation for the same disk takes longer than
+# both would separately.
+
+[Unit]
+Description=Nightly ElectronIx Tool Store backup
+Documentation=man:store-cli(1)
+
+[Timer]
+OnCalendar=*-*-* 02:15:00
+# A shop PC gets switched off. If the machine was down at 02:15, back up as
+# soon as it comes back rather than skipping the night entirely.
+Persistent=true
+# Spread the load if several stores share a backup target.
+RandomizedDelaySec=15m
+
+[Install]
+WantedBy=timers.target

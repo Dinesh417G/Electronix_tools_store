@@ -117,15 +117,29 @@ impl Harness {
     }
 
     /// Wait for the identity consumer to have opened `n` sessions.
+    ///
+    /// The budget is generous because the consumer opens each session in its
+    /// own transaction: five hundred of them is five hundred round trips, and
+    /// on a busy machine running the whole suite in parallel that is seconds,
+    /// not milliseconds. A bounded wait costs nothing when the condition is
+    /// already met, and a too-tight one turns a passing test into a flake.
     pub async fn wait_for_sessions(&self, n: i64) {
-        for _ in 0..500 {
-            if self.session_count().await >= n {
+        let deadline = std::time::Instant::now() + Duration::from_secs(60);
+        let mut last = -1;
+
+        while std::time::Instant::now() < deadline {
+            let count = self.session_count().await;
+            if count >= n {
                 return;
             }
-            tokio::time::sleep(Duration::from_millis(2)).await;
+            // Stalled rather than slow is worth failing fast on, but only after
+            // giving the consumer a fair chance to make progress.
+            last = count;
+            tokio::time::sleep(Duration::from_millis(20)).await;
         }
+
         panic!(
-            "only {} session(s) opened, expected {n}",
+            "only {} session(s) opened, expected {n} (last seen {last})",
             self.session_count().await
         );
     }

@@ -156,6 +156,49 @@ jobs:
       - name: Ledger reconciles
         run: cargo run -p store-cli -- reconcile
 
+      # M9: the nightly backup, end to end — dump, restore into a scratch
+      # database, compare the ledger against the original, rotate. A backup
+      # nobody has ever restored is a hope, not a backup, and this is where we
+      # find out it stopped working.
+      - name: Backup round-trips
+        run: cargo run -p store-cli -- backup --out-dir "$RUNNER_TEMP/backups" --keep 3
+
+  # M9: the deploy scripts are what a shop actually runs. A syntax error in
+  # them is discovered at the worst possible moment otherwise.
+  deploy-scripts:
+    name: deploy scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: Shell syntax
+        run: |
+          bash -n deploy/linux/install.sh
+          bash -n deploy/linux/uninstall.sh
+      - name: systemd unit syntax
+        run: |
+          # The binaries are not installed on the runner, so the only expected
+          # complaint is about ExecStart not existing.
+          for unit in deploy/linux/*.service deploy/linux/*.timer; do
+            out=$(systemd-analyze verify "$unit" 2>&1 || true)
+            echo "$out"
+            if echo "$out" | grep -v "is not executable" | grep -qi "error\|invalid\|unknown key"; then
+              echo "::error::$unit failed verification"
+              exit 1
+            fi
+          done
+      - name: PowerShell syntax
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($f in Get-ChildItem deploy/windows -Filter *.ps1) {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $f.FullName, [ref]$null, [ref]$errors) | Out-Null
+            if ($errors) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
+            Write-Host "ok  $($f.Name)"
+          }
+
   # §14: "Keep the raw ADMS capture from M2 as a fixture and replay it in CI
   # forever. When firmware changes, that fixture is how you find out."
   adms-fixtures:

@@ -66,6 +66,59 @@ pub struct TxnResponse {
     pub crossed_threshold: bool,
 }
 
+/// Answer a replay from the record, if this exact transaction is already in the
+/// ledger.
+///
+/// This runs **before** session authorisation, and the order matters. §12's
+/// outbox retries a request whose response was lost — the server committed it,
+/// the acknowledgement never arrived. By then the session has closed on submit
+/// (§10), so authorising first would answer `410 Gone` for a transaction that
+/// is sitting in the ledger. The tablet would report it to the operator as
+/// refused, and the operator would re-enter it by hand: a real duplicate,
+/// created by the very mechanism meant to prevent one.
+///
+/// An idempotency key means "this exact request was already processed". The
+/// only correct answer is the receipt we already produced.
+async fn replayed(
+    state: &AppState,
+    client_txn_uuid: Option<Uuid>,
+    item_id: Uuid,
+) -> ApiResult<Option<Json<TxnResponse>>> {
+    let Some(client_txn_uuid) = client_txn_uuid else {
+        return Ok(None);
+    };
+    let Some(receipt) =
+        store_db::ledger::find_by_client_uuid(&state.pool, client_txn_uuid).await?
+    else {
+        return Ok(None);
+    };
+
+    // Guard against a client reusing one key for a different item — that is a
+    // bug on the tablet, and answering with the wrong item's receipt would turn
+    // it into a stock discrepancy.
+    if receipt.item_id != item_id {
+        return Err(ApiError::Conflict(
+            "That transaction id was already used for a different item.".into(),
+        ));
+    }
+
+    let item = store_db::items::get(&state.pool, receipt.item_id).await?;
+    tracing::info!(%client_txn_uuid, ledger_id = receipt.ledger_id, "replayed transaction answered from the ledger");
+
+    Ok(Some(Json(TxnResponse {
+        ledger_id: receipt.ledger_id,
+        item_id: receipt.item_id,
+        item_code: item.item_code,
+        description: item.description,
+        delta_qty: receipt.delta_qty,
+        on_hand: receipt.on_hand,
+        alert_state: receipt.alert_state,
+        // Not a fresh crossing: the banner already fired when this row was
+        // first accepted.
+        crossed_threshold: false,
+    })))
+}
+
 /// Check that the session is live, belongs to this tablet, and yield the
 /// operator to bill the movement to.
 ///
@@ -140,6 +193,10 @@ pub async fn issue(
     auth: Auth,
     Json(body): Json<IssueRequest>,
 ) -> ApiResult<Json<TxnResponse>> {
+    if let Some(replay) = replayed(&state, body.client_txn_uuid, body.item_id).await? {
+        return Ok(replay);
+    }
+
     let operator_id = authorise_session(&state, &auth, body.session_id).await?;
     let qty = Qty::new(body.qty)?;
 
@@ -171,6 +228,10 @@ pub async fn receipt(
     auth: Auth,
     Json(body): Json<ReceiptRequest>,
 ) -> ApiResult<Json<TxnResponse>> {
+    if let Some(replay) = replayed(&state, body.client_txn_uuid, body.item_id).await? {
+        return Ok(replay);
+    }
+
     let operator_id = authorise_session(&state, &auth, body.session_id).await?;
     let qty = Qty::new(body.qty)?;
 

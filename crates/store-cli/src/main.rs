@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
+mod backup;
 mod probe;
 mod reconcile;
 mod seed;
@@ -51,6 +52,26 @@ enum Command {
         to: Option<String>,
     },
 
+    /// Take a verified `pg_dump`, then rotate old ones (M9).
+    ///
+    /// Restores the dump into a scratch database and re-sums the ledger there.
+    /// A backup nobody has ever restored is a hope, not a backup.
+    Backup {
+        /// Where the dumps live. Defaults to the install layout for this
+        /// platform; the systemd unit and the scheduled task both pass it
+        /// explicitly anyway.
+        #[arg(long, default_value = default_backup_dir())]
+        out_dir: PathBuf,
+
+        /// How many nightly dumps to keep.
+        #[arg(long, default_value_t = 14)]
+        keep: usize,
+
+        /// Skip the restore-and-check step. Faster, and worth much less.
+        #[arg(long)]
+        no_verify: bool,
+    },
+
     /// Check for, or apply, an over-the-air update (OTA).
     ///
     /// Updates the server binary. The web terminal needs no updater: it is
@@ -90,6 +111,15 @@ enum Command {
         #[arg(long, default_value = "adms-capture")]
         out_dir: PathBuf,
     },
+}
+
+/// Where backups go when nobody says otherwise.
+const fn default_backup_dir() -> &'static str {
+    if cfg!(windows) {
+        r"C:\ElectronIx\ToolStore\backups"
+    } else {
+        "/var/backups/electronix-store"
+    }
 }
 
 #[tokio::main]
@@ -154,6 +184,22 @@ async fn run() -> Result<()> {
 
     match cli.command {
         Command::Seed { with_stock } => seed::run(&pool, with_stock).await,
+        Command::Backup {
+            out_dir,
+            keep,
+            no_verify,
+        } => {
+            backup::run(
+                &pool,
+                &database_url,
+                &backup::Options {
+                    out_dir,
+                    keep,
+                    verify: !no_verify,
+                },
+            )
+            .await
+        }
         Command::Reconcile { verbose } => reconcile::run(&pool, verbose).await,
         Command::Export { out, from, to } => reconcile::export(&pool, &out, from, to).await,
         Command::DeviceProbe { .. } | Command::Update { .. } => {

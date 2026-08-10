@@ -1,0 +1,58 @@
+# ElectronIx Tool Store — the server on the store PC.
+#
+# Installed by deploy/linux/install.sh. See OTA-SETUP.md for updates.
+
+[Unit]
+Description=ElectronIx Tool Store server
+Documentation=https://github.com/Dinesh417G/Electronix_tools_store
+# The door terminal pushes over the network and the server needs Postgres, so
+# both have to be up first. `Wants` rather than `Requires` for postgresql: if
+# the database is on another machine, the local unit will not exist.
+After=network-online.target postgresql.service
+Wants=network-online.target postgresql.service
+
+[Service]
+Type=exec
+User=electronix
+Group=electronix
+WorkingDirectory=/opt/electronix-store
+EnvironmentFile=/etc/electronix-store/server.env
+ExecStart=/opt/electronix-store/store-server
+
+# A tool crib that cannot record an issue is a tool crib nobody trusts, so the
+# server comes back rather than staying down. The rate limit stops a crash loop
+# from filling the disk with logs.
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+# Finish in-flight requests before exiting. An ADMS push cut off mid-persist
+# would be retried by the device anyway (§9.1), but a clean stop is one fewer
+# duplicate to reason about.
+KillSignal=SIGINT
+TimeoutStopSec=30
+
+# It listens on a socket, reads its own directory and talks to Postgres. It has
+# no reason to be able to do anything else.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+# The updater writes here, and nothing else needs to be writable.
+ReadWritePaths=/opt/electronix-store
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=store-server
+
+[Install]
+WantedBy=multi-user.target
