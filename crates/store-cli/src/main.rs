@@ -6,6 +6,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
 mod backup;
+mod operator;
 mod probe;
 mod reconcile;
 mod seed;
@@ -28,6 +29,16 @@ enum Command {
         /// Also book opening stock, so the demo has something to issue.
         #[arg(long, default_value_t = true)]
         with_stock: bool,
+    },
+
+    /// Create and manage people, from the server PC.
+    ///
+    /// §11 puts operator CRUD behind an `ADMIN` token, which needs an `ADMIN`
+    /// operator to exist — so on a fresh database nobody can sign in and
+    /// nothing can create the person who would. This is that first person.
+    Operator {
+        #[command(subcommand)]
+        command: OperatorCommand,
     },
 
     /// Recompute every balance from the ledger and report drift.
@@ -111,6 +122,49 @@ enum Command {
         #[arg(long, default_value = "adms-capture")]
         out_dir: PathBuf,
     },
+}
+
+#[derive(Debug, Subcommand)]
+enum OperatorCommand {
+    /// Add somebody. Use this once at commissioning to create the first ADMIN.
+    Add {
+        #[arg(long)]
+        emp_code: String,
+
+        #[arg(long)]
+        name: String,
+
+        /// OPERATOR | STOREKEEPER | ADMIN.
+        #[arg(long, default_value = "OPERATOR")]
+        role: String,
+
+        /// The user id programmed into the door terminal. Without it their
+        /// punch cannot be matched to them (§6).
+        #[arg(long)]
+        zk_user_id: Option<String>,
+
+        #[arg(long)]
+        department: Option<String>,
+
+        /// Needed for ADMIN and STOREKEEPER, who sign in to the console.
+        /// Omit it and the PIN is read from stdin instead — a PIN passed here
+        /// is visible in shell history and in `ps`.
+        #[arg(long)]
+        pin: Option<String>,
+    },
+
+    /// Set somebody's PIN — a forgotten one, or the first for a promotion.
+    SetPin {
+        #[arg(long)]
+        emp_code: String,
+
+        /// Omit to read from stdin. See the note on `add --pin`.
+        #[arg(long)]
+        pin: Option<String>,
+    },
+
+    /// Show everybody, and flag anyone the door cannot recognise.
+    List,
 }
 
 /// Where backups go when nobody says otherwise.
@@ -200,6 +254,33 @@ async fn run() -> Result<()> {
             )
             .await
         }
+        Command::Operator { command } => match command {
+            OperatorCommand::Add {
+                emp_code,
+                name,
+                role,
+                zk_user_id,
+                department,
+                pin,
+            } => {
+                operator::add(
+                    &pool,
+                    operator::NewOperator {
+                        emp_code,
+                        name,
+                        role,
+                        zk_user_id,
+                        department,
+                        pin,
+                    },
+                )
+                .await
+            }
+            OperatorCommand::SetPin { emp_code, pin } => {
+                operator::set_pin(&pool, &emp_code, pin).await
+            }
+            OperatorCommand::List => operator::list(&pool).await,
+        },
         Command::Reconcile { verbose } => reconcile::run(&pool, verbose).await,
         Command::Export { out, from, to } => reconcile::export(&pool, &out, from, to).await,
         Command::DeviceProbe { .. } | Command::Update { .. } => {

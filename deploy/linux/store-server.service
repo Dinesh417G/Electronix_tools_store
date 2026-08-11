@@ -11,6 +11,13 @@ Documentation=https://github.com/Dinesh417G/Electronix_tools_store
 After=network-online.target postgresql.service
 Wants=network-online.target postgresql.service
 
+# The restart rate limit lives here, not in [Service], however much it reads
+# like a service property. systemd parses these in [Unit]; put them under
+# [Service] and it ignores them with a warning nobody sees, leaving the crash
+# loop below completely unbounded.
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
 [Service]
 Type=exec
 User=electronix
@@ -20,12 +27,10 @@ EnvironmentFile=/etc/electronix-store/server.env
 ExecStart=/opt/electronix-store/store-server
 
 # A tool crib that cannot record an issue is a tool crib nobody trusts, so the
-# server comes back rather than staying down. The rate limit stops a crash loop
-# from filling the disk with logs.
+# server comes back rather than staying down. The rate limit that stops a crash
+# loop from filling the disk with logs is in [Unit] above.
 Restart=always
 RestartSec=5
-StartLimitIntervalSec=300
-StartLimitBurst=10
 
 # Finish in-flight requests before exiting. An ADMS push cut off mid-persist
 # would be retried by the device anyway (§9.1), but a clean stop is one fewer
