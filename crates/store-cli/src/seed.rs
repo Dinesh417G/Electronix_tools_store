@@ -1,19 +1,32 @@
 //! `store-cli seed` — a demo store you can walk through without hardware.
 //!
-//! Idempotent, so re-running it on a demo database is harmless.
+//! Idempotent, so re-running it on a demo database is harmless. The catalog
+//! itself lives in `catalog/demo-catalog.csv` (see [`crate::catalog`]) so it
+//! can be edited without touching Rust.
+//!
+//! This is for demos and development. A real store is commissioned with
+//! `store-cli operator add` and a catalog somebody actually counted — see
+//! COMMISSIONING.md.
 
-use anyhow::Result;
+use std::collections::HashMap;
+
+use anyhow::{Context, Result};
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 use store_core::ledger::{Movement, Qty};
 use uuid::Uuid;
 
-pub async fn run(pool: &PgPool, with_stock: bool) -> Result<()> {
-    let categories = seed_categories(pool).await?;
-    let operators = seed_operators(pool).await?;
-    seed_machines(pool).await?;
-    let items = seed_items(pool, &categories).await?;
+use crate::catalog::{self, CatalogRow};
 
+pub async fn run(pool: &PgPool, with_stock: bool) -> Result<()> {
+    let rows = catalog::parse(catalog::DEMO_CATALOG).context("the built-in demo catalog")?;
+
+    let categories = seed_categories(pool, &catalog::categories(&rows)).await?;
+    let operators = seed_operators(pool).await?;
+    let machines = seed_machines(pool).await?;
+    let items = seed_items(pool, &rows, &categories).await?;
+
+    let mut opening_rows = 0usize;
     if with_stock {
         // Opening balances, booked as OPENING rows — §7, everything that moves
         // stock is a ledger row, including "what was in the bins on day one".
@@ -34,17 +47,62 @@ pub async fn run(pool: &PgPool, with_stock: bool) -> Result<()> {
                 },
             )
             .await?;
+            opening_rows += 1;
         }
     }
 
-    println!("Seeded: {} items, 3 operators, 4 machines.", items.len());
+    report(pool, rows.len(), categories.len(), machines, opening_rows).await?;
+
+    Ok(())
+}
+
+async fn report(
+    pool: &PgPool,
+    items: usize,
+    categories: usize,
+    machines: usize,
+    opening_rows: usize,
+) -> Result<()> {
+    println!(
+        "Seeded: {items} items across {categories} categories, 4 operators, {machines} machines."
+    );
+    if opening_rows > 0 {
+        println!("        {opening_rows} opening balance(s) booked as OPENING ledger rows.");
+    }
+
+    // The demo is only useful if the alert console has something in it, so say
+    // what state the store is actually in rather than leaving it to be found.
+    let stock = sqlx::query!(
+        r#"
+        select alert_state as "alert_state!", count(*) as "n!"
+          from item_stock group by alert_state
+        "#
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let counts: HashMap<String, i64> = stock
+        .into_iter()
+        .map(|r| (r.alert_state, r.n))
+        .collect::<HashMap<_, _>>();
+
+    println!();
+    println!(
+        "Stock: {} OK, {} LOW, {} EMPTY",
+        counts.get("OK").copied().unwrap_or(0),
+        counts.get("LOW").copied().unwrap_or(0),
+        counts.get("EMPTY").copied().unwrap_or(0),
+    );
+
     println!();
     println!("Demo logins (emp code / PIN):");
     println!("  ADMIN        E9001 / 1111");
     println!("  STOREKEEPER  E5001 / 2222");
     println!("  OPERATOR     E1042 / 3333   (terminal user id 1042)");
+    println!("  OPERATOR     E2077 / 4444   (terminal user id 2077)");
     println!();
     println!("Set STORE_ENROLMENT_SECRET before putting tablets on the wall.");
+    println!("Edit crates/store-cli/catalog/demo-catalog.csv to change this catalog.");
 
     Ok(())
 }
@@ -90,35 +148,47 @@ async fn seed_operators(pool: &PgPool) -> Result<SeededOperators> {
     Ok(SeededOperators { storekeeper })
 }
 
-async fn seed_machines(pool: &PgPool) -> Result<()> {
-    for (code, name) in [
-        ("VMC-01", "Vertical machining centre 1"),
-        ("VMC-02", "Vertical machining centre 2"),
-        ("CNC-L1", "CNC lathe 1"),
-        ("CNC-L2", "CNC lathe 2"),
-    ] {
+/// Returns how many machines the demo shop has.
+///
+/// A spread of machine types, because consumption-by-machine (§11) is only an
+/// interesting report when the machines differ — a lathe and a VMC do not eat
+/// the same tools.
+async fn seed_machines(pool: &PgPool) -> Result<usize> {
+    let machines = [
+        ("VMC-01", "Vertical machining centre 1 - Haas VF2"),
+        ("VMC-02", "Vertical machining centre 2 - Haas VF3"),
+        ("VMC-03", "Vertical machining centre 3 - Jyoti VMC640"),
+        ("CNC-L1", "CNC turning centre 1 - Ace Jobber XL"),
+        ("CNC-L2", "CNC turning centre 2 - Ace Super Jobber"),
+        ("HMC-01", "Horizontal machining centre - Makino a51"),
+        ("SG-01", "Surface grinder"),
+        ("EDM-01", "Wire EDM"),
+        ("DRL-01", "Radial drilling machine"),
+    ];
+
+    for (code, name) in machines {
         sqlx::query!(
             "insert into machines (code, name) values ($1, $2)
-             on conflict (code) do nothing",
+             on conflict (code) do update set name = excluded.name",
             code,
             name
         )
         .execute(pool)
         .await?;
     }
-    Ok(())
+
+    Ok(machines.len())
 }
 
-struct Categories {
-    turning_inserts: Uuid,
-    milling: Uuid,
-    drilling: Uuid,
-    consumables: Uuid,
-}
+/// Create the categories the catalog refers to, in file order.
+async fn seed_categories(pool: &PgPool, names: &[String]) -> Result<HashMap<String, Uuid>> {
+    let mut out = HashMap::new();
 
-async fn seed_categories(pool: &PgPool) -> Result<Categories> {
-    async fn one(pool: &PgPool, name: &str, sort: i32) -> Result<Uuid> {
-        Ok(sqlx::query_scalar!(
+    for (index, name) in names.iter().enumerate() {
+        // Ten apart, so a category can be slipped between two later without
+        // renumbering the rest.
+        let sort = (index as i32 + 1) * 10;
+        let id = sqlx::query_scalar!(
             "insert into item_categories (name, sort_order) values ($1, $2)
              on conflict (name) do update set sort_order = excluded.sort_order
              returning id",
@@ -126,185 +196,83 @@ async fn seed_categories(pool: &PgPool) -> Result<Categories> {
             sort
         )
         .fetch_one(pool)
-        .await?)
+        .await?;
+        out.insert(name.clone(), id);
     }
 
-    Ok(Categories {
-        turning_inserts: one(pool, "Turning inserts", 10).await?,
-        milling: one(pool, "Milling tools", 20).await?,
-        drilling: one(pool, "Drills and taps", 30).await?,
-        consumables: one(pool, "Consumables", 40).await?,
-    })
+    Ok(out)
 }
 
-/// Returns `(item_id, opening_qty)`.
-async fn seed_items(pool: &PgPool, cats: &Categories) -> Result<Vec<(Uuid, Decimal)>> {
-    struct Seed {
-        code: &'static str,
-        description: &'static str,
-        category: Uuid,
-        uom: &'static str,
-        iso: Option<&'static str>,
-        grade: Option<&'static str>,
-        manufacturer: Option<&'static str>,
-        diameter: Option<Decimal>,
-        flutes: Option<i32>,
-        reorder_level: Decimal,
-        reorder_qty: Option<Decimal>,
-        bin: &'static str,
-        cost: Decimal,
-        opening: Decimal,
-    }
-
-    let d = Decimal::from;
-
-    let seeds = vec![
-        Seed {
-            code: "CNMG120408-TN2000",
-            description: "CNMG 120408 turning insert, medium roughing",
-            category: cats.turning_inserts,
-            uom: "NOS",
-            iso: Some("CNMG120408"),
-            grade: Some("TN2000"),
-            manufacturer: Some("Taegutec"),
-            diameter: None,
-            flutes: None,
-            reorder_level: d(20),
-            reorder_qty: Some(d(100)),
-            bin: "A-01-1",
-            cost: Decimal::new(12050, 2),
-            opening: d(120),
-        },
-        Seed {
-            code: "DNMG150608-TT5100",
-            description: "DNMG 150608 turning insert, finishing",
-            category: cats.turning_inserts,
-            uom: "NOS",
-            iso: Some("DNMG150608"),
-            grade: Some("TT5100"),
-            manufacturer: Some("Taegutec"),
-            diameter: None,
-            flutes: None,
-            reorder_level: d(15),
-            reorder_qty: Some(d(50)),
-            bin: "A-01-2",
-            cost: Decimal::new(14500, 2),
-            opening: d(60),
-        },
-        Seed {
-            code: "EM-06-4F-TIALN",
-            description: "6mm 4-flute carbide end mill, TiAlN coated",
-            category: cats.milling,
-            uom: "NOS",
-            iso: None,
-            grade: None,
-            manufacturer: Some("OSG"),
-            diameter: Some(Decimal::new(6000, 3)),
-            flutes: Some(4),
-            reorder_level: d(5),
-            reorder_qty: Some(d(20)),
-            bin: "B-02-1",
-            cost: Decimal::new(89000, 2),
-            opening: d(18),
-        },
-        Seed {
-            code: "EM-12-4F-TIALN",
-            description: "12mm 4-flute carbide end mill, TiAlN coated",
-            category: cats.milling,
-            uom: "NOS",
-            iso: None,
-            grade: None,
-            manufacturer: Some("OSG"),
-            diameter: Some(Decimal::new(12000, 3)),
-            flutes: Some(4),
-            reorder_level: d(4),
-            reorder_qty: Some(d(10)),
-            bin: "B-02-2",
-            cost: Decimal::new(178000, 2),
-            opening: d(7),
-        },
-        Seed {
-            code: "DR-8.5-HSS",
-            description: "8.5mm HSS jobber drill",
-            category: cats.drilling,
-            uom: "NOS",
-            iso: None,
-            grade: None,
-            manufacturer: Some("Addison"),
-            diameter: Some(Decimal::new(8500, 3)),
-            flutes: Some(2),
-            reorder_level: d(10),
-            reorder_qty: Some(d(25)),
-            bin: "C-03-1",
-            cost: Decimal::new(21000, 2),
-            opening: d(30),
-        },
-        Seed {
-            code: "TAP-M10-HSS",
-            description: "M10 x 1.5 HSS machine tap",
-            category: cats.drilling,
-            uom: "NOS",
-            iso: None,
-            grade: None,
-            manufacturer: Some("Totem"),
-            diameter: Some(Decimal::new(10000, 3)),
-            flutes: Some(3),
-            reorder_level: d(6),
-            reorder_qty: Some(d(12)),
-            bin: "C-03-4",
-            cost: Decimal::new(31500, 2),
-            opening: d(8),
-        },
-        Seed {
-            code: "COOL-SYN-20L",
-            description: "Synthetic cutting coolant concentrate, 20 L",
-            category: cats.consumables,
-            uom: "LTR",
-            iso: None,
-            grade: None,
-            manufacturer: Some("Houghton"),
-            diameter: None,
-            flutes: None,
-            // Fractional, because coolant is drawn by the litre — this is the
-            // reason quantities are numeric(12,3) rather than integers (§6).
-            reorder_level: Decimal::new(40000, 3),
-            reorder_qty: Some(d(200)),
-            bin: "D-04-1",
-            cost: Decimal::new(48000, 2),
-            opening: Decimal::new(160500, 3),
-        },
-    ];
-
+/// Insert the catalog. Returns `(item_id, opening_qty)` for items that need an
+/// opening balance booked.
+async fn seed_items(
+    pool: &PgPool,
+    rows: &[CatalogRow],
+    categories: &HashMap<String, Uuid>,
+) -> Result<Vec<(Uuid, Decimal)>> {
     let mut out = Vec::new();
 
-    for s in seeds {
+    for row in rows {
+        let category_id = categories
+            .get(&row.category)
+            .copied()
+            .with_context(|| format!("{}: unknown category {}", row.item_code, row.category))?;
+
         let id = sqlx::query_scalar!(
             r#"
             insert into items (
                 item_code, description, category_id, uom, iso_code, grade,
-                manufacturer, diameter_mm, flutes, reorder_level, reorder_qty,
-                bin_location, unit_cost
+                manufacturer, mfr_part_no, diameter_mm, flutes, reorder_level,
+                reorder_qty, bin_location, unit_cost
             )
-            values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-            on conflict (item_code) do update set description = excluded.description
+            values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+            on conflict (item_code) do update set
+                description   = excluded.description,
+                category_id   = excluded.category_id,
+                uom           = excluded.uom,
+                iso_code      = excluded.iso_code,
+                grade         = excluded.grade,
+                manufacturer  = excluded.manufacturer,
+                mfr_part_no   = excluded.mfr_part_no,
+                diameter_mm   = excluded.diameter_mm,
+                flutes        = excluded.flutes,
+                reorder_level = excluded.reorder_level,
+                reorder_qty   = excluded.reorder_qty,
+                bin_location  = excluded.bin_location,
+                unit_cost     = excluded.unit_cost
             returning id
             "#,
-            s.code,
-            s.description,
-            s.category,
-            s.uom,
-            s.iso,
-            s.grade,
-            s.manufacturer,
-            s.diameter,
-            s.flutes,
-            s.reorder_level,
-            s.reorder_qty,
-            s.bin,
-            s.cost,
+            row.item_code,
+            row.description,
+            category_id,
+            row.uom,
+            row.iso_code,
+            row.grade,
+            row.manufacturer,
+            row.mfr_part_no,
+            row.diameter_mm,
+            row.flutes,
+            row.reorder_level,
+            row.reorder_qty,
+            row.bin_location,
+            row.unit_cost,
         )
         .fetch_one(pool)
         .await?;
+
+        // A vendor's own printed barcode, so scanning the box the inserts came
+        // in resolves to our item without relabelling it (§6, `item_barcodes`).
+        if let Some(barcode) = row.barcode.as_deref() {
+            sqlx::query!(
+                "insert into item_barcodes (item_id, code, kind)
+                 values ($1, $2, 'MFR_EAN')
+                 on conflict (code) do nothing",
+                id,
+                barcode
+            )
+            .execute(pool)
+            .await?;
+        }
 
         // Only book opening stock for genuinely new items; re-running the seed
         // must not keep adding balance.
@@ -315,8 +283,11 @@ async fn seed_items(pool: &PgPool, cats: &Categories) -> Result<Vec<(Uuid, Decim
         .fetch_one(pool)
         .await?;
 
-        if already == 0 {
-            out.push((id, s.opening));
+        // A zero opening books nothing: §7 forbids a zero delta, and "the bin
+        // is empty" is not a movement. The item still shows on the stock views
+        // at zero, because every item gets a stock row at birth.
+        if already == 0 && !row.opening_qty.is_zero() {
+            out.push((id, row.opening_qty));
         }
     }
 

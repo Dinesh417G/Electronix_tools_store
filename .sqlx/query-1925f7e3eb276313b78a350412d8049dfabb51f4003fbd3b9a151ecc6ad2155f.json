@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            insert into items (\n                item_code, description, category_id, uom, iso_code, grade,\n                manufacturer, mfr_part_no, diameter_mm, flutes, reorder_level,\n                reorder_qty, bin_location, unit_cost\n            )\n            values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)\n            on conflict (item_code) do update set\n                description   = excluded.description,\n                category_id   = excluded.category_id,\n                uom           = excluded.uom,\n                iso_code      = excluded.iso_code,\n                grade         = excluded.grade,\n                manufacturer  = excluded.manufacturer,\n                mfr_part_no   = excluded.mfr_part_no,\n                diameter_mm   = excluded.diameter_mm,\n                flutes        = excluded.flutes,\n                reorder_level = excluded.reorder_level,\n                reorder_qty   = excluded.reorder_qty,\n                bin_location  = excluded.bin_location,\n                unit_cost     = excluded.unit_cost\n            returning id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Numeric",
+        "Int4",
+        "Numeric",
+        "Numeric",
+        "Text",
+        "Numeric"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1925f7e3eb276313b78a350412d8049dfabb51f4003fbd3b9a151ecc6ad2155f"
+}
