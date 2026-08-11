@@ -480,6 +480,7 @@ GET    /api/v1/admin/health                DB, device last-seen, ledger reconcil
 
 # store-cli — operations, not HTTP
 store-cli seed | reconcile | export | device-probe | backup | update
+store-cli operator add | set-pin | list
 ```
 
 Auth: tablets hold a device token; admin uses operator login. Every write carries an
@@ -488,6 +489,14 @@ Auth: tablets hold a device token; admin uses operator login. Every write carrie
 A tablet is **not** an operator: it acts *for* whoever claimed the session, so a ledger
 write from a tablet takes its `operator_id` from the session, never from the token. The
 `Auth` extractor returns `None` for a tablet's operator id to force this at compile time.
+
+> **The first admin cannot come from this API.** `/api/v1/admin/operators` requires an
+> `ADMIN` token, which requires an `ADMIN` operator with a PIN, which on a fresh database
+> does not exist — so the console is unreachable and nothing can create the person who
+> would fix that. `store-cli operator add` is that bootstrap, and `seed` is not a
+> substitute: it also inserts a demo catalog, and nobody should commission a real store by
+> deleting a fake one. This grants no privilege the caller lacked — running it needs
+> `DATABASE_URL`, and whoever holds that already owns every row.
 
 Status codes the tablet UX depends on:
 

@@ -6,6 +6,11 @@ drills, taps, holders and shop consumables.
 The build spec is [`CLAUDE.md`](CLAUDE.md). **Read it before changing anything**;
 where this README and that file disagree, that file wins.
 
+Putting it into a real store for the first time?
+**[`COMMISSIONING.md`](COMMISSIONING.md)** is the ordered checklist for that —
+Postgres through to the first watched transaction, with what you should see at
+each step.
+
 ## What works today
 
 All ten milestones (**M0–M10**) are complete and passing their acceptance gates
@@ -23,7 +28,7 @@ door terminal pushes a punch  →  server persists it and offers a session
 | `store-adms` | Complete. ADMS protocol, command queue, mock device. |
 | `store-db` | Complete. Migrations, repositories, auth. |
 | `store-server` | REST + SSE + ADMS listener, session service, reaper. |
-| `store-cli` | `seed`, `reconcile`, `export`, `device-probe`, `update`. |
+| `store-cli` | `seed`, `operator`, `reconcile`, `export`, `device-probe`, `backup`, `update`. |
 | `store-label` | Code128 + PDF bin labels. |
 | `store-web` | Terminal, live view and admin console. Embedded in `store-server`. |
 
@@ -55,6 +60,20 @@ cd crates/store-web && npm ci && npm run build && cd ../..
 cargo run -p store-cli -- seed        # demo catalog, operators, machines
 cargo run -p store-server             # migrates on boot, listens on :8080
 ```
+
+For a **real** store, skip `seed` — it inserts a demo catalog and four fictional
+people. Start the server first so it creates the schema, then make the first
+admin, who can do everything else from the console:
+
+```sh
+echo 8341 | store-cli operator add --emp-code E9001 --name "S. Rao" --role ADMIN --zk-user-id 9001
+store-cli operator list
+```
+
+That command exists because the console cannot bootstrap itself: creating an
+operator needs an admin token, and on a fresh database there is no admin. It
+grants nothing extra — it needs `DATABASE_URL`, and whoever has that already
+owns every row.
 
 Then open `http://<server-ip>:8080` on a phone on the same network, enrol it with
 the secret above, and you have a terminal. The ⚙ button in the corner switches
