@@ -61,6 +61,17 @@ cargo run -p store-cli -- seed        # demo catalog, operators, machines
 cargo run -p store-server             # migrates on boot, listens on :8080
 ```
 
+`seed` loads a demo CNC tool crib: 90 items across turning inserts, milling
+inserts, solid carbide and HSS milling, drilling, threading, boring and reaming,
+toolholding and consumables — with ISO codes, grades, bin locations, vendor
+barcodes and uneven opening stock, so 8 items start LOW and 2 start EMPTY and
+the alert console has something to show on day one.
+
+That catalog is a CSV, not Rust:
+[`crates/store-cli/catalog/demo-catalog.csv`](crates/store-cli/catalog/demo-catalog.csv).
+Edit it and re-run `seed` to change the demo. It is embedded into the binary at
+build time, so a release carries its own demo with no data files beside it.
+
 For a **real** store, skip `seed` — it inserts a demo catalog and four fictional
 people. Start the server first so it creates the schema, then make the first
 admin, who can do everything else from the console:

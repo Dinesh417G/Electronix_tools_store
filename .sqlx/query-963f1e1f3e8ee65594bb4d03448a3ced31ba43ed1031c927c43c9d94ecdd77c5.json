@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into item_barcodes (item_id, code, kind)\n                 values ($1, $2, 'MFR_EAN')\n                 on conflict (code) do nothing",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "963f1e1f3e8ee65594bb4d03448a3ced31ba43ed1031c927c43c9d94ecdd77c5"
+}

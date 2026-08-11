@@ -6,6 +6,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
 mod backup;
+mod catalog;
 mod operator;
 mod probe;
 mod reconcile;

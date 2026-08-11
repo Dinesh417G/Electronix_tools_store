@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into machines (code, name) values ($1, $2)\n             on conflict (code) do update set name = excluded.name",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5355a4e9f1759a9310ed623926280d540333d082ca3d7ca7761a0d4d41a26bd9"
+}
