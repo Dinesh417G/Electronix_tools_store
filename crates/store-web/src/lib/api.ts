@@ -158,6 +158,8 @@ export interface Item {
 
 export interface TxnResponse {
   ledger_id: number;
+  /** Every row the request wrote — one per machine for a split issue. */
+  ledger_ids: number[];
   item_id: string;
   item_code: string;
   description: string;
@@ -232,6 +234,16 @@ export interface IssueBody {
   reason_id?: string | null;
   note?: string | null;
   client_txn_uuid: string;
+  /** §11: one item going to several machines. When present the server writes
+   *  one ledger row per split, all in one transaction, and ignores
+   *  `machine_id`. */
+  splits?: IssueSplitBody[];
+}
+
+export interface IssueSplitBody {
+  machine_id: string;
+  qty: string;
+  client_txn_uuid: string;
 }
 
 export interface ReceiptBody {
@@ -275,6 +287,16 @@ export const api = {
     request<SessionResponse>("/api/v1/sessions/manual", {
       method: "POST",
       body: JSON.stringify({ emp_code: empCode, pin, tablet_id: terminalId }),
+    }),
+
+  /** §10: tell the server the operator is still working, so the 180 s idle
+   *  timeout measures idleness rather than elapsed time. Everything between
+   *  claiming and confirming happens on the tablet, so without this the server
+   *  sees silence from somebody standing right in front of it. */
+  touchSession: (sessionId: string) =>
+    request<SessionResponse>(`/api/v1/sessions/${sessionId}/touch`, {
+      method: "POST",
+      body: JSON.stringify({}),
     }),
 
   closeSession: (sessionId: string) =>

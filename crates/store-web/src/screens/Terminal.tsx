@@ -59,6 +59,15 @@ type Step =
       qty: string;
     }
   | {
+      name: "split";
+      session: ActiveSession;
+      direction: Direction;
+      item: Item;
+      qty: string;
+      machines: Machine[];
+      reasonId: string | null;
+    }
+  | {
       name: "confirm";
       session: ActiveSession;
       direction: Direction;
@@ -66,8 +75,17 @@ type Step =
       qty: string;
       machineId: string | null;
       reasonId: string | null;
+      /** Set only for a multi-machine issue; one ledger row will be written per
+       *  entry. `qty` is then the total of these. */
+      splits: Split[] | null;
     }
   | { name: "success"; result: TxnResponse; queued: boolean };
+
+/** One machine's share of a multi-machine issue, as the screens carry it. */
+interface Split {
+  machine: Machine;
+  qty: string;
+}
 
 interface Props {
   cards: UnclaimedSession[];
@@ -114,6 +132,33 @@ export function Terminal({
     const timer = setTimeout(reset, 15_000);
     return () => clearTimeout(timer);
   }, [step, reset]);
+
+  // §10: keep the session alive while the operator is working it.
+  //
+  // Everything between claiming a card and confirming happens on the tablet —
+  // scanning, keying a quantity, picking machines — so the server has no way to
+  // tell an operator mid-transaction from one who walked away. Without this the
+  // 180 s idle timeout is a deadline on the whole transaction, and a careful
+  // operator is punished for being careful.
+  //
+  // Fired on entering each step, and on a timer well inside the window for a
+  // step somebody lingers on.
+  const sessionId = "session" in step ? step.session.session_id : null;
+  useEffect(() => {
+    if (!sessionId) return;
+
+    const keepAlive = () => {
+      void api.touchSession(sessionId).catch(() => {
+        // A missed keepalive is not worth interrupting the operator for: the
+        // next step will try again, and a genuinely dead session announces
+        // itself at confirm with a 410 that already has a handler.
+      });
+    };
+
+    keepAlive();
+    const timer = setInterval(keepAlive, 60_000);
+    return () => clearInterval(timer);
+  }, [sessionId, step.name]);
 
   const claim = async (card: UnclaimedSession) => {
     setBusy(true);
@@ -171,6 +216,7 @@ export function Terminal({
     qty: string,
     machineId: string | null,
     reasonId: string | null,
+    splits: Split[] | null,
   ) => {
     setBusy(true);
     setError(null);
@@ -178,15 +224,37 @@ export function Terminal({
     // Generated once, before the first attempt, and never regenerated: a retry
     // of a request the server already committed must resolve to the same row.
     const txnId = newTxnId();
-    const body = {
-      session_id: session.session_id,
-      item_id: item.id,
-      qty,
-      ...(direction === "issue"
-        ? { machine_id: machineId, reason_id: reasonId }
-        : { reason_id: reasonId }),
-      client_txn_uuid: txnId,
-    };
+
+    // A multi-machine issue goes as one request carrying every split. Sending
+    // one request per machine could not work — §10 closes the session on the
+    // first submit — and would risk the bin being half-emptied by a batch the
+    // operator was told had failed.
+    const body = splits
+      ? {
+          session_id: session.session_id,
+          item_id: item.id,
+          qty,
+          reason_id: reasonId,
+          client_txn_uuid: txnId,
+          // One key per row, minted here with the rest of the body. The body is
+          // built once and re-sent verbatim on every retry — including out of
+          // the offline outbox — so these stay stable and a replay resolves row
+          // by row rather than all-or-nothing.
+          splits: splits.map((s) => ({
+            machine_id: s.machine.id,
+            qty: s.qty,
+            client_txn_uuid: newTxnId(),
+          })),
+        }
+      : {
+          session_id: session.session_id,
+          item_id: item.id,
+          qty,
+          ...(direction === "issue"
+            ? { machine_id: machineId, reason_id: reasonId }
+            : { reason_id: reasonId }),
+          client_txn_uuid: txnId,
+        };
 
     try {
       const result =
@@ -214,6 +282,9 @@ export function Terminal({
           queued: true,
           result: {
             ledger_id: 0,
+            // Nothing is in the ledger yet — this is the local guess shown
+            // while the outbox holds the transaction.
+            ledger_ids: [],
             item_id: item.id,
             item_code: item.item_code,
             description: item.description,
@@ -329,16 +400,30 @@ export function Terminal({
       return (
         <OptionalScreen
           direction={step.direction}
-          onNext={(machineId, reasonId) =>
-            setStep({
-              name: "confirm",
-              session: step.session,
-              direction: step.direction,
-              item: step.item,
-              qty: step.qty,
-              machineId,
-              reasonId,
-            })
+          onNext={(machines, reasonId) =>
+            // One machine (or none) is the ordinary transaction. Two or more
+            // means the operator is stocking several machines from one trip,
+            // and each needs its own quantity before anything can be written.
+            machines.length > 1
+              ? setStep({
+                  name: "split",
+                  session: step.session,
+                  direction: step.direction,
+                  item: step.item,
+                  qty: step.qty,
+                  machines,
+                  reasonId,
+                })
+              : setStep({
+                  name: "confirm",
+                  session: step.session,
+                  direction: step.direction,
+                  item: step.item,
+                  qty: step.qty,
+                  machineId: machines[0]?.id ?? null,
+                  reasonId,
+                  splits: null,
+                })
           }
           onBack={() =>
             setStep({
@@ -346,6 +431,39 @@ export function Terminal({
               session: step.session,
               direction: step.direction,
               item: step.item,
+            })
+          }
+          banner={banner}
+        />
+      );
+
+    case "split":
+      return (
+        <SplitScreen
+          item={step.item}
+          machines={step.machines}
+          total={step.qty}
+          onNext={(splits) =>
+            setStep({
+              name: "confirm",
+              session: step.session,
+              direction: step.direction,
+              item: step.item,
+              qty: splits
+                .reduce((sum, s) => sum + (Number.parseFloat(s.qty) || 0), 0)
+                .toString(),
+              machineId: null,
+              reasonId: step.reasonId,
+              splits,
+            })
+          }
+          onBack={() =>
+            setStep({
+              name: "optional",
+              session: step.session,
+              direction: step.direction,
+              item: step.item,
+              qty: step.qty,
             })
           }
           banner={banner}
@@ -365,6 +483,7 @@ export function Terminal({
               step.qty,
               step.machineId,
               step.reasonId,
+              step.splits,
             )
           }
           onBack={() =>
@@ -708,7 +827,7 @@ function ItemScreen({
   // §12.4: the camera opens immediately — unless this browser has no barcode
   // detector, in which case opening a dead camera would just waste the
   // operator's time. Both paths land on the same item card either way.
-  const [mode, setMode] = useState<"scan" | "search">(
+  const [mode, setMode] = useState<"scan" | "search" | "browse">(
     isScanningSupported() ? "scan" : "search",
   );
   const [scanError, setScanError] = useState<ScannerError | null>(null);
@@ -716,6 +835,11 @@ function ItemScreen({
   const [results, setResults] = useState<Item[]>([]);
   const [looking, setLooking] = useState(false);
   const [notFound, setNotFound] = useState<string | null>(null);
+  // Browsing: the whole crib, in pages, for an operator who knows the tool by
+  // sight but not by name. Search needs you to already know what it is called.
+  const [catalog, setCatalog] = useState<Item[]>([]);
+  const [catalogDone, setCatalogDone] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const busyRef = useRef(false);
 
@@ -767,6 +891,28 @@ function ItemScreen({
     };
   }, [mode, resolve]);
 
+  const PAGE = 40;
+
+  const loadMore = useCallback(async () => {
+    setLoadingMore(true);
+    try {
+      const offset = catalog.length;
+      const page = await api.stock(`limit=${PAGE}&offset=${offset}`);
+      setCatalog((current) => [...current, ...page]);
+      if (page.length < PAGE) setCatalogDone(true);
+    } catch {
+      // Leave what has already loaded on screen; the button stays available.
+      setCatalogDone(true);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [catalog.length]);
+
+  useEffect(() => {
+    if (mode !== "browse" || catalog.length > 0) return;
+    void loadMore();
+  }, [mode, catalog.length, loadMore]);
+
   // Typeahead, debounced so a fast typist does not generate a request per key.
   useEffect(() => {
     if (mode !== "search" || query.trim().length < 2) {
@@ -812,7 +958,22 @@ function ItemScreen({
           </div>
         )}
 
-        {mode === "scan" ? (
+        {mode === "browse" ? (
+          <div className="space-y-3">
+            {catalog.map((item) => (
+              <ItemRow key={item.id} item={item} onClick={() => onPick(item)} />
+            ))}
+            {catalog.length === 0 && !loadingMore && (
+              <p className="py-6 text-center text-slate-500">The catalog is empty.</p>
+            )}
+            {loadingMore && <Spinner label="Loading the catalog…" />}
+            {!catalogDone && !loadingMore && catalog.length > 0 && (
+              <BigButton onClick={() => void loadMore()} variant="ghost" className="w-full">
+                Show more
+              </BigButton>
+            )}
+          </div>
+        ) : mode === "scan" ? (
           <div className="relative overflow-hidden rounded-2xl bg-black">
             <video ref={videoRef} className="aspect-3/4 w-full object-cover" muted />
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -843,16 +1004,26 @@ function ItemScreen({
         )}
       </div>
 
-      {/* §12.4: a permanent "Search instead" button, never buried in a menu. */}
-      <div className="px-4 pt-3">
-        <BigButton
-          onClick={() => setMode(mode === "scan" ? "search" : "scan")}
-          variant="ghost"
-          className="w-full"
-          disabled={mode === "search" && !isScanningSupported()}
-        >
-          {mode === "scan" ? "Search instead" : "Scan instead"}
-        </BigButton>
+      {/* §12.4: a permanent "Search instead" button, never buried in a menu.
+          Browsing sits alongside it for the operator who would recognise the
+          tool on sight but cannot name it — search cannot help you find a thing
+          you do not know the word for. */}
+      <div className="flex gap-2 px-4 pt-3">
+        {mode !== "scan" && isScanningSupported() && (
+          <BigButton onClick={() => setMode("scan")} variant="ghost" className="flex-1">
+            Scan
+          </BigButton>
+        )}
+        {mode !== "search" && (
+          <BigButton onClick={() => setMode("search")} variant="ghost" className="flex-1">
+            Search
+          </BigButton>
+        )}
+        {mode !== "browse" && (
+          <BigButton onClick={() => setMode("browse")} variant="ghost" className="flex-1">
+            Browse all
+          </BigButton>
+        )}
       </div>
     </Screen>
   );
@@ -917,6 +1088,9 @@ function QuantityScreen({
 
   const numeric = Number.parseFloat(value) || 0;
   const short = direction === "issue" && numeric > Number.parseFloat(item.on_hand);
+  // What the server will actually refuse (§7), as opposed to what merely looks
+  // surprising.
+  const refused = short && !item.allow_negative;
 
   return (
     <Screen>
@@ -935,8 +1109,22 @@ function QuantityScreen({
       </div>
 
       <div className="px-4 pb-2 text-center">
-        <div className="text-6xl font-bold tabular-nums">{value}</div>
+        <div className={`text-6xl font-bold tabular-nums ${refused ? "text-red-400" : ""}`}>
+          {value}
+        </div>
+        {/* §7: the server rejects an issue that would take stock below zero
+            with a 409 unless the item allows it. Letting the operator key a
+            number the server has already decided to refuse, then failing at
+            confirm, wastes the trip — so Next goes dead here, wearing the
+            §7 wording. Where allow_negative is set the number is legal and
+            the old advisory warning stands. */}
         {short && !item.allow_negative && (
+          <p className="mt-2 text-sm text-red-400">
+            Only {formatQty(item.on_hand)} {item.uom} left in system — count the bin and
+            adjust.
+          </p>
+        )}
+        {short && item.allow_negative && (
           <p className="mt-2 text-sm text-amber-400">
             More than the system shows — count the bin before you confirm.
           </p>
@@ -974,7 +1162,7 @@ function QuantityScreen({
           onClick={() => onNext(value)}
           variant="primary"
           className="w-full"
-          disabled={numeric <= 0}
+          disabled={numeric <= 0 || refused}
         >
           Next
         </BigButton>
@@ -992,13 +1180,15 @@ function OptionalScreen({
   banner,
 }: {
   direction: Direction;
-  onNext: (machineId: string | null, reasonId: string | null) => void;
+  onNext: (machines: Machine[], reasonId: string | null) => void;
   onBack: () => void;
   banner: React.ReactNode;
 }) {
   const [machines, setMachines] = useState<Machine[]>([]);
   const [reasons, setReasons] = useState<ReasonCode[]>([]);
-  const [machineId, setMachineId] = useState<string | null>(null);
+  // §11: an operator can take one item for several machines in one trip. Tap to
+  // add, tap again to remove; picking exactly one behaves as it always did.
+  const [picked, setPicked] = useState<string[]>([]);
   const [reasonId, setReasonId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -1028,14 +1218,27 @@ function OptionalScreen({
       <div className="flex-1 space-y-5 overflow-y-auto px-4">
         {direction === "issue" && machines.length > 0 && (
           <section>
-            <h2 className="pb-2 text-sm font-semibold text-slate-400">MACHINE</h2>
+            <h2 className="pb-2 text-sm font-semibold text-slate-400">
+              MACHINE
+              {picked.length > 1 && (
+                <span className="pl-2 font-normal text-sky-400">
+                  {picked.length} selected — you'll set a quantity for each
+                </span>
+              )}
+            </h2>
             <div className="flex flex-wrap gap-2">
               {machines.map((m) => (
                 <Chip
                   key={m.id}
                   label={m.code}
-                  selected={machineId === m.id}
-                  onClick={() => setMachineId(machineId === m.id ? null : m.id)}
+                  selected={picked.includes(m.id)}
+                  onClick={() =>
+                    setPicked((current) =>
+                      current.includes(m.id)
+                        ? current.filter((id) => id !== m.id)
+                        : [...current, m.id],
+                    )
+                  }
                 />
               ))}
             </div>
@@ -1062,14 +1265,122 @@ function OptionalScreen({
       {/* §12.6: skipping must never be slower than filling. SKIP is the biggest
           control here, and it is reachable without scrolling. */}
       <div className="space-y-2 px-4 pt-3">
-        <BigButton onClick={() => onNext(null, null)} variant="ghost" className="w-full">
+        <BigButton onClick={() => onNext([], null)} variant="ghost" className="w-full">
           SKIP
         </BigButton>
         <BigButton
-          onClick={() => onNext(machineId, reasonId)}
+          onClick={() =>
+            onNext(
+              // Ordered as the operator tapped them, so the split screen reads
+              // in the order they were thinking.
+              picked
+                .map((id) => machines.find((m) => m.id === id))
+                .filter((m): m is Machine => m !== undefined),
+              reasonId,
+            )
+          }
           variant="primary"
           className="w-full"
         >
+          Next
+        </BigButton>
+      </div>
+    </Screen>
+  );
+}
+
+// ── 6b. Split: how many for each machine (§11) ──────────────────────────
+//
+// Only reached when two or more machines were picked. One ledger row per
+// machine is written from here, in one transaction — so either the whole trip
+// is recorded or none of it is.
+
+function SplitScreen({
+  item,
+  machines,
+  total,
+  onNext,
+  onBack,
+  banner,
+}: {
+  item: Item;
+  machines: Machine[];
+  total: string;
+  onNext: (splits: Split[]) => void;
+  onBack: () => void;
+  banner: React.ReactNode;
+}) {
+  // Seeded from the quantity already keyed, spread as evenly as the number
+  // divides, remainder on the first machine. Most trips are "one each" or "two
+  // each", so the common case needs no typing at all.
+  const [quantities, setQuantities] = useState<string[]>(() => {
+    const asked = Number.parseFloat(total) || 0;
+    const each = Math.floor(asked / machines.length);
+    return machines.map((_, i) =>
+      String(i === 0 ? asked - each * (machines.length - 1) : each),
+    );
+  });
+
+  const set = (index: number, next: string) =>
+    setQuantities((current) => current.map((q, i) => (i === index ? next : q)));
+
+  const sum = quantities.reduce((acc, q) => acc + (Number.parseFloat(q) || 0), 0);
+  const available = Number.parseFloat(item.on_hand);
+  const refused = sum > available && !item.allow_negative;
+  const ready = sum > 0 && !refused && quantities.every((q) => (Number.parseFloat(q) || 0) > 0);
+
+  return (
+    <Screen>
+      <Header title="How many for each?" subtitle={item.item_code} onBack={onBack} />
+      {banner}
+
+      <div className="flex-1 space-y-3 overflow-y-auto px-4">
+        {machines.map((machine, i) => (
+          <div
+            key={machine.id}
+            className="flex items-center gap-3 rounded-2xl bg-slate-800 px-4 py-3"
+          >
+            <span className="flex-1 text-lg font-semibold">{machine.code}</span>
+            <button
+              type="button"
+              aria-label={`one fewer for ${machine.code}`}
+              onClick={() => set(i, String(Math.max(0, (Number.parseFloat(quantities[i]!) || 0) - 1)))}
+              className="tap w-14 rounded-xl bg-slate-700 text-2xl font-semibold active:bg-slate-600"
+            >
+              −
+            </button>
+            <span className="w-16 text-center text-3xl font-bold tabular-nums">
+              {quantities[i]}
+            </span>
+            <button
+              type="button"
+              aria-label={`one more for ${machine.code}`}
+              onClick={() => set(i, String((Number.parseFloat(quantities[i]!) || 0) + 1))}
+              className="tap w-14 rounded-xl bg-slate-700 text-2xl font-semibold active:bg-slate-600"
+            >
+              +
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="px-4 pt-3 text-center">
+        <p className={`text-sm ${refused ? "text-red-400" : "text-slate-400"}`}>
+          {refused ? (
+            <>
+              Only {formatQty(item.on_hand)} {item.uom} left in system — count the bin and
+              adjust.
+            </>
+          ) : (
+            <>
+              total {formatQty(String(sum))} of {formatQty(item.on_hand)} {item.uom} available
+            </>
+          )}
+        </p>
+      </div>
+
+      <div className="px-4 pt-3">
+        <BigButton onClick={() => onNext(machines.map((machine, i) => ({ machine, qty: quantities[i]! })))} variant="primary" className="w-full" disabled={!ready}>
           Next
         </BigButton>
       </div>
@@ -1135,6 +1446,24 @@ function ConfirmScreen({
           <div className="text-2xl font-semibold">{step.item.item_code}</div>
           <div className="text-slate-400">{step.item.description}</div>
         </div>
+
+        {/* A split issue writes one row per machine. Show the breakdown before
+            the operator commits, because the ledger will show it afterwards. */}
+        {step.splits && (
+          <div className="w-full max-w-xs space-y-1">
+            {step.splits.map((s) => (
+              <div key={s.machine.id} className="flex justify-between text-slate-300">
+                <span>{s.machine.code}</span>
+                <span className="font-semibold tabular-nums">
+                  {formatQty(s.qty)} {step.item.uom}
+                </span>
+              </div>
+            ))}
+            <p className="pt-1 text-xs text-slate-500">
+              {step.splits.length} ledger rows, one per machine
+            </p>
+          </div>
+        )}
         <div className="text-sm text-slate-500">
           {step.session.full_name} · {step.session.emp_code}
           {step.session.manual ? " · typed in" : ""}

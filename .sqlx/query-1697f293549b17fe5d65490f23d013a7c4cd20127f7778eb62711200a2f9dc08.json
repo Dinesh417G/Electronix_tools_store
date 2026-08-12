@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select machine_id, delta_qty from stock_ledger\n          where session_id = $1 order by id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "machine_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "delta_qty",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      false
+    ]
+  },
+  "hash": "1697f293549b17fe5d65490f23d013a7c4cd20127f7778eb62711200a2f9dc08"
+}

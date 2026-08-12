@@ -132,6 +132,35 @@ pub async fn claim(
     Ok(Json(describe(&state, id).await?))
 }
 
+/// `POST /api/v1/sessions/{id}/touch`
+///
+/// §10 measures the idle timeout from `last_activity_at`, "not `opened_at`" —
+/// but the only thing that ever moved that column was opening the session, so
+/// the 180 s idle limit behaved as a 180 s deadline on the whole transaction.
+/// An operator scrolling the catalog, keying a quantity or picking machines is
+/// working; all of that is local to the tablet, and the server saw silence.
+///
+/// The tablet calls this as it moves between steps. Deliberately a POST against
+/// the session rather than a side effect of some read: keeping a session alive
+/// is a thing the terminal asserts, not something it does by accident.
+pub async fn touch(
+    State(state): State<AppState>,
+    auth: Auth,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<SessionResponse>> {
+    let session = store_db::sessions::get(&state.pool, id).await?;
+
+    // Only the tablet holding the session may keep it alive. Otherwise any
+    // enrolled device could hold somebody else's session open indefinitely.
+    if let store_db::auth::Principal::Tablet { tablet_id } = &auth.0 {
+        session.accepts_work_from(&TabletId(tablet_id.clone()))?;
+    }
+
+    store_db::sessions::touch(&state.pool, id).await?;
+
+    Ok(Json(describe(&state, id).await?))
+}
+
 #[derive(Debug, Deserialize)]
 pub struct ManualSessionRequest {
     pub emp_code: String,

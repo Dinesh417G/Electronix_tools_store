@@ -696,3 +696,151 @@ async fn an_unknown_barcode_is_a_404_not_a_crash(pool: sqlx::PgPool) {
         "the message should name the barcode: {body}"
     );
 }
+
+#[sqlx::test(migrator = "store_db::MIGRATOR")]
+async fn working_on_the_tablet_keeps_the_session_alive(pool: sqlx::PgPool) {
+    // §10 measures the idle timeout from last_activity_at, "not opened_at".
+    // Nothing ever moved that column, so a 180 s idle limit behaved as a 180 s
+    // deadline on the whole transaction: an operator scrolling the catalog and
+    // keying a quantity was working, and the server closed the session anyway.
+    let h = Harness::start(pool).await;
+    h.operator("E1", "1042", "R. Kumar", "OPERATOR").await;
+
+    let session_id = h.punch_and_claim("1042", TABLET_A).await;
+    h.age_activity(session_id, IDLE_TIMEOUT_SECS + 1).await;
+
+    // The operator is still standing there, working the screens.
+    let touched = h
+        .post_json(
+            TABLET_A,
+            &format!("/api/v1/sessions/{session_id}/touch"),
+            json!({}),
+        )
+        .await;
+    assert_eq!(touched["state"], "ACTIVE");
+
+    let reaped = store_db::sessions::reap(&h.pool).await.unwrap();
+    assert!(
+        !reaped.idle_closed.contains(&session_id),
+        "a session being worked on must not be reaped: {reaped:?}"
+    );
+
+    let session = store_db::sessions::get(&h.pool, session_id).await.unwrap();
+    assert_eq!(session.state.as_str(), "ACTIVE");
+}
+
+#[sqlx::test(migrator = "store_db::MIGRATOR")]
+async fn another_tablet_cannot_hold_my_session_open(pool: sqlx::PgPool) {
+    let h = Harness::start(pool).await;
+    h.operator("E1", "1042", "R. Kumar", "OPERATOR").await;
+
+    let session_id = h.punch_and_claim("1042", TABLET_A).await;
+
+    let (status, body) = h
+        .post_raw(
+            TABLET_B,
+            &format!("/api/v1/sessions/{session_id}/touch"),
+            json!({}),
+        )
+        .await;
+    assert_eq!(status, 409, "{body}");
+}
+
+#[sqlx::test(migrator = "store_db::MIGRATOR")]
+async fn one_item_for_several_machines_writes_a_row_each(pool: sqlx::PgPool) {
+    // §11: one trip to the crib, one confirm, but consumption stays
+    // attributable — five inserts tagged with three machines could not tell you
+    // which machine ate them.
+    let h = Harness::start(pool).await;
+    let operator = h.operator("E1", "1042", "R. Kumar", "OPERATOR").await;
+    let item = h.item("CNMG120408", dec!(2)).await;
+    h.receipt_stock(item, dec!(20), operator).await;
+
+    let hmc = h.machine("HMC-01").await;
+    let vmc = h.machine("VMC-01").await;
+
+    let session_id = h.punch_and_claim("1042", TABLET_A).await;
+
+    let txn = h
+        .post_json(
+            TABLET_A,
+            "/api/v1/txn/issue",
+            json!({
+                "session_id": session_id,
+                "item_id": item,
+                "qty": 0,
+                "splits": [
+                    { "machine_id": hmc, "qty": 2 },
+                    { "machine_id": vmc, "qty": 3 },
+                ],
+            }),
+        )
+        .await;
+
+    // One confirm, two rows, and the balance is the one the bin actually holds.
+    assert_eq!(txn["ledger_ids"].as_array().unwrap().len(), 2);
+    assert_eq!(dec_of(&txn["delta_qty"]), dec!(-5));
+    assert_eq!(dec_of(&txn["on_hand"]), dec!(15));
+    assert_eq!(h.on_hand(item).await, dec!(15));
+
+    // Each row names its own machine.
+    let rows = sqlx::query!(
+        "select machine_id, delta_qty from stock_ledger
+          where session_id = $1 order by id",
+        session_id
+    )
+    .fetch_all(&h.pool)
+    .await
+    .unwrap();
+
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].machine_id, Some(hmc));
+    assert_eq!(rows[0].delta_qty, dec!(-2));
+    assert_eq!(rows[1].machine_id, Some(vmc));
+    assert_eq!(rows[1].delta_qty, dec!(-3));
+}
+
+#[sqlx::test(migrator = "store_db::MIGRATOR")]
+async fn a_split_that_overdraws_the_bin_writes_nothing(pool: sqlx::PgPool) {
+    // The §7 guard applies to the set, not to each row in turn. Serving the
+    // first two machines and refusing the third would leave the operator told
+    // "refused" while part of their trip sat in the ledger.
+    let h = Harness::start(pool).await;
+    let operator = h.operator("E1", "1042", "R. Kumar", "OPERATOR").await;
+    let item = h.item("ITEM-1", dec!(0)).await;
+    h.receipt_stock(item, dec!(4), operator).await;
+
+    let hmc = h.machine("HMC-01").await;
+    let vmc = h.machine("VMC-01").await;
+
+    let session_id = h.punch_and_claim("1042", TABLET_A).await;
+
+    let (status, body) = h
+        .post_raw(
+            TABLET_A,
+            "/api/v1/txn/issue",
+            json!({
+                "session_id": session_id,
+                "item_id": item,
+                "qty": 0,
+                "splits": [
+                    { "machine_id": hmc, "qty": 3 },
+                    { "machine_id": vmc, "qty": 3 },
+                ],
+            }),
+        )
+        .await;
+
+    assert_eq!(status, 409, "{body}");
+
+    // Not 1 (the first split), not -2: nothing was written at all.
+    assert_eq!(h.on_hand(item).await, dec!(4));
+    let written = sqlx::query_scalar!(
+        "select count(*) from stock_ledger where session_id = $1",
+        session_id
+    )
+    .fetch_one(&h.pool)
+    .await
+    .unwrap();
+    assert_eq!(written, Some(0));
+}
