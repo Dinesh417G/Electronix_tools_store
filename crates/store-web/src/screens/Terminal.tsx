@@ -29,22 +29,38 @@ import { AlertChip, Banner, BigButton, ConnectionPill, Header, Screen, Spinner }
 
 type Direction = "issue" | "receipt";
 
+/**
+ * What the rest of the flow needs from a session, whichever way identity
+ * arrived — a punch the operator claimed, or an emp code they typed.
+ *
+ * §10 keeps `manual` on the session rather than inferring it later: the two
+ * are the same transaction to the ledger but not the same evidence, and the
+ * screens that name the operator should say which one they are looking at.
+ */
+interface ActiveSession {
+  session_id: string;
+  emp_code: string;
+  full_name: string;
+  manual: boolean;
+}
+
 type Step =
   | { name: "idle" }
   | { name: "claim" }
-  | { name: "direction"; session: UnclaimedSession }
-  | { name: "item"; session: UnclaimedSession; direction: Direction }
-  | { name: "qty"; session: UnclaimedSession; direction: Direction; item: Item }
+  | { name: "manual" }
+  | { name: "direction"; session: ActiveSession }
+  | { name: "item"; session: ActiveSession; direction: Direction }
+  | { name: "qty"; session: ActiveSession; direction: Direction; item: Item }
   | {
       name: "optional";
-      session: UnclaimedSession;
+      session: ActiveSession;
       direction: Direction;
       item: Item;
       qty: string;
     }
   | {
       name: "confirm";
-      session: UnclaimedSession;
+      session: ActiveSession;
       direction: Direction;
       item: Item;
       qty: string;
@@ -104,7 +120,15 @@ export function Terminal({
     setError(null);
     try {
       await api.claim(card.session_id, terminalId);
-      setStep({ name: "direction", session: card });
+      setStep({
+        name: "direction",
+        session: {
+          session_id: card.session_id,
+          emp_code: card.emp_code,
+          full_name: card.full_name,
+          manual: false,
+        },
+      });
     } catch (err) {
       setError(describe(err));
       onRefreshCards();
@@ -114,8 +138,34 @@ export function Terminal({
     }
   };
 
+  // §10: the fallback when no punch arrives — device down, network down, or a
+  // reader that will not read this particular finger. The session it opens is
+  // ACTIVE immediately (there is no card for anyone to claim) and carries
+  // `manual_identity = true`, which is what makes it weaker evidence in
+  // reports than a punch.
+  const manualSignIn = async (empCode: string, pin: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const session = await api.manualSession(empCode, pin, terminalId);
+      setStep({
+        name: "direction",
+        session: {
+          session_id: session.session_id,
+          emp_code: session.emp_code,
+          full_name: session.full_name,
+          manual: true,
+        },
+      });
+    } catch (err) {
+      setError(describe(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const submit = async (
-    session: UnclaimedSession,
+    session: ActiveSession,
     direction: Direction,
     item: Item,
     qty: string,
@@ -203,6 +253,7 @@ export function Terminal({
           pending={pending}
           alerts={alertBanner}
           onStart={() => (cards.length > 0 ? setStep({ name: "claim" }) : onRefreshCards())}
+          onManual={() => setStep({ name: "manual" })}
           banner={banner}
         />
       );
@@ -215,6 +266,17 @@ export function Terminal({
           connection={connection}
           pending={pending}
           onPick={claim}
+          onManual={() => setStep({ name: "manual" })}
+          onCancel={reset}
+          banner={banner}
+        />
+      );
+
+    case "manual":
+      return (
+        <ManualScreen
+          busy={busy}
+          onSubmit={manualSignIn}
           onCancel={reset}
           banner={banner}
         />
@@ -336,12 +398,14 @@ function IdleScreen({
   pending,
   alerts,
   onStart,
+  onManual,
   banner,
 }: {
   connection: ConnectionState;
   pending: number;
   alerts: { low: number; empty: number };
   onStart: () => void;
+  onManual: () => void;
   banner: React.ReactNode;
 }) {
   const [now, setNow] = useState(() => new Date());
@@ -391,6 +455,19 @@ function IdleScreen({
         <BigButton onClick={onStart} variant="ghost" className="w-full">
           I'm here — show me
         </BigButton>
+
+        {/* §10's fallback. Deliberately quieter than the button above: the
+            reader is the normal way in, and a typed emp code is weaker
+            evidence. It stays reachable at all times anyway, because the
+            shift when the reader dies is exactly the shift nobody can afford
+            to stop booking stock. */}
+        <button
+          type="button"
+          onClick={onManual}
+          className="w-full rounded-xl px-4 py-3 text-sm text-slate-400 active:bg-slate-800"
+        >
+          Reader not working? Enter my number
+        </button>
       </div>
     </Screen>
   );
@@ -404,6 +481,7 @@ function ClaimScreen({
   connection,
   pending,
   onPick,
+  onManual,
   onCancel,
   banner,
 }: {
@@ -412,6 +490,7 @@ function ClaimScreen({
   connection: ConnectionState;
   pending: number;
   onPick: (card: UnclaimedSession) => void;
+  onManual: () => void;
   onCancel: () => void;
   banner: React.ReactNode;
 }) {
@@ -455,7 +534,18 @@ function ClaimScreen({
         ))}
       </div>
 
-      <div className="px-4 pt-3">
+      <div className="space-y-2 px-4 pt-3">
+        {/* Your card is not here — the reader missed you, or the push never
+            arrived. Same fallback as the idle screen, offered where the
+            operator actually discovers the problem. */}
+        <button
+          type="button"
+          onClick={onManual}
+          className="w-full rounded-xl px-4 py-3 text-sm text-slate-400 active:bg-slate-800"
+        >
+          My name isn't here — enter my number
+        </button>
+
         <BigButton onClick={onCancel} variant="ghost" className="w-full">
           Cancel
         </BigButton>
@@ -473,6 +563,90 @@ function initials(name: string): string {
     .join("");
 }
 
+// ── 2b. Manual identity (§10) ───────────────────────────────────────────
+//
+// The path for when the door reader is down. It is not a login: there is no
+// token and nothing is remembered afterwards. It opens one session for one
+// person, flagged `manual_identity`, and the next operator starts over.
+
+function ManualScreen({
+  busy,
+  onSubmit,
+  onCancel,
+  banner,
+}: {
+  busy: boolean;
+  onSubmit: (empCode: string, pin: string) => void;
+  onCancel: () => void;
+  banner: React.ReactNode;
+}) {
+  const [empCode, setEmpCode] = useState("");
+  const [pin, setPin] = useState("");
+  const ready = empCode.trim().length > 0 && pin.length > 0 && !busy;
+
+  return (
+    <Screen>
+      <Header title="Enter your number" subtitle="Only when the reader is down" onBack={onCancel} />
+      {banner}
+
+      {/* Neither field is a credential the browser should remember. This
+          terminal is shared: an autofilled emp code is somebody else's
+          identity on somebody else's transaction. `autocomplete="off"` alone
+          does not stop Chrome — it stops offering saved logins only once the
+          form no longer looks like one, which is why the PIN is a text input
+          masked in CSS rather than `type="password"`. */}
+      <div className="flex flex-1 flex-col gap-5 px-4">
+        <label className="block">
+          <span className="text-sm font-semibold text-slate-400">EMPLOYEE CODE</span>
+          <input
+            name="terminal-emp-code"
+            value={empCode}
+            onChange={(e) => setEmpCode(e.target.value.toUpperCase())}
+            autoFocus
+            autoComplete="off"
+            data-1p-ignore
+            data-lpignore="true"
+            className="tap mt-1 w-full rounded-xl bg-slate-800 px-4 text-2xl tabular-nums outline-none focus:ring-2 focus:ring-sky-500"
+          />
+        </label>
+
+        <label className="block">
+          <span className="text-sm font-semibold text-slate-400">PIN</span>
+          <input
+            name="terminal-pin"
+            inputMode="numeric"
+            value={pin}
+            onChange={(e) => setPin(e.target.value)}
+            autoComplete="off"
+            data-1p-ignore
+            data-lpignore="true"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && ready) onSubmit(empCode.trim(), pin);
+            }}
+            className="pin tap mt-1 w-full rounded-xl bg-slate-800 px-4 text-2xl tabular-nums outline-none focus:ring-2 focus:ring-sky-500"
+          />
+        </label>
+
+        <p className="text-sm text-slate-500">
+          This is recorded as a typed entry rather than a punch, and the
+          storekeeper can see which is which.
+        </p>
+      </div>
+
+      <div className="px-4 pt-3">
+        <BigButton
+          onClick={() => onSubmit(empCode.trim(), pin)}
+          variant="primary"
+          className="w-full"
+          disabled={!ready}
+        >
+          {busy ? "Checking…" : "Continue"}
+        </BigButton>
+      </div>
+    </Screen>
+  );
+}
+
 // ── 3. Direction (§12.3) ────────────────────────────────────────────────
 
 function DirectionScreen({
@@ -481,14 +655,18 @@ function DirectionScreen({
   onCancel,
   banner,
 }: {
-  session: UnclaimedSession;
+  session: ActiveSession;
   onPick: (d: Direction) => void;
   onCancel: () => void;
   banner: React.ReactNode;
 }) {
   return (
     <Screen>
-      <Header title={`Welcome, ${session.full_name}`} subtitle={session.emp_code} onBack={onCancel} />
+      <Header
+        title={`Welcome, ${session.full_name}`}
+        subtitle={session.manual ? `${session.emp_code} · typed in` : session.emp_code}
+        onBack={onCancel}
+      />
       {banner}
 
       {/* Two enormous buttons. Nothing else. */}
@@ -959,6 +1137,7 @@ function ConfirmScreen({
         </div>
         <div className="text-sm text-slate-500">
           {step.session.full_name} · {step.session.emp_code}
+          {step.session.manual ? " · typed in" : ""}
         </div>
       </div>
 
