@@ -17,7 +17,15 @@ export const viewport: Viewport = {
   themeColor: "#020617",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+// Typed explicitly rather than with Next's generated `LayoutProps<"/">`.
+// That type is written into .next/types during a build, so using it makes
+// `tsc --noEmit` depend on a build having already happened — which passes
+// locally off a stale .next and fails in CI, where typecheck runs first.
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="en" className="h-full">
       <body className="min-h-full">{children}</body>
