@@ -30,7 +30,16 @@ export interface ItemRow {
   last_txn_at: Date | null;
 }
 
-const SELECT = sql`
+/**
+ * The shared projection.
+ *
+ * A function, not a constant: a tagged template is a *call*, so evaluating it
+ * at module scope opens a connection at import time — which defeats the
+ * lazy client in `db.ts` and fails `next build`, where no DATABASE_URL exists
+ * and none is needed. Local builds hid it behind a populated .env.local; CI
+ * did not.
+ */
+const select = () => sql`
   select i.id, i.item_code, i.description, i.uom,
          i.category_id, c.name as category_name,
          i.iso_code, i.grade, i.manufacturer, i.mfr_part_no,
@@ -47,7 +56,7 @@ const SELECT = sql`
 `;
 
 export async function getItem(id: string): Promise<ItemRow> {
-  const rows = await sql<ItemRow[]>`${SELECT} where i.id = ${id} limit 1`;
+  const rows = await sql<ItemRow[]>`${select()} where i.id = ${id} limit 1`;
   const item = rows[0];
   if (!item) throw ApiError.notFound("no such item");
   return item;
@@ -71,7 +80,7 @@ export async function lookupByCode(code: string): Promise<ItemRow> {
   if (!trimmed) throw ApiError.badRequest("empty barcode");
 
   const rows = await sql<ItemRow[]>`
-    ${SELECT}
+    ${select()}
     where i.item_code = ${trimmed}
        or i.id = (select item_id from item_barcodes where code = ${trimmed})
        or i.id = (select item_id from tool_serials where serial_no = ${trimmed})
@@ -95,7 +104,7 @@ export async function searchItems(query: string, limit = 25): Promise<ItemRow[]>
   if (!q) return [];
 
   return sql<ItemRow[]>`
-    ${SELECT}
+    ${select()}
     where i.active
       and (i.item_code ilike ${"%" + q + "%"}
         or i.description ilike ${"%" + q + "%"}
@@ -113,7 +122,7 @@ export async function searchItems(query: string, limit = 25): Promise<ItemRow[]>
 /** The browse-all list: paged, stable order, active items only. */
 export async function browseItems(offset = 0, limit = 25): Promise<ItemRow[]> {
   return sql<ItemRow[]>`
-    ${SELECT}
+    ${select()}
     where i.active
     order by i.item_code
     limit ${Math.min(Math.max(limit, 1), 100)}
@@ -139,7 +148,7 @@ export async function stockList(filters: {
   const { states = null, q = null, bin = null, category = null, limit = 500 } = filters;
 
   return sql<ItemRow[]>`
-    ${SELECT}
+    ${select()}
     where i.active
       and (${states}::text[] is null
            or coalesce(s.alert_state, 'OK') = any(${states}::text[]))

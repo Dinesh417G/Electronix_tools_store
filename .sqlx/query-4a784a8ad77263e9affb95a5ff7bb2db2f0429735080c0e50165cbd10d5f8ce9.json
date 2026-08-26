@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        insert into sessions (\n            operator_id, punch_id, state, manual_identity,\n            identity_source, tablet_id, claimed_at, last_activity_at\n        )\n        -- 0007 made identity strength three-valued. This path is the typed\n        -- emp code and PIN, which is the weakest of the three; the column\n        -- defaults to PUNCH, and a punchless PUNCH row is refused outright.\n        values ($1, null, 'ACTIVE', true, 'PIN', $2, now(), now())\n        returning id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4a784a8ad77263e9affb95a5ff7bb2db2f0429735080c0e50165cbd10d5f8ce9"
+}
