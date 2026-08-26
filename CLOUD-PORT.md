@@ -101,25 +101,73 @@ to a private LAN address.**
 
 The settings screen configures both; only one is live at a time.
 
-## Still to build
+## Built
 
-- [ ] Next.js app, API routes ported from `crates/store-server/src/api/`
-- [ ] Session state machine in TS, exhaustive over (state, event)
-- [ ] Auth: tablet enrolment, operator PIN (argon2), SHA-256 token hashes
-- [ ] ADMS endpoints (`/iclock/*`), plain text, tab-separated
-- [ ] Code128 + QR label rendering (replaces the `store-label` crate)
-- [ ] Camera scanning with torch toggle where the browser exposes it
-- [ ] Mobile audit of every screen at 390 px, admin included
-- [ ] Deploy to Vercel, custom domain
+- [x] Next.js app, 35+ API routes ported from `crates/store-server/src/api/`
+- [x] Session state machine in TS, exhaustive over (state, event)
+- [x] Auth: tablet enrolment, operator PIN (argon2), SHA-256 token hashes
+- [x] ADMS endpoints (`/iclock/*`), plain text, tab-separated
+- [x] QR + Code128 label rendering (replaces the `store-label` crate)
+- [x] Camera scanning with a torch toggle where the browser exposes it
+- [x] Mobile audit of every screen at 390 px, admin included
+- [x] Running serial numbers and label printer settings
+- [x] Passkey sign-in (`0007`), a third identity source between door and PIN
+- [x] A `cloud (next.js)` CI job — typecheck, build, label round-trip
+- [x] Deployed to Vercel as a preview
 
-## The one thing the owner must do
+## Live
 
-Two environment variables have to be set in the Vercel project by hand:
+https://electronix-tool-crib-3il59edm4-dinesh417gs-projects.vercel.app
 
+Serving the UI and answering `/api/v1/version`. Every database-backed endpoint
+returns "DATABASE_URL is not set" until the step below is done.
+
+## The two things only the owner can do
+
+Claude does not enter credentials, and cannot read the Supabase password or
+service-role key through its tooling. From the repo root:
+
+```sh
+npx vercel env add DATABASE_URL preview            # Supabase → Settings → Database
+npx vercel env add STORE_ENROLMENT_SECRET preview  # pick a fresh one
+npx vercel deploy --yes --scope dinesh417gs-projects
 ```
-DATABASE_URL                 postgres://…  (Supabase → Settings → Database)
-SUPABASE_SERVICE_ROLE_KEY    (Supabase → Settings → API)
-```
 
-Claude does not handle API keys or passwords — they are pasted by the owner
-into Vercel's own settings, and the code reads them from `process.env`.
+Use the **pooled** Supabase connection (port 6543, "Transaction"), not the
+direct 5432 one: serverless opens a connection per instance, and `db.ts`
+already sets `prepare: false` for that pooler.
+
+The redeploy is not optional — Vercel bakes environment variables into a
+deployment, so an existing one will not see them.
+
+`WEBAUTHN_RP_ID` / `WEBAUTHN_ORIGIN` need no value: the code falls back to the
+request's own hostname and origin. Note that preview URLs change per
+deployment, so a passkey registered against one preview will not work on the
+next — an argument for a stable domain.
+
+## Then
+
+1. **Seed a catalog.** Supabase currently holds 1 operator, 8 reason codes, and
+   **no items or machines** — the terminal will sign an operator in and have
+   nothing to issue. Either port `crates/store-cli/catalog/demo-catalog.csv`
+   (90 items, 9 machines) or load the real one.
+2. **Verify the live loop**: enrol → punch at `/iclock/cdata` → claim → issue →
+   ledger row → `reconcile` clean.
+3. **Update `CLAUDE.md` §2.** It still describes the Rust deployment and locked
+   Postgres to the server PC. §16 says that file wins and must be updated when
+   a decision changes; leaving it is exactly the stale spec §16 warns about.
+4. **Decide the offline question** (above). It is parked, not solved.
+5. Delete the stray empty Vercel project `tools_store`, left by a first attempt
+   that built nothing and still reported Ready.
+
+## Deployment notes worth keeping
+
+- `cloud/vercel.json` pins `"framework": "nextjs"`. Without it the project
+  builds every route successfully and the edge still answers
+  `X-Vercel-Error: NOT_FOUND` for every path, because the routing was never
+  told it was Next.
+- The project's Root Directory is `cloud`, so `vercel deploy` runs from the
+  **repo root**; running it inside `cloud/` makes Vercel look for `cloud/cloud`.
+  The root `.vercelignore` keeps the Rust workspace out of the upload.
+- Read the build log before believing a deployment. A build that completes in
+  264 ms installed nothing and built nothing, and still says `● Ready`.
