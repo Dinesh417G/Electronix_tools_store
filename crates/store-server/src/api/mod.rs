@@ -26,6 +26,7 @@ pub fn router(state: AppState) -> Router {
         .route("/sessions/manual", post(sessions::manual))
         .route("/sessions/{id}", get(sessions::get))
         .route("/sessions/{id}/claim", post(sessions::claim))
+        .route("/sessions/{id}/touch", post(sessions::touch))
         .route("/sessions/{id}/close", post(sessions::close))
         // catalog
         .route("/items/lookup", get(catalog::lookup))

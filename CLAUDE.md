@@ -427,7 +427,11 @@ Rules:
 - The tablet's home screen lists **all `UNCLAIMED` punches from the last 90 s** as name
   cards. Tailgating is solved socially: each person taps their own card.
 - A claimed session is bound to one `tablet_id`. A second tablet cannot claim it.
-- `ACTIVE` closes on submit, on explicit Done, or after 180 s idle.
+- `ACTIVE` closes on submit, on explicit Done, or after 180 s idle. **Idle means idle**: the
+  tablet posts `/touch` as the operator moves between steps, because scanning, keying a
+  quantity and picking machines are all local to the tablet. Without that the server cannot
+  tell somebody working from somebody who walked away, and 180 s becomes a deadline on the
+  whole transaction rather than a timeout on abandonment.
 - Transactions submitted after close are rejected `410 Gone`. The tablet then re-opens the
   claim screen rather than silently discarding the operator's typing.
 - If no punch arrives (device down, network down), the tablet offers **"Enter manually"** →
@@ -452,6 +456,7 @@ GET    /api/v1/sessions/unclaimed          name cards for the claim screen
 GET    /api/v1/sessions/{id}
 POST   /api/v1/sessions/{id}/claim         body: { tablet_id }
 POST   /api/v1/sessions/manual             body: { emp_code, pin, tablet_id } → session
+POST   /api/v1/sessions/{id}/touch         operator is still working; pushes back the 180s idle
 POST   /api/v1/sessions/{id}/close
 
 GET    /api/v1/items/lookup?barcode=       resolve scan → item + on_hand + bin  (must be <100ms)
@@ -459,6 +464,10 @@ GET    /api/v1/items/search?q=             typeahead across item_code, descripti
 GET    /api/v1/items/{id}
 
 POST   /api/v1/txn/issue                   { session_id, item_id, qty, machine_id?, reason_id?, note? }
+                                           or { session_id, item_id, reason_id?, note?,
+                                                splits: [{ machine_id, qty }] } — one item for
+                                           several machines: one ledger row each, one transaction,
+                                           so the §7 guard applies to the total (§11)
 POST   /api/v1/txn/receipt                 { session_id, item_id, qty, unit_cost?, reason_id?, note? }
 POST   /api/v1/txn/{id}/reverse            admin only; inserts the reversing row
 

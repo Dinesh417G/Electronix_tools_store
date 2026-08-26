@@ -89,7 +89,52 @@ pub async fn record(pool: &PgPool, new: &NewMovement) -> Result<MovementReceipt>
     }
 
     let mut tx = pool.begin().await?;
+    let receipt = append(&mut tx, new).await?;
+    tx.commit().await?;
 
+    Ok(receipt)
+}
+
+/// Append several movements as one atomic step.
+///
+/// §11's multi-machine issue: one operator taking one item for several machines
+/// is one decision, and the ledger records it as one row per machine so
+/// consumption stays attributable. Splitting it into separate requests would
+/// let the second fail after the first committed — the operator would be told
+/// the transaction was refused while part of it sat in the ledger, which is the
+/// one outcome the §7 guard exists to prevent. It also cannot work over the
+/// wire: §10 closes the session on the first submit.
+///
+/// The §7 negative-stock guard therefore applies to the *set*: if the last
+/// split would overdraw the bin, every row rolls back, not just that one.
+pub async fn record_many(
+    pool: &PgPool,
+    movements: &[NewMovement],
+) -> Result<Vec<MovementReceipt>> {
+    let mut tx = pool.begin().await?;
+    let mut receipts = Vec::with_capacity(movements.len());
+
+    for new in movements {
+        // Replay of a partially-acknowledged batch: answer the rows already in
+        // the ledger from the ledger, and append only what is missing.
+        if let Some(client_uuid) = new.client_txn_uuid {
+            if let Some(existing) = find_by_client_uuid_conn(&mut tx, client_uuid).await? {
+                receipts.push(existing);
+                continue;
+            }
+        }
+        receipts.push(append(&mut tx, new).await?);
+    }
+
+    tx.commit().await?;
+
+    Ok(receipts)
+}
+
+/// The insert itself, on a caller-supplied connection so one transaction can
+/// span several appends. Never public: [`record`] and [`record_many`] are the
+/// only ways stock moves.
+async fn append(tx: &mut sqlx::PgConnection, new: &NewMovement) -> Result<MovementReceipt> {
     let prior_alert_state = sqlx::query_scalar!(
         "select alert_state from item_stock where item_id = $1",
         new.movement.item_id
@@ -135,8 +180,6 @@ pub async fn record(pool: &PgPool, new: &NewMovement) -> Result<MovementReceipt>
     .fetch_one(&mut *tx)
     .await?;
 
-    tx.commit().await?;
-
     let crossed_threshold = prior_alert_state
         .as_deref()
         .is_some_and(|prior| prior != stock.alert_state)
@@ -165,6 +208,15 @@ pub async fn find_by_client_uuid(
     pool: &PgPool,
     client_txn_uuid: Uuid,
 ) -> Result<Option<MovementReceipt>> {
+    find_by_client_uuid_conn(&mut *pool.acquire().await?, client_txn_uuid).await
+}
+
+/// As [`find_by_client_uuid`], on a caller-supplied connection so a batch can
+/// check for its own replays inside the transaction it is about to write.
+async fn find_by_client_uuid_conn(
+    conn: &mut sqlx::PgConnection,
+    client_txn_uuid: Uuid,
+) -> Result<Option<MovementReceipt>> {
     let row = sqlx::query!(
         r#"
         select l.id, l.item_id, l.delta_qty, l.created_at,
@@ -175,7 +227,7 @@ pub async fn find_by_client_uuid(
         "#,
         client_txn_uuid
     )
-    .fetch_optional(pool)
+    .fetch_optional(&mut *conn)
     .await?;
 
     Ok(row.map(|r| MovementReceipt {

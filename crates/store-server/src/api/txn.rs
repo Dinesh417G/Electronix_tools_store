@@ -34,6 +34,25 @@ pub struct IssueRequest {
     /// the server, so a replayed queue deduplicates instead of double-booking.
     #[serde(default)]
     pub client_txn_uuid: Option<Uuid>,
+    /// One item going to several machines in one trip to the crib.
+    ///
+    /// When present, `qty` and `machine_id` are ignored and one ledger row is
+    /// written per split, all in one transaction. A row per machine is what
+    /// keeps consumption-by-machine answerable: five inserts tagged with three
+    /// machines cannot tell you which machine ate them.
+    #[serde(default)]
+    pub splits: Vec<IssueSplit>,
+}
+
+/// One machine's share of a multi-machine issue.
+#[derive(Debug, Deserialize)]
+pub struct IssueSplit {
+    pub machine_id: Uuid,
+    pub qty: Decimal,
+    /// Its own idempotency key, so a half-acknowledged batch replays row by row
+    /// rather than all-or-nothing.
+    #[serde(default)]
+    pub client_txn_uuid: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -55,6 +74,11 @@ pub struct ReceiptRequest {
 #[derive(Debug, Serialize)]
 pub struct TxnResponse {
     pub ledger_id: i64,
+    /// Every row this request wrote. One entry for an ordinary transaction, one
+    /// per machine for a split issue — the success screen says how many rows a
+    /// single confirm produced, so an operator is never surprised by what turns
+    /// up in the ledger.
+    pub ledger_ids: Vec<i64>,
     pub item_id: Uuid,
     pub item_code: String,
     pub description: String,
@@ -107,6 +131,7 @@ async fn replayed(
 
     Ok(Some(Json(TxnResponse {
         ledger_id: receipt.ledger_id,
+        ledger_ids: vec![receipt.ledger_id],
         item_id: receipt.item_id,
         item_code: item.item_code,
         description: item.description,
@@ -177,6 +202,7 @@ async fn finish(
 
     Ok(Json(TxnResponse {
         ledger_id: receipt.ledger_id,
+        ledger_ids: vec![receipt.ledger_id],
         item_id,
         item_code: item.item_code,
         description: item.description,
@@ -187,12 +213,52 @@ async fn finish(
     }))
 }
 
+/// Close the session and answer for a batch that wrote several rows.
+///
+/// The balance reported is the one after the *last* row, because that is what
+/// the bin holds now; the delta is the total that left it. Reporting one split's
+/// figure would be true of nothing the operator did.
+async fn finish_many(
+    state: &AppState,
+    session_id: Uuid,
+    item_id: Uuid,
+    receipts: Vec<MovementReceipt>,
+) -> ApiResult<Json<TxnResponse>> {
+    let last = receipts
+        .last()
+        .ok_or_else(|| ApiError::Conflict("a split issue wrote no rows".into()))?;
+
+    let total: Decimal = receipts.iter().map(|r| r.delta_qty).sum();
+    let crossed = receipts.iter().any(|r| r.crossed_threshold);
+
+    let aggregate = MovementReceipt {
+        ledger_id: last.ledger_id,
+        item_id: last.item_id,
+        delta_qty: total,
+        on_hand: last.on_hand,
+        alert_state: last.alert_state.clone(),
+        crossed_threshold: crossed,
+        created_at: last.created_at,
+    };
+
+    let ledger_ids: Vec<i64> = receipts.iter().map(|r| r.ledger_id).collect();
+    let mut response = finish(state, session_id, item_id, aggregate).await?;
+    response.0.ledger_id = ledger_ids[0];
+    response.0.ledger_ids = ledger_ids;
+
+    Ok(response)
+}
+
 /// `POST /api/v1/txn/issue` — TAKE OUT.
 pub async fn issue(
     State(state): State<AppState>,
     auth: Auth,
     Json(body): Json<IssueRequest>,
 ) -> ApiResult<Json<TxnResponse>> {
+    if !body.splits.is_empty() {
+        return issue_split(state, auth, body).await;
+    }
+
     if let Some(replay) = replayed(&state, body.client_txn_uuid, body.item_id).await? {
         return Ok(replay);
     }
@@ -217,6 +283,70 @@ pub async fn issue(
     .await?;
 
     finish(&state, body.session_id, body.item_id, receipt).await
+}
+
+/// One item, several machines, one confirm (§11).
+///
+/// Every split becomes its own ledger row inside one transaction, so the §7
+/// negative-stock guard is applied to the total: an operator who asks for more
+/// than the bin holds gets nothing written, rather than the first two machines
+/// served and the third refused.
+async fn issue_split(
+    state: AppState,
+    auth: Auth,
+    body: IssueRequest,
+) -> ApiResult<Json<TxnResponse>> {
+    // A batch whose acknowledgement was lost is answered from the ledger, for
+    // the same reason a single transaction is: by now the session has closed on
+    // submit, so authorising first would refuse rows that are already recorded.
+    let mut replayed_rows = Vec::new();
+    for split in &body.splits {
+        let Some(key) = split.client_txn_uuid else {
+            break;
+        };
+        let Some(found) = store_db::ledger::find_by_client_uuid(&state.pool, key).await? else {
+            break;
+        };
+        if found.item_id != body.item_id {
+            return Err(ApiError::Conflict(
+                "That transaction id was already used for a different item.".into(),
+            ));
+        }
+        replayed_rows.push(found);
+    }
+    if replayed_rows.len() == body.splits.len() {
+        tracing::info!(
+            rows = replayed_rows.len(),
+            "replayed split issue answered from the ledger"
+        );
+        return finish_many(&state, body.session_id, body.item_id, replayed_rows).await;
+    }
+
+    let operator_id = authorise_session(&state, &auth, body.session_id).await?;
+
+    let mut movements = Vec::with_capacity(body.splits.len());
+    for split in &body.splits {
+        movements.push(NewMovement {
+            movement: Movement::issue(body.item_id, Qty::new(split.qty)?),
+            operator_id,
+            session_id: Some(body.session_id),
+            machine_id: Some(split.machine_id),
+            reason_id: body.reason_id,
+            note: body.note.clone(),
+            unit_cost: None,
+            device_ts: None,
+            client_txn_uuid: split.client_txn_uuid,
+        });
+    }
+
+    let receipts = store_db::ledger::record_many(&state.pool, &movements).await?;
+    tracing::info!(
+        rows = receipts.len(),
+        item_id = %body.item_id,
+        "split issue recorded, one row per machine"
+    );
+
+    finish_many(&state, body.session_id, body.item_id, receipts).await
 }
 
 /// `POST /api/v1/txn/receipt` — PUT IN.
@@ -280,6 +410,7 @@ pub async fn reverse(
 
     Ok(Json(TxnResponse {
         ledger_id: receipt.ledger_id,
+        ledger_ids: vec![receipt.ledger_id],
         item_id: receipt.item_id,
         item_code: item.item_code,
         description: item.description,

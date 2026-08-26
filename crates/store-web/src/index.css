@@ -58,6 +58,18 @@ body :not(input):not(textarea) {
   touch-action: manipulation;
 }
 
+/* Masks a PIN without `type="password"`.
+ *
+ * A wall terminal is shared, and Chrome offers saved credentials to any
+ * text+password pair it recognises as a login form — on this screen that
+ * means one operator's browser can fill another operator's number. Masking
+ * in CSS keeps the digits hidden while leaving the field a plain text input,
+ * which the password manager ignores. */
+.pin {
+  -webkit-text-security: disc;
+  text-security: disc;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
