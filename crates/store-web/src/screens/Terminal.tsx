@@ -114,6 +114,28 @@ export function Terminal({
     setError(null);
   }, []);
 
+  // §10: ACTIVE closes on submit, on explicit Done, or after 180 s idle. This
+  // is the Done arm. Without it, an operator who claims a card and then backs
+  // out leaves the session ACTIVE until the reaper takes it, and for those
+  // three minutes the store looks busy to everyone else — including to them,
+  // if they punch again.
+  //
+  // Deliberately fire-and-forget: the operator has already walked away by the
+  // time this lands, the endpoint is idempotent (`where state = 'ACTIVE'`), and
+  // if the LAN is down the reaper closes the session anyway. Nothing here is
+  // worth making somebody watch a spinner for.
+  //
+  // Not called from the success screen: on the online path the server already
+  // closed the session on submit, and on the offline path the transaction is
+  // still sitting in the outbox — closing now would meet its flush with a 410.
+  const abandon = useCallback(
+    (session: ActiveSession) => {
+      void api.closeSession(session.session_id).catch(() => {});
+      reset();
+    },
+    [reset],
+  );
+
   // §12.2: a punch arriving while we are idle foregrounds the claim screen.
   // Only from idle — pulling an operator mid-transaction to somebody else's
   // card would be worse than making them tap once.
@@ -358,7 +380,7 @@ export function Terminal({
         <DirectionScreen
           session={step.session}
           onPick={(direction) => setStep({ name: "item", session: step.session, direction })}
-          onCancel={reset}
+          onCancel={() => abandon(step.session)}
           banner={banner}
         />
       );
@@ -370,7 +392,7 @@ export function Terminal({
           onPick={(item) =>
             setStep({ name: "qty", session: step.session, direction: step.direction, item })
           }
-          onCancel={reset}
+          onCancel={() => abandon(step.session)}
           banner={banner}
         />
       );
