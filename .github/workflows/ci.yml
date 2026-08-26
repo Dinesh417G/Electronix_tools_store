@@ -60,6 +60,52 @@ jobs:
           path: crates/store-web/dist
           retention-days: 1
 
+  # The cloud port: the Next.js app that serves the API and the terminal from
+  # Vercel (CLOUD-PORT.md). Independent of `web` — it embeds nothing and needs
+  # no artifact — so it runs alongside rather than behind it.
+  #
+  # It builds with no DATABASE_URL on purpose. Next evaluates route modules
+  # while collecting build configuration, so a module that connects at import
+  # time fails the build for a database the build never needed to touch. This
+  # job is what keeps that true.
+  cloud:
+    name: cloud (next.js)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      # Node 22, not the 20 used by `web`: the label round-trip test imports a
+      # TypeScript module directly under --experimental-strip-types, which
+      # landed in 22.6.
+      - name: Install Node 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: cloud/package-lock.json
+
+      - name: npm ci
+        run: npm ci
+        working-directory: cloud
+
+      - name: typecheck
+        run: npm run typecheck
+        working-directory: cloud
+
+      - name: build
+        run: npm run build
+        working-directory: cloud
+
+      # M7's software half for the QR sticker: render the barcode the label
+      # actually carries, decode it with an independent reader, and check the
+      # payload survives. This test exists because bwip-js renders on a
+      # transparent background by default, which flattens to black and decodes
+      # as nothing — a label that looks perfect and will not scan.
+      - name: label round-trip
+        run: npm run test:labels
+        working-directory: cloud
+
   # Format and the offline build. Deliberately has no database: this job is what
   # proves the checked-in .sqlx data is current, so a contributor who changes a
   # query without re-running `cargo sqlx prepare` finds out here.
