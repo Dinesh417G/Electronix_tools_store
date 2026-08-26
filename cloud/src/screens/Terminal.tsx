@@ -25,6 +25,7 @@ import {
 import type { ConnectionState } from "../lib/events";
 import { enqueue, newTxnId } from "../lib/outbox";
 import { isScanningSupported, startScanner, type ScannerError } from "../lib/scanner";
+import { isPasskeySupported, signInWithPasskey } from "../lib/passkey";
 import { AlertChip, Banner, BigButton, ConnectionPill, Header, Screen, Spinner } from "../components/ui";
 
 type Direction = "issue" | "receipt";
@@ -210,6 +211,30 @@ export function Terminal({
   // ACTIVE immediately (there is no card for anyone to claim) and carries
   // `manual_identity = true`, which is what makes it weaker evidence in
   // reports than a punch.
+  // §8's third identity source. The phone verifies its owner and signs our
+  // challenge; the server opens the session with identity_source = WEBAUTHN,
+  // which reports as stronger than a typed PIN and weaker than the door.
+  const passkeySignIn = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const session = await signInWithPasskey();
+      setStep({
+        name: "direction",
+        session: {
+          session_id: session.session_id,
+          emp_code: session.emp_code,
+          full_name: session.full_name,
+          manual: session.manual_identity,
+        },
+      });
+    } catch (err) {
+      setError(describe(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const manualSignIn = async (empCode: string, pin: string) => {
     setBusy(true);
     setError(null);
@@ -370,6 +395,7 @@ export function Terminal({
         <ManualScreen
           busy={busy}
           onSubmit={manualSignIn}
+          onPasskey={passkeySignIn}
           onCancel={reset}
           banner={banner}
         />
@@ -713,22 +739,47 @@ function initials(name: string): string {
 function ManualScreen({
   busy,
   onSubmit,
+  onPasskey,
   onCancel,
   banner,
 }: {
   busy: boolean;
   onSubmit: (empCode: string, pin: string) => void;
+  onPasskey: () => void;
   onCancel: () => void;
   banner: React.ReactNode;
 }) {
   const [empCode, setEmpCode] = useState("");
   const [pin, setPin] = useState("");
+  const [passkeyReady, setPasskeyReady] = useState(false);
   const ready = empCode.trim().length > 0 && pin.length > 0 && !busy;
+
+  // Asked at render rather than assumed: a wall tablet with no sensor and a
+  // desktop browser both answer false, and a fingerprint button that cannot
+  // produce a prompt reads as a broken terminal.
+  useEffect(() => {
+    void isPasskeySupported().then(setPasskeyReady);
+  }, []);
 
   return (
     <Screen>
       <Header title="Enter your number" subtitle="Only when the reader is down" onBack={onCancel} />
       {banner}
+
+      {/* Offered above the PIN because it is both faster and stronger evidence:
+          §10 records it as WEBAUTHN rather than PIN, and the ledger keeps that
+          distinction. It is still not the door — the phone verifies whoever it
+          trusts, it does not match a finger against enrolled templates. */}
+      {passkeyReady && (
+        <div className="px-4 pb-4">
+          <BigButton onClick={onPasskey} variant="primary" className="w-full" disabled={busy}>
+            Use fingerprint on this phone
+          </BigButton>
+          <p className="pt-2 text-center text-xs text-slate-500">
+            Only on a phone you registered yourself.
+          </p>
+        </div>
+      )}
 
       {/* Neither field is a credential the browser should remember. This
           terminal is shared: an autofilled emp code is somebody else's
