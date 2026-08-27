@@ -12,7 +12,7 @@ import { z } from "zod";
 import { requireRole } from "@/lib/auth";
 import { sql } from "@/lib/db";
 import { ApiError, handler } from "@/lib/errors";
-import { printSheetHtml, type LabelData } from "@/lib/labels";
+import { printSheetHtml, type LabelData, type SheetPaper } from "@/lib/labels";
 import { getPrinterSettings, queuePrintJob } from "@/lib/serials";
 
 export const runtime = "nodejs";
@@ -23,6 +23,8 @@ const MAX_LABELS = 500;
 const Body = z.object({
   item_ids: z.array(z.string().uuid()).min(1).max(MAX_LABELS),
   copies: z.number().int().min(1).max(50).default(1),
+  /** Overrides the store's configured paper for this batch only. */
+  paper: z.enum(["EXACT", "A4", "LETTER"]).optional(),
 });
 
 export const POST = handler(async (request: Request) => {
@@ -30,7 +32,7 @@ export const POST = handler(async (request: Request) => {
 
   const parsed = Body.safeParse(await request.json().catch(() => null));
   if (!parsed.success) throw ApiError.badRequest("item_ids is required", parsed.error.issues);
-  const { item_ids, copies } = parsed.data;
+  const { item_ids, copies, paper } = parsed.data;
 
   if (item_ids.length * copies > MAX_LABELS) {
     throw ApiError.badRequest(
@@ -64,6 +66,7 @@ export const POST = handler(async (request: Request) => {
       heightMm: Number(printer.label_height_mm),
     },
     copies,
+    (paper ?? printer.sheet_paper) as SheetPaper,
   );
 
   // Recorded even in BROWSER_PDF mode, so "who printed what" survives the

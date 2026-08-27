@@ -903,6 +903,7 @@ written alongside it are what stop that from being the whole story:
 | `tests/ledger-property.mjs` | M1 | yes |
 | `tests/e2e.mjs` | M4 | yes |
 | `tests/webauthn.mjs` | §8's passkey path | yes, and a headless Chrome |
+| `tests/terminal-flow.mjs` | §12's issue flow, through the screens | yes, and a headless Chrome |
 
 Two things about them are worth stating, because both were learned the hard
 way rather than designed in:
@@ -919,6 +920,16 @@ way rather than designed in:
   `tests/reports-db.mjs` runs after `migrate` and before `npm run seed`, and
   asserts that the ledger is empty before it starts. Reordering the workflow
   fails it loudly instead of quietly changing every number.
+
+- **§12's operator flow is gated by `cloud/tests/terminal-flow.mjs`.** Manual
+  sign-in, TAKE OUT, search, quantity, skip, confirm — driven through the
+  screens, then checked against the ledger, because a screen that says "done"
+  and a row that exists are different claims. It found two defects on its first
+  run, both invisible to every API-level test: manual sign-in was refused
+  outright by the `sessions_identity_source_matches_punch` constraint 0007 added
+  (the writer was never updated, so §10's only fallback — and the only way in
+  before a reader is installed — had never worked), and the quantity pad
+  appended to its default of 1, so tapping 2 booked 12.
 
 What is still not covered: `typecheck` cannot see the database, so a column
 rename passes CI and fails at runtime anywhere these paths do not go. And

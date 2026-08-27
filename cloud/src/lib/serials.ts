@@ -165,6 +165,8 @@ export interface PrinterSettings {
   dpi: number;
   label_width_mm: string;
   label_height_mm: string;
+  /** EXACT for a roll-fed label printer; A4/LETTER lays out a cut-guide grid. */
+  sheet_paper: "EXACT" | "A4" | "LETTER";
   last_seen_at: Date | null;
 }
 
@@ -173,7 +175,7 @@ export async function getPrinterSettings(): Promise<PrinterSettings> {
     select mode, name, host, port, dpi,
            label_width_mm::text as label_width_mm,
            label_height_mm::text as label_height_mm,
-           last_seen_at
+           sheet_paper, last_seen_at
       from printer_settings where id
   `;
   return rows[0];
@@ -197,6 +199,7 @@ export async function updatePrinterSettings(
            port = ${next.port}, dpi = ${next.dpi},
            label_width_mm = ${next.label_width_mm},
            label_height_mm = ${next.label_height_mm},
+           sheet_paper = ${next.sheet_paper},
            updated_at = now()
      where id
   `;
