@@ -39,12 +39,13 @@ Three binaries in one Cargo workspace:
 
 | Decision | Value | Why |
 |---|---|---|
-| Backend language | Rust, Axum, tokio | House stack (ElectronIx DNC / MES) |
-| Database | **PostgreSQL 16** on the server PC | Multiple tablets write concurrently; SQLite's single-writer model is wrong here |
-| DB access | `sqlx` with compile-time checked queries, `sqlx::migrate!` | Same as DNC |
+| Backend language | **TypeScript, Next.js, on Vercel** (`cloud/`) — *changed, see below*. Rust/Axum/tokio (`crates/`) stays as the reference implementation | House stack was Rust; the deployment target is now a cloud with no Rust runtime and no persistent process |
+| Database | **Supabase Postgres** (managed, `ap-south-1`) — *changed, see below* | Multiple tablets write concurrently; SQLite's single-writer model is wrong here. Postgres 16 on the server PC was right while there was a server PC to own it |
+| DB access | **Raw SQL through `postgres.js`** in `cloud/`; `sqlx` with compile-time checked queries in `crates/` | The Rust queries are checked against a schema at build time. The TypeScript ones are not — see what this costs, below |
+| Migrations | **`crates/store-db/migrations/` is the schema of record**, applied to Supabase verbatim | One schema, two clients. A migration written for the cloud that never lands here is how the two implementations start to disagree |
 | Door hardware | Standalone **ZKTeco (or eSSL rebadge) terminal speaking ADMS "Push"** | Device pushes over plain HTTP — no vendor DLL, no Windows-only SDK |
-| Who unlocks the door | **The terminal, on its own.** Never our software | Door must work when the server PC is off. We are observers, not the lock |
-| Tablet client | **Responsive web app (PWA), served by `store-server`** — *changed, see below* | Runs on the phone in your pocket today and the wall tablet later; updates over the air with no signing key, no store review and no device visits |
+| Who unlocks the door | **The terminal, on its own.** Never our software | Door must work when the server PC is off — and now, when the line's internet is down. We are observers, not the lock |
+| Tablet client | **Responsive web app (PWA), served by the cloud app** — *changed twice, see below* | Runs on the phone in your pocket today and the wall tablet later; updates over the air with no signing key, no store review and no device visits |
 | Tool lifecycle | **Consumed only.** No return, regrind or tool-life tracking | Scope decision |
 | Item selection | **Both** barcode/QR scan **and** manual search-and-enter | Scope decision |
 | Issue fields | Quantity mandatory. Machine/job + reason **optional, with a Skip button** | Scope decision |
@@ -84,6 +85,55 @@ Three binaries in one Cargo workspace:
 >
 > Label printing is unaffected by this — it was always a server endpoint (§11),
 > and the PDF opens in the browser's print dialogue.
+
+> **Decision changed (cloud port, 2026-08-27).** The system was locked to a Rust
+> service on a PC inside the plant, owning a Postgres on the same machine. The
+> deployed system is now a Next.js app on Vercel talking to Supabase Postgres.
+> The Rust workspace stays in this repo: it still builds, CI still tests it, and
+> its migrations are the schema both implementations run.
+>
+> Why: the owner asked for a live public site — UI on Vercel, data in Supabase,
+> nothing depending on a PC in the plant. `store-server` could not move as-is.
+> It holds an SSE stream open, runs two background reapers and listens for ADMS
+> pushes; Vercel runs request-scoped functions with no persistent process, no
+> background timers and no first-class Rust.
+>
+> What this costs, honestly:
+>
+> - **Offline is gone, and this is the one decision here that is not settled.**
+>   The original §2 chose Postgres on the server PC precisely so the crib kept
+>   working when the line's internet dropped. Cloud-only means an internet
+>   outage stops all stock movement — the door still opens, and nothing can be
+>   booked. The terminal's IndexedDB outbox (§12) narrows this to "the tablet
+>   keeps accepting work and flushes later", which is not the same as the store
+>   being able to operate. Decide this before commissioning a real crib.
+> - **The ADMS listener must be publicly reachable.** A ZK terminal on the plant
+>   LAN cannot reach Vercel unless the plant routes it out (§9's endpoints are
+>   unchanged; where they listen is not).
+> - **No compile-time query checking in `cloud/`.** `sqlx` proved every Rust
+>   query against a real schema at build time. The TypeScript side has raw SQL
+>   and a typecheck that cannot see the database, so a column rename passes CI
+>   and fails at runtime. The migrations being shared is what limits the damage;
+>   it does not remove it.
+> - **The reapers become derive-on-read.** §10's 90 s expiry and 180 s idle
+>   close were background timers. In the cloud they are computed when a session
+>   is read — a session is EXPIRED if `UNCLAIMED` and older than 90 s, CLOSED if
+>   `ACTIVE` and idle past 180 s. The state machine's transitions are unchanged;
+>   what changed is who notices. Vercel Cron on the hobby plan runs daily, so a
+>   sweep is housekeeping, never correctness.
+> - **SSE becomes a 2 s poll** (`cloud/src/lib/events.ts`). The §11 event names
+>   are unchanged, and that file is the only one Supabase Realtime would touch.
+> - Preview URLs change per deployment, and a passkey is bound to an origin, so
+>   passkey sign-in needs a stable domain before it is worth trusting.
+>
+> Not abandoned: the Rust workspace is the reference implementation and an
+> on-prem install is still buildable from it. If the offline question is
+> answered "the store must work without internet", that is the path back.
+>
+> **§1, §3, §4, §5, §11 and §13 still describe the on-prem shape** — one server PC,
+> `store-server` owning everything, three binaries. Read them as the reference
+> implementation, not as where the deployed system runs. `CLOUD-PORT.md` is the
+> cloud's own map.
 
 ---
 
