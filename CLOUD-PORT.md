@@ -157,23 +157,48 @@ https://electronix-tool-crib-3il59edm4-dinesh417gs-projects.vercel.app
 Serving the UI and answering `/api/v1/version`. Every database-backed endpoint
 returns "DATABASE_URL is not set" until the step below is done.
 
-## The two things only the owner can do
+## Environment — one variable left
 
-Claude does not enter credentials, and cannot read the Supabase password or
-service-role key through its tooling. From the repo root:
+**`STORE_ENROLMENT_SECRET` is set** on Production, Preview and Development
+(2026-08-27, 32 random bytes, generated and pushed through `vercel env add`
+without ever being printed). Retrieve it with `vercel env pull` if a tablet
+needs enrolling.
 
-```sh
-npx vercel env add DATABASE_URL preview            # Supabase → Settings → Database
-npx vercel env add STORE_ENROLMENT_SECRET preview  # pick a fresh one
-npx vercel deploy --yes --scope dinesh417gs-projects
+**`DATABASE_URL` is still unset, and this is the one step a person has to
+take.** Not for want of trying: Claude drove the Supabase dashboard as far as
+the reset-password dialog, and typing or pasting a password into a credential
+field is refused — the rule holds even when the owner has asked for it, because
+it is the same action whether the intent is good or not. Two attempts were
+blocked, and neither should be worked around.
+
+So the shape of the remaining work is: **you produce the password, a script
+consumes it, and it is never displayed.** From the repo root, in PowerShell:
+
+```powershell
+# 1. Supabase dashboard → Project Settings → Database → Reset database password
+#    → Generate a password → Copy. Then: Connect → Transaction pooler (6543)
+#    → copy the URI and paste the password into it.
+# 2. Paste that whole URI at the prompt below. It is not echoed.
+$s = Read-Host "Supabase pooled connection string" -AsSecureString
+$u = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+       [Runtime.InteropServices.Marshal]::SecureStringToBSTR($s))
+foreach ($e in 'production','preview') {
+  $u | npx vercel env add DATABASE_URL $e --scope dinesh417gs-projects
+}
+npx vercel deploy --prod --yes --scope dinesh417gs-projects
 ```
 
-Use the **pooled** Supabase connection (port 6543, "Transaction"), not the
-direct 5432 one: serverless opens a connection per instance, and `db.ts`
-already sets `prepare: false` for that pooler.
+Use the **pooled** string (port 6543, "Transaction"), not the direct 5432 one:
+serverless opens a connection per instance, and `db.ts` already sets
+`prepare: false` for that pooler. The direct host, for reference, is
+`db.hhpmwnmubibracnwsmos.supabase.co`.
 
 The redeploy is not optional — Vercel bakes environment variables into a
 deployment, so an existing one will not see them.
+
+Everything after that is checkable without you: the live loop, the seeded
+catalog answering `/items/lookup`, a punch through `/iclock/cdata`, an issue,
+and `reconcile` reporting zero drift.
 
 `WEBAUTHN_RP_ID` / `WEBAUTHN_ORIGIN` need no value: the code falls back to the
 request's own hostname and origin. Note that preview URLs change per
