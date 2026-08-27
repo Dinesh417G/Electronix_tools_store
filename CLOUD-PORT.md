@@ -132,6 +132,45 @@ gives the alert console and the tablet banner something to show. Verified by
 digesting the DB rows and the CSV independently and comparing the hashes, and
 `item_stock.on_hand` matches `sum(delta_qty)` for every item.
 
+### Measuring the deployment
+
+`cloud/scripts/probe-live.mts` answers the one §13 question the e2e test cannot:
+the e2e proves the code and the schema, but it runs against a local
+`next start`, where cold starts, Supavisor and the internet are all absent —
+and those are exactly what §9's ~200 ms ADMS budget is exposed to. A device
+that does not get `OK: <n>` fast enough retries, and a retried batch is a
+duplicate punch unless the dedup index catches it.
+
+```sh
+cd cloud
+.\scripts\probe-live.ps1              # read only, 5 rounds, prompts for the password
+.\scripts\probe-live.ps1 -Write       # adds ONE real ATTLOG push
+DATABASE_URL=... npm run probe -- --base https://...   # the script itself
+```
+
+The `.ps1` exists because `DATABASE_URL` is the Supabase connection string and
+only the owner has it: it prompts non-echoing, percent-encodes the password
+(a `%` in it is the documented `URI malformed` trap), builds the **pooler**
+string on port 6543, and clears the variable from the shell afterwards. Passing
+it as an argument would put it in the process list and in shell history.
+
+It reports p50/p95/max per endpoint against the budgets §9, §11 and §4 state,
+and holds the first request of the run out of the percentiles and prints it
+separately — averaging a cold start away is how a cold-start problem stays
+invisible. Exit code 1 on a breach or a failed request, so CI could run it.
+
+Read-only by default, and still not zero-write: §11 auth guards every endpoint
+being measured, and `STORE_ENROLMENT_SECRET` is stored Sensitive and cannot be
+read back, so a tablet token is minted straight into `api_tokens` the way
+`tests/e2e.mjs` does — inactive tablet row, 30-minute expiry, revoked when the
+run ends. `--write` additionally leaves a punch and the session it offers,
+which expires unclaimed after 90 s (§10); it never claims or issues, so it
+writes no ledger rows.
+
+What it does not answer: whether a real ZK terminal can reach the deployment at
+all (§3's outbound route), or whether its firmware agrees with §9's parameter
+names. Only the capture against real hardware settles those.
+
 ## Built
 
 - [x] Next.js app, 35+ API routes ported from `crates/store-server/src/api/`
