@@ -121,7 +121,7 @@ export async function signInWithPasskey(): Promise<PasskeySession> {
   try {
     response = await startAuthentication({ optionsJSON: options });
   } catch (err) {
-    throw friendly(err);
+    throw friendly(err, "signin");
   }
 
   return post<PasskeySession>(
@@ -159,7 +159,7 @@ export async function signInWithPasskeyAsOperator(): Promise<PasskeyOperator> {
   try {
     response = await startAuthentication({ optionsJSON: options });
   } catch (err) {
-    throw friendly(err);
+    throw friendly(err, "signin");
   }
 
   // No token argument, deliberately. See above.
@@ -167,15 +167,24 @@ export async function signInWithPasskeyAsOperator(): Promise<PasskeyOperator> {
 }
 
 /**
- * The browser's own errors are unhelpful on a shop floor — "NotAllowedError"
- * covers a cancelled prompt, a timeout and a finger the sensor did not
- * recognise. Say what the operator can do about it instead.
+ * The browser's own errors are unhelpful on a shop floor, and one of them is
+ * actively misleading: with no passkey registered for this site, `get()` fails
+ * with exactly the same `NotAllowedError` as a cancelled prompt. The first
+ * user read "the sensor did not read", concluded the fingerprint was broken,
+ * and was right that something was wrong and wrong about what. Signing in and
+ * registering therefore say different things about the same error.
  */
-function friendly(err: unknown): ApiError {
+function friendly(err: unknown, context: "signin" | "register" = "register"): ApiError {
   const name = (err as { name?: string })?.name;
   switch (name) {
     case "NotAllowedError":
-      return new ApiError(400, "cancelled", "Cancelled, or the sensor did not read. Try again.");
+      return new ApiError(
+        400,
+        "cancelled",
+        context === "signin"
+          ? "No passkey on this device yet, or the prompt was cancelled. Register one in the admin console under Setup → Passkeys, or use your employee code and PIN."
+          : "Cancelled, or the sensor did not read. Try again.",
+      );
     case "InvalidStateError":
       return new ApiError(409, "already", "This device is already registered.");
     case "NotSupportedError":
