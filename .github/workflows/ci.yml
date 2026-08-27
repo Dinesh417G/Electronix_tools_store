@@ -106,6 +106,14 @@ jobs:
         run: npm run test:labels
         working-directory: cloud
 
+      # M8's CSV against a fixture computed by hand. The aggregation is SQL and
+      # still needs a database; this covers the rendering, where a comma inside
+      # an item description shifts every following column and the file still
+      # opens fine.
+      - name: consumption report
+        run: npm run test:reports
+        working-directory: cloud
+
   # Format and the offline build. Deliberately has no database: this job is what
   # proves the checked-in .sqlx data is current, so a contributor who changes a
   # query without re-running `cargo sqlx prepare` finds out here.

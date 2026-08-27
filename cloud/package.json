@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test:labels": "node --experimental-strip-types tests/label-roundtrip.mjs",
     "typecheck": "tsc --noEmit",
-    "seed": "node --experimental-strip-types scripts/seed.mts"
+    "seed": "node --experimental-strip-types scripts/seed.mts",
+    "test:reports": "node --experimental-strip-types tests/reports-csv.mjs"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.1.0",

@@ -685,26 +685,30 @@ write from a tablet takes its `operator_id` from the session, never from the tok
 
 ### Where the two implementations differ
 
-The list above is the Rust service, which implements all of it. The deployed
-cloud app does not yet, and the gap matters more than the parity does:
+| Endpoint | `crates/` | `cloud/` |
+|---|---|---|
+| `GET /reports/consumption`, `.csv` | yes | yes |
+| `GET`, `POST /admin/operators` | yes | yes |
+| `PATCH`, `DELETE /admin/operators/{id}` | — | yes |
+| `GET /admin/devices` | yes | yes |
+| `CRUD /admin/machines` | — | yes |
+| `CRUD /admin/reason-codes` | — | yes |
+| `GET /sessions/stream` | yes | **deliberately not** — §4's 2 s poll |
+| `/auth/webauthn/*` (§8) | — | yes |
+| serials, printer settings, `/labels/sheet`, `/items/browse`, `/version` | — | yes |
 
-**In `crates/`, missing from `cloud/`:**
+Two rules the cloud side adds, both of which exist because the console can now
+reach places the CLI used to guard:
 
-| Endpoint | Consequence |
-|---|---|
-| `GET /reports/consumption`, `.csv` | **M8's acceptance gate is Rust-only.** Consumption by item/machine/operator/category/month cannot be pulled from the deployed system at all — the ledger holds the data, nothing serves it |
-| `CRUD /admin/operators` | A new operator can only be added by `store-cli operator add` against the database |
-| `CRUD /admin/machines`, `/reason-codes` | Read-only in the cloud (`GET /api/v1/machines`, `/reason-codes`). Editing the pickers means SQL |
-| `GET /admin/devices` | The door terminal's last-seen and firmware are not visible in the console; `GET /api/v1/punches/unknown` covers only §9.4's notices |
-| `GET /sessions/stream` | Deliberate, not missing — §4 explains the 2 s poll that replaces it |
-
-**In `cloud/`, not in the list above:** `/auth/webauthn/*` (§8), `/items/browse`,
-`/items/{id}/serials`, `/serials/{id}`, `/serials/{id}/print`, `/labels/sheet`,
-`/admin/printer`, `/admin/items/{id}/barcodes`, `/version`.
-
-Treat this table as a to-do, not a settled scope. An admin console that cannot
-add an operator or produce a consumption report is a demonstration, not a
-commissioned system.
+- **Deactivate, never delete** — operators, machines and reason codes all retire
+  by `active = false`. Every one of them is pointed at by `stock_ledger`, and
+  §7's claim that the history still answers "who took the forty inserts, on
+  which machine, and why" survives exactly as long as those rows do.
+- **The last active ADMIN cannot be removed or demoted**, by either verb, and
+  the check runs inside the same transaction as the change so two admins cannot
+  remove each other simultaneously. §11 already says the first admin cannot come
+  from this API; without the guard, the last one can leave through it, and then
+  nothing can create the person who would fix that.
 
 Status codes the tablet UX depends on:
 
@@ -760,9 +764,12 @@ Status as of the current branch. **In `crates/`: M0–M10 complete and gated.**
 The cloud app carries the same milestones with two exceptions worth naming
 rather than burying:
 
-- **M8 is not met in the cloud.** Alerts are there — `LOW`, `EMPTY`, the banner,
-  the dashboard — but no consumption report and no CSV, so half the gate has
-  nothing to run against (§11).
+- **M8 is met in the cloud on the rendering half only.** The report endpoints
+  and the CSV are there, and the CSV is checked in CI against a fixture computed
+  by hand. The aggregation itself is SQL, and no automated test runs it against
+  a database on this side — it was verified once, by hand, over a synthetic
+  ledger including a reversal that nets out and a `RECEIPT` that is not
+  consumption. That is weaker than M8's gate asks for. See §14.
 - **M9's `reconcile` and `backup` are Rust-only.** They work, and they point at
   the same database, so the invariant is still checkable; it is checkable from a
   laptop with the connection string rather than from the deployment.
@@ -801,9 +808,10 @@ WhatsApp/email alerts, multi-store, vending-machine integration, mobile app for 
   changes, that fixture is how you find out.
 
 **The cloud app is the weak half of this, and pretending otherwise would be the
-expensive mistake.** Its CI job is `typecheck`, `build` and the label
-round-trip — no test touches a database, so the ported ledger service, session
-machine and ADMS handler are covered only by the Rust suite testing the *other*
+expensive mistake.** Its CI job is `typecheck`, `build`, the label round-trip
+and the consumption CSV — no test touches a database, so the ported ledger
+service, session machine, ADMS handler and report queries are covered only by
+the Rust suite testing the *other*
 implementation of the same rules. The shared migrations mean the §7 trigger, the
 negative-stock guard and the append-only constraint are the same objects in both,
 which is what makes this survivable rather than reckless. It is still a gap:
