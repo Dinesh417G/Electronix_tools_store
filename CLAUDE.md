@@ -25,13 +25,23 @@ Operator puts finger on the door terminal
 
 Everything else in the product — reports, alerts, admin — is a read of that ledger.
 
-Three binaries in one Cargo workspace:
+Two implementations of one system (§2):
 
-1. **`store-server`** — Rust/Axum service on the store's server PC. Owns Postgres, the
-   ZKTeco ADMS listener, the session state machine and the REST API.
-2. **`store-tablet`** — Tauri 2 **Android** app. The issue/receipt terminal mounted in the store.
-3. **`store-admin`** — Tauri 2 **desktop** app (Windows, runs on the server PC). Catalog,
-   barcode labels, stock dashboard, reports, alert console.
+1. **`cloud/`** — **the deployed one.** A Next.js app on Vercel holding the REST
+   API, the ZKTeco ADMS endpoints, the session state machine, the terminal, the
+   live view and the admin console, with Supabase Postgres behind it.
+2. **`crates/`** — **the reference one.** A Cargo workspace: `store-server`
+   (Axum, ADMS listener, REST + SSE), `store-web` (the same terminal, embedded),
+   `store-cli`, `store-label`. Its migrations are the schema of record, and an
+   on-prem install would be built from it.
+
+`store-cli` is the one thing with no cloud twin worth noting: seeding has an
+equivalent (`npm run seed`, §2), but `reconcile`, `backup`, `export` and
+`device-probe` are Rust-only and are run against the same database.
+
+The original plan was three binaries — `store-server`, a Tauri Android
+`store-tablet` and a Tauri desktop `store-admin`. All three decisions changed;
+§2 records each and why.
 
 ---
 
@@ -130,10 +140,10 @@ Three binaries in one Cargo workspace:
 > on-prem install is still buildable from it. If the offline question is
 > answered "the store must work without internet", that is the path back.
 >
-> **§1, §3, §4, §5, §11 and §13 still describe the on-prem shape** — one server PC,
-> `store-server` owning everything, three binaries. Read them as the reference
-> implementation, not as where the deployed system runs. `CLOUD-PORT.md` is the
-> cloud's own map.
+> The rest of this file was rewritten with it. Where the two implementations
+> differ, both are described and labelled — §4's two topologies, §11's table of
+> what the cloud does not serve, §13's split status. `CLOUD-PORT.md` remains the
+> cloud's own map: deployment, environment, and what only the owner can do.
 
 ---
 
@@ -142,16 +152,56 @@ Three binaries in one Cargo workspace:
 - **1× ZKTeco access terminal** at the store door (IN01-A / F18 / iClock class):
   fingerprint + RFID, TCP/IP, ADMS push, and its own relay outputs for the EM lock,
   exit button and door sensor.
-- **1× server PC** inside the plant, static LAN IP, running Postgres + `store-server` + `store-admin`.
-- **1–2 Android tablets** wall-mounted inside the store, on the same LAN.
-- Optional **label printer** for bin barcodes (Code 128 of `item_code`).
+- **An outbound route to the internet** from whatever network the terminal is on.
+  This is the one thing the cloud deployment added to the shopping list: the ADMS
+  host is a public URL now, not a PC on the same switch.
+- **1–2 Android tablets** wall-mounted inside the store — or any phone. They need
+  to reach the deployment, not a particular LAN.
+- Optional **label printer** for bin barcodes (Code 128 of `item_code`). Printing
+  unattended over the LAN needs the small in-plant agent described in
+  `CLOUD-PORT.md`; a browser cannot open a socket to a printer, and a function in
+  Vercel's cloud has no route to a private address.
 
-The terminal is configured to point its ADMS server address at the server PC's IP and
-our listener port. That is the entire integration surface.
+The terminal is configured to point its ADMS server address at our `/iclock`
+endpoints. That is still the entire integration surface; only the address changed.
+
+**No server PC.** The deployed system needs nothing running inside the plant.
+The Rust reference implementation still assumes one — static LAN IP, Postgres and
+`store-server` on it — and that is the shape to return to if the offline question
+(§2) is answered "the store must work without internet".
 
 ---
 
 ## 4. Topology
+
+**Deployed.** Nothing runs in the plant but the door and the browsers:
+
+```
+ ┌──────────────────┐  ADMS/HTTP push      ┌──────────────────────────────┐
+ │  ZK door terminal│  over the internet   │  Vercel — Next.js functions  │
+ │  (owns the lock) │ ───────────────────► │  /iclock/*   /api/v1/*       │
+ └──────────────────┘                      │                              │
+                                           │  session state machine       │
+ ┌──────────────────┐  REST + 2 s poll     │  ledger service              │
+ │  terminal        │ ◄──────────────────► │  alert evaluation            │
+ │  live view       │                      └───────────────┬──────────────┘
+ │  admin console   │                                      │
+ │  (any browser)   │                              ┌───────▼─────────────┐
+ └──────────────────┘                              │ Supabase Postgres   │
+                                                   │ (pooled, :6543)     │
+                                                   └─────────────────────┘
+```
+
+There is no `GET /api/v1/sessions/stream` in this deployment. SSE needs a process
+that stays alive holding the socket; Vercel gives request-scoped functions with a
+duration cap, so an open stream is a countdown to a reconnect rather than a
+subscription. `cloud/src/lib/events.ts` polls every 2 s instead — one cheap
+indexed query while the claim screen is up, which is the only moment freshness
+matters — and keeps the §11 event shapes unchanged so Supabase Realtime can
+replace it without touching anything else.
+
+**Reference (`crates/`).** One Axum process on a PC in the plant, owning
+Postgres on localhost, and a real SSE stream:
 
 ```
  ┌──────────────────┐   ADMS/HTTP push    ┌───────────────────────────────┐
@@ -160,19 +210,18 @@ our listener port. That is the entire integration surface.
  └──────────────────┘                     │  ┌─────────────────────────┐  │
                                           │  │ adms listener           │  │
  ┌──────────────────┐   REST + SSE        │  │ session state machine   │  │
- │  store-tablet    │ ◄─────────────────► │  │ ledger service          │  │
- │  (Android, LAN)  │                     │  │ alert engine            │  │
+ │  store-web       │ ◄─────────────────► │  │ ledger service          │  │
+ │  (browser, LAN)  │                     │  │ alert engine + reapers  │  │
  └──────────────────┘                     │  └───────────┬─────────────┘  │
                                           └──────────────┼────────────────┘
- ┌──────────────────┐   REST                             │
- │  store-admin     │ ◄──────────────────────────────────┤
- │  (Windows)       │                              ┌─────▼─────┐
- └──────────────────┘                              │ Postgres  │
+                                                   ┌─────▼─────┐
+                                                   │ Postgres  │
                                                    └───────────┘
 ```
 
-Tablets subscribe to `GET /api/v1/sessions/stream` (SSE). When a punch arrives the server
-emits an `session.opened` event and the tablet foregrounds the IN/OUT panel. No polling.
+There, tablets subscribe to `GET /api/v1/sessions/stream` (SSE). When a punch
+arrives the server emits `session.opened` and the tablet foregrounds the IN/OUT
+panel, with no polling.
 
 ---
 
@@ -181,7 +230,20 @@ emits an `session.opened` event and the tablet foregrounds the IN/OUT panel. No 
 ```
 electronix-tool-store/
 ├── CLAUDE.md                  ← this file
+├── CLOUD-PORT.md              ← the deployed app's own map: what it runs on,
+│                                what only the owner can do, what is left
 ├── Cargo.toml                 ← workspace
+├── cloud/                     ← THE DEPLOYED APP. Next.js on Vercel
+│   ├── src/app/api/v1/        ← REST routes, one directory per endpoint
+│   ├── src/app/iclock/        ← the ADMS endpoints (§9)
+│   ├── src/screens/           ← Terminal, LiveView, Admin, AdminLogin, Enrol,
+│   │                            Serials, PrinterSettings
+│   ├── src/lib/               ← the domain and the database. ledger, session,
+│   │                            sessions, punches, txn, items, adms, auth,
+│   │                            passkey, webauthn, labels, serials, events,
+│   │                            outbox, admin, api, errors, db
+│   ├── scripts/seed.mts       ← catalog seed; reads the CSV under store-cli
+│   └── tests/                 ← label round-trip (M7's software half)
 ├── crates/
 │   ├── store-core/            ← domain library. NO I/O, NO sqlx, NO axum
 │   │   ├── item.rs            ← Item, Category, Uom, barcode rules
@@ -212,6 +274,11 @@ electronix-tool-store/
 **Dependency rule:** `store-core` depends on nothing in this workspace. Everything depends
 inward toward it. If you find yourself importing `sqlx` into `store-core`, you have made a
 mistake — stop and restructure.
+
+The same rule in `cloud/`, without a compiler to enforce it: a route file parses
+its input, authorises the caller and calls into `src/lib/`. Ledger arithmetic or
+a session transition written inside `src/app/api/…/route.ts` is the same mistake
+as `sqlx` in `store-core`, and it is the one the type system will not catch.
 
 ---
 
@@ -333,6 +400,22 @@ api_tokens(id uuid pk, token_hash text unique not null,
 stock_alerts(id uuid pk, item_id uuid fk, level text,     -- LOW | EMPTY
              raised_at timestamptz, resolved_at timestamptz,
              acknowledged_at timestamptz, acknowledged_by uuid fk)
+
+-- ── Serials and label printing (0006). Added during the cloud port. ──
+serial_settings   -- prefix + pad width, singleton  → "TC-000001"
+tool_serials      -- one row per physical sticker, NOT per item.
+                  -- item_id, serial_no unique across the crib, minted,
+                  -- status, print_count, first/last_printed_at.
+                  -- Reprinting is the same number again: print_count
+                  -- increments, no new row, no new number.
+printer_settings  -- mode, host, port, dpi, label size, singleton
+print_jobs        -- serial_id | item_id, copies, kind, status
+
+-- ── Passkeys (0007) ─────────────────────────────────────────────────
+webauthn_credentials  -- per operator: credential id, public key, sign count
+webauthn_challenges   -- short-lived, single-use
+
+sessions.identity_source text not null  -- PUNCH | WEBAUTHN | PIN  (§8)
 ```
 
 ---
@@ -389,6 +472,23 @@ Three implementations in v1:
 | `ManualPinSource` | Fallback — operator types emp code + PIN on the tablet when the push never arrives |
 | `MockIdentitySource` | Tests and demos. Must be able to drive a full issue flow with no hardware present |
 
+A fourth arrived with the cloud port: **passkeys** (`/api/v1/auth/webauthn/*`),
+where the operator unlocks a registered device with its own fingerprint sensor
+and it signs our challenge. Sessions record which of the three it was, because
+they are not equal evidence:
+
+| `identity_source` | What actually happened |
+|---|---|
+| `PUNCH` | the terminal matched a finger against enrolled templates and decided whose it was |
+| `WEBAUTHN` | a device the operator registered was unlocked by someone that device trusts |
+| `PIN` | somebody typed an employee code and four digits |
+
+`manual_identity` stays **true** for a passkey session. It means "this did not
+come from the door", and that is what the reports and the terminal's badge are
+reading. A passkey is stronger than a typed PIN and still weaker than the
+reader — flattening those three into one flag would be the lie that makes the
+audit trail undefensible.
+
 Every integration test runs against `MockIdentitySource`. **No test may require a physical
 door terminal.**
 
@@ -444,6 +544,13 @@ Hard requirements:
    `device_ts` is diagnostic only.
 4. **Unknown users.** A punch whose `zk_user_id` maps to no operator is still recorded, and
    raises an admin notice. Never drop data because the master is incomplete.
+5. **Where this listens changed; what it must do did not.** These are Vercel
+   functions at a public origin now, so the device needs an outbound route (§3)
+   and the ~200 ms budget has the internet inside it. The dedup key, the exact
+   `OK: <n>` acknowledgement and the rule against session logic in the handler
+   are unchanged, because the retry behaviour that makes them necessary belongs
+   to the device, not the network. A cold function start is now one more way to
+   be slow enough to cause a duplicate batch.
 
 > ⚠️ **Verify before you trust this section.** Firmware families vary in casing, parameter
 > names and stamp semantics. At M2, run `store-cli device-probe --listen 8080`, point a real
@@ -452,7 +559,7 @@ Hard requirements:
 
 ---
 
-## 10. Session claim state machine (pure, in `store-core`)
+## 10. Session claim state machine (pure: `store-core`, `cloud/src/lib/session.ts`)
 
 The problem: two people can walk in on one punch, and a punch can arrive with no one at the
 tablet. So a punch does not *become* a session — it *offers* one.
@@ -490,11 +597,28 @@ Rules:
 
 Model this as an exhaustive `match` over `(SessionState, SessionEvent)` returning
 `Result<SessionState, TransitionError>`. Every illegal pair must be an explicit arm, not a
-`_ => unreachable!()`.
+`_ => unreachable!()`. The TypeScript port (`cloud/src/lib/session.ts`) owes the
+same exhaustiveness; without a compiler that demands it, a missing pair is a
+silent `undefined` rather than a build failure.
+
+**Who notices a timeout, in the cloud.** `store-server` runs two background
+reapers — 90 s unclaimed expiry, 180 s idle close. Vercel has no process to run
+them in, and cron on the hobby plan runs daily, which is useless against a 90 s
+deadline. So the deployed system **derives state on read**: a session is EXPIRED
+if it is stored `UNCLAIMED` and older than 90 s, CLOSED if stored `ACTIVE` and
+idle past 180 s. `GET /api/v1/sessions/{id}` reports the *effective* state, and
+a write against a session that has aged out is refused exactly as if a reaper
+had closed it.
+
+The transitions above are unchanged by this, and that is the point: what moved
+is who observes the clock, not what the machine does. A stored row may lag the
+truth; no read of it may. Any new query that filters on `state` directly, rather
+than through the helper that applies these two rules, reintroduces the bug —
+a session that everyone can see is dead and the database still calls `ACTIVE`.
 
 ---
 
-## 11. API surface (`store-server`)
+## 11. API surface
 
 ```
 POST   /api/v1/auth/tablet                 register tablet, get long-lived token
@@ -537,9 +661,11 @@ POST   /api/v1/admin/labels/print          Code128 label batch → PDF
                                            storekeeper or admin; max 500 labels
 GET    /api/v1/admin/health                DB, device last-seen, ledger reconciliation status
 
-# store-cli — operations, not HTTP
+# store-cli — operations, not HTTP. Rust-only; point it at whichever database
+# is live, including Supabase.
 store-cli seed | reconcile | export | device-probe | backup | update
 store-cli operator add | set-pin | list
+# cloud equivalent of seed only: cd cloud && npm run seed  (--sql to print it)
 ```
 
 Auth: tablets hold a device token; admin uses operator login. Every write carries an
@@ -557,6 +683,29 @@ write from a tablet takes its `operator_id` from the session, never from the tok
 > deleting a fake one. This grants no privilege the caller lacked — running it needs
 > `DATABASE_URL`, and whoever holds that already owns every row.
 
+### Where the two implementations differ
+
+The list above is the Rust service, which implements all of it. The deployed
+cloud app does not yet, and the gap matters more than the parity does:
+
+**In `crates/`, missing from `cloud/`:**
+
+| Endpoint | Consequence |
+|---|---|
+| `GET /reports/consumption`, `.csv` | **M8's acceptance gate is Rust-only.** Consumption by item/machine/operator/category/month cannot be pulled from the deployed system at all — the ledger holds the data, nothing serves it |
+| `CRUD /admin/operators` | A new operator can only be added by `store-cli operator add` against the database |
+| `CRUD /admin/machines`, `/reason-codes` | Read-only in the cloud (`GET /api/v1/machines`, `/reason-codes`). Editing the pickers means SQL |
+| `GET /admin/devices` | The door terminal's last-seen and firmware are not visible in the console; `GET /api/v1/punches/unknown` covers only §9.4's notices |
+| `GET /sessions/stream` | Deliberate, not missing — §4 explains the 2 s poll that replaces it |
+
+**In `cloud/`, not in the list above:** `/auth/webauthn/*` (§8), `/items/browse`,
+`/items/{id}/serials`, `/serials/{id}`, `/serials/{id}/print`, `/labels/sheet`,
+`/admin/printer`, `/admin/items/{id}/barcodes`, `/version`.
+
+Treat this table as a to-do, not a settled scope. An admin console that cannot
+add an operator or produce a consumption report is a demonstration, not a
+commissioned system.
+
 Status codes the tablet UX depends on:
 
 | Situation | Code | What the tablet does |
@@ -567,7 +716,7 @@ Status codes the tablet UX depends on:
 
 ---
 
-## 12. Terminal UX (`store-web`)
+## 12. Terminal UX (`cloud/src/screens/`, `crates/store-web/`)
 
 Design for a shop-floor operator with oily gloves and no patience.
 
@@ -593,16 +742,35 @@ Queued rows are visibly marked pending. Server deduplicates on a client-generate
 `txn_uuid`, generated once before the first attempt and never regenerated.
 
 **Live view.** The same app serves a read-only dashboard — activity, stock, alerts —
-updating off the SSE stream. It is how the store is demonstrated and audited before the
-wall tablet exists, and it moves no stock.
+updating off the event stream: SSE in `crates/`, the 2 s poll in the cloud (§4).
+It is how the store is demonstrated and audited before the wall tablet exists,
+and it moves no stock.
+
+**Offline, in the cloud.** The outbox still works — the terminal accepts scans
+and quantities with no network and flushes them when one returns, deduplicated
+on `client_txn_uuid`. What it cannot do is *read*: a lookup, an on-hand figure
+or a claim screen all need the server, which is now across the internet rather
+than across the room. That is the §2 offline question in its concrete form.
 
 ---
 
 ## 13. Milestones — each gated by its acceptance test
 
-Status as of the current branch: **M0–M10 complete and gated.** What remains is
-not code: the ADMS capture against real firmware (§9's warning), and printing a
-label sheet to close M7's optical half. See the README.
+Status as of the current branch. **In `crates/`: M0–M10 complete and gated.**
+The cloud app carries the same milestones with two exceptions worth naming
+rather than burying:
+
+- **M8 is not met in the cloud.** Alerts are there — `LOW`, `EMPTY`, the banner,
+  the dashboard — but no consumption report and no CSV, so half the gate has
+  nothing to run against (§11).
+- **M9's `reconcile` and `backup` are Rust-only.** They work, and they point at
+  the same database, so the invariant is still checkable; it is checkable from a
+  laptop with the connection string rather than from the deployment.
+
+What remains beyond those: the owner's two Vercel environment variables and a
+redeploy, the live loop verified end to end against Supabase, the ADMS capture
+against real firmware (§9's warning), printing a label sheet to close M7's
+optical half, and the offline decision in §2. See `CLOUD-PORT.md` and the README.
 
 | # | Deliverable | Acceptance gate |
 |---|---|---|
@@ -632,6 +800,17 @@ WhatsApp/email alerts, multi-store, vending-machine integration, mobile app for 
 - Keep the raw ADMS capture from M2 as a fixture and replay it in CI forever. When firmware
   changes, that fixture is how you find out.
 
+**The cloud app is the weak half of this, and pretending otherwise would be the
+expensive mistake.** Its CI job is `typecheck`, `build` and the label
+round-trip — no test touches a database, so the ported ledger service, session
+machine and ADMS handler are covered only by the Rust suite testing the *other*
+implementation of the same rules. The shared migrations mean the §7 trigger, the
+negative-stock guard and the append-only constraint are the same objects in both,
+which is what makes this survivable rather than reckless. It is still a gap:
+the first cloud test worth writing is an end-to-end one — mock punch → claim →
+issue → on-hand drops → reversal — against a throwaway Postgres, the same shape
+as M4's gate.
+
 ---
 
 ## 15. Claude Code model routing (`.claude/agents/`)
@@ -644,6 +823,13 @@ WhatsApp/email alerts, multi-store, vending-machine integration, mobile app for 
 
 Anything touching §7, §9 or §10 goes to `architect`. Those three sections are where a subtle
 bug becomes an inventory that nobody trusts — which is the only way this product fails.
+
+By path, that means `crates/store-core/src/{ledger,session}.rs`, `crates/store-adms/`,
+`crates/store-db/migrations/` — **and their cloud counterparts**, which carry the
+same rules with none of the compiler's help:
+`cloud/src/lib/{ledger,session,sessions,punches,txn,adms}.ts` and anything that
+changes the schema. A migration is an `architect` job wherever it is written,
+because it is the one artefact both implementations share.
 
 ---
 
