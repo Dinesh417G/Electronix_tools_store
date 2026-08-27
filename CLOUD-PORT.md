@@ -101,6 +101,37 @@ to a private LAN address.**
 
 The settings screen configures both; only one is live at a time.
 
+### Seeding
+
+`cloud/scripts/seed.mts` is `store-cli seed` again, in TypeScript — the Rust one
+needs a toolchain and a direct connection, and this database is Supabase behind
+a pooler. It reads the *same* `crates/store-cli/catalog/demo-catalog.csv` rather
+than a copy, because two catalogs that drift apart is how the demo starts
+disagreeing with the reference implementation. The parser is the same one,
+including its refusals: quoted fields, a header that does not match, a bad UOM
+and a negative opening balance are all errors with a line number.
+
+```sh
+cd cloud
+npm run seed -- --sql          # prints the SQL, touches nothing
+npm run seed                   # applies it; needs DATABASE_URL
+npm run seed -- --catalog /path/to/real-catalog.csv
+```
+
+Everything it emits is idempotent, and an opening balance is booked only for an
+item with no ledger history at all — so a re-run on a store that has since
+issued stock does not re-open its balances. Opening stock is an `OPENING` ledger
+row (§7), never a written quantity, attributed to the store's storekeeper or, if
+there is none, its admin. `--demo-operators` adds the four demo logins; it is
+off by default because their PINs are published in this repo and this
+deployment is publicly reachable.
+
+**Supabase now holds** 90 items across 8 categories, 9 machines, 9 vendor
+barcodes and 88 `OPENING` rows — 80 items OK, 8 LOW, 2 EMPTY, which is what
+gives the alert console and the tablet banner something to show. Verified by
+digesting the DB rows and the CSV independently and comparing the hashes, and
+`item_stock.on_hand` matches `sum(delta_qty)` for every item.
+
 ## Built
 
 - [x] Next.js app, 35+ API routes ported from `crates/store-server/src/api/`
@@ -114,6 +145,7 @@ The settings screen configures both; only one is live at a time.
 - [x] Passkey sign-in (`0007`), a third identity source between door and PIN
 - [x] A `cloud (next.js)` CI job — typecheck, build, label round-trip
 - [x] Deployed to Vercel as a preview
+- [x] Catalog seeded into Supabase from the CSV the Rust CLI reads
 
 ## Live
 
@@ -147,18 +179,16 @@ next — an argument for a stable domain.
 
 ## Then
 
-1. **Seed a catalog.** Supabase currently holds 1 operator, 8 reason codes, and
-   **no items or machines** — the terminal will sign an operator in and have
-   nothing to issue. Either port `crates/store-cli/catalog/demo-catalog.csv`
-   (90 items, 9 machines) or load the real one.
-2. **Verify the live loop**: enrol → punch at `/iclock/cdata` → claim → issue →
+1. **Verify the live loop**: enrol → punch at `/iclock/cdata` → claim → issue →
    ledger row → `reconcile` clean.
-3. **Update `CLAUDE.md` §2.** It still describes the Rust deployment and locked
+2. **Update `CLAUDE.md` §2.** It still describes the Rust deployment and locked
    Postgres to the server PC. §16 says that file wins and must be updated when
    a decision changes; leaving it is exactly the stale spec §16 warns about.
-4. **Decide the offline question** (above). It is parked, not solved.
-5. Delete the stray empty Vercel project `tools_store`, left by a first attempt
+3. **Decide the offline question** (above). It is parked, not solved.
+4. Delete the stray empty Vercel project `tools_store`, left by a first attempt
    that built nothing and still reported Ready.
+
+The catalog is loaded — see below.
 
 ## Deployment notes worth keeping
 

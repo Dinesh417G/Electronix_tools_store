@@ -11,6 +11,10 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
+    // scripts/ runs through node --experimental-strip-types, which resolves the
+    // real file path; the extension is required there and legal here because
+    // nothing is emitted.
+    "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
     "incremental": true,
     "plugins": [
