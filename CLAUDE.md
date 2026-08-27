@@ -833,6 +833,16 @@ named below rather than buried:
   `cloud/tests/e2e.mjs` now runs the reconciliation query itself as its ninth
   step, so CI fails on drift even though the CLI that reports it is Rust.
 
+- **§8's passkey path is gated by `cloud/tests/webauthn.mjs`.** A CDP virtual
+  authenticator stands in for the operator's phone, so `create()` and `get()`
+  run through Chrome's real WebAuthn stack: register from Setup → Passkeys,
+  sign in on the terminal with the credential, revoke it, and prove the revoked
+  credential can no longer open a session. The session it opens records
+  `identity_source = WEBAUTHN` with `manual_identity` still true, which is the
+  §8 distinction the reports depend on. What it does not prove is a particular
+  phone's secure enclave, the platform's own prompt, or a passkey bound to a
+  public origin rather than localhost.
+
 What remains beyond those: the live loop verified end to end against **Supabase**
 — the e2e test proves the code and the schema, but runs against a local
 `next start`, so cold starts, the pooler and internet latency are all absent, and
@@ -892,6 +902,7 @@ written alongside it are what stop that from being the whole story:
 | `tests/reports-db.mjs` | M8's aggregation half | yes, and it must run on an **empty ledger** |
 | `tests/ledger-property.mjs` | M1 | yes |
 | `tests/e2e.mjs` | M4 | yes |
+| `tests/webauthn.mjs` | §8's passkey path | yes, and a headless Chrome |
 
 Two things about them are worth stating, because both were learned the hard
 way rather than designed in:

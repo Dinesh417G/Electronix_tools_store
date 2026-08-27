@@ -219,6 +219,13 @@ jobs:
       # M4's acceptance gate, against the deployed code path rather than a
       # mock: punch → claim → issue → on_hand falls → reversal → reconcile.
       # `next start` serves the build produced above.
+      #
+      # tests/webauthn.mjs runs in the same step because it needs that same
+      # server. It drives §8's passkey path end to end against a CDP virtual
+      # authenticator — register, sign in, revoke, and prove the revoked
+      # credential can no longer open a session. §13 called this "needs a real
+      # device on HTTPS"; it needs a real WebAuthn stack, which the runner's
+      # Chrome has.
       - name: end-to-end
         run: |
           npm run start &
@@ -227,6 +234,7 @@ jobs:
             sleep 1
           done
           npm run test:e2e
+          npm run test:webauthn
         working-directory: cloud
         env:
           DATABASE_URL: postgresql://postgres:throwaway@localhost:5432/store
