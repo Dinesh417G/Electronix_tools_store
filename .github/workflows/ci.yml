@@ -71,7 +71,10 @@ jobs:
   cloud:
     name: cloud (next.js)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 15 was enough before M1's gate joined the job. 10 000 ledger ops, each a
+    # transaction against the service container, take about two minutes on
+    # their own.
+    timeout-minutes: 20
 
     # The end-to-end test needs a real database, for the reason §14 gives: the
     # ledger service, the session machine and the ADMS handler were covered
@@ -134,6 +137,14 @@ jobs:
         run: npm run test:reports
         working-directory: cloud
 
+      # M3's acceptance gate. The session machine is pure, so this needs no
+      # database and runs with the rest of the database-free steps. It also
+      # covers the derive-on-read rule that replaced the two reapers on Vercel
+      # (§10), which has no counterpart in the Rust suite at all.
+      - name: session transitions
+        run: npm run test:session
+        working-directory: cloud
+
       # From here down the job has a database. Everything above deliberately
       # does not, and the `build` step in particular must stay that way.
 
@@ -146,6 +157,27 @@ jobs:
             echo "  $(basename "$f")"
             psql -v ON_ERROR_STOP=1 -q -f "$f" "$DATABASE_URL"
           done
+        env:
+          DATABASE_URL: postgresql://postgres:throwaway@localhost:5432/store
+
+      # M8's aggregation half, which §13 admitted was verified once by hand and
+      # never since. It MUST run before the catalog seed: the report queries
+      # aggregate the whole ledger with no item filter, so the seed's opening
+      # balances would land in the buckets it is checking. The test asserts
+      # that precondition itself, so reordering these steps fails loudly.
+      - name: consumption aggregation (empty ledger)
+        run: npm run test:reports-db
+        working-directory: cloud
+        env:
+          DATABASE_URL: postgresql://postgres:throwaway@localhost:5432/store
+
+      # M1's acceptance gate: 10 000 random ledger ops, with `item_stock.on_hand`
+      # checked against `sum(delta_qty)` after every single one. The Rust suite
+      # proves the same rule for the other implementation; nothing until now
+      # ran a line of cloud/src/lib/ledger.ts against a trigger.
+      - name: ledger property test
+        run: npm run test:ledger
+        working-directory: cloud
         env:
           DATABASE_URL: postgresql://postgres:throwaway@localhost:5432/store
 
