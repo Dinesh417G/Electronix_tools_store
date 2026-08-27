@@ -178,13 +178,32 @@ export async function reverse(
   note: string | null,
 ): Promise<MovementReceipt> {
   const rows = await sql<
-    { item_id: string; delta_qty: string; txn_type: TxnType; unit_cost: string | null }[]
+    {
+      item_id: string;
+      delta_qty: string;
+      txn_type: TxnType;
+      unit_cost: string | null;
+      machine_id: string | null;
+      reason_id: string | null;
+      reverses_id: string | null;
+    }[]
   >`
-    select item_id, delta_qty::text as delta_qty, txn_type, unit_cost::text as unit_cost
+    select item_id, delta_qty::text as delta_qty, txn_type, unit_cost::text as unit_cost,
+           machine_id, reason_id, reverses_id
       from stock_ledger where id = ${ledgerId}
   `;
   const original = rows[0];
   if (!original) throw ApiError.notFound("no such ledger row");
+
+  // Reversing a reversal would build a chain, and a chain double-counts: the
+  // pair already nets to nothing, so a third row moves stock that was never
+  // taken. `crates/store-db/src/ledger.rs` refuses this; so does this.
+  if (original.reverses_id !== null) {
+    throw ApiError.conflict(
+      "NOT_REVERSIBLE",
+      "That row is itself a reversal. Reverse the original instead.",
+    );
+  }
 
   const already = await sql<{ id: number }[]>`
     select id from stock_ledger where reverses_id = ${ledgerId}
@@ -198,7 +217,20 @@ export async function reverse(
     deltaQty: negate(original.delta_qty),
     txnType: original.txn_type,
     operatorId,
-    note,
+    // The correction is filed where the original was filed. Dropping these
+    // used to leave the machine charged for stock that came back and file the
+    // credit under "no machine recorded", which could make that bucket
+    // negative — a quantity nothing consumed. §11 promises consumption stays
+    // attributable per machine, and reports.ts claims reversals net themselves
+    // out with no special case; neither was true per machine until the
+    // reversal carried the same keys.
+    //
+    // `operator_id` is deliberately NOT copied: it is whoever performed the
+    // correction. "Who moved this stock" has a real answer for a person and
+    // no answer for a machine — a machine does not perform a reversal.
+    machineId: original.machine_id,
+    reasonId: original.reason_id,
+    note: note ?? `reversal of ledger row ${ledgerId}`,
     unitCost: original.unit_cost,
     reversesId: ledgerId,
   });

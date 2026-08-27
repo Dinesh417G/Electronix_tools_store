@@ -95,6 +95,17 @@ async function main() {
     insert into machines (code, name, active)
     values (${"RT-VMC-" + tag}, 'Reports Test VMC', true) returning id`;
 
+  // Seeded by 0004, not by this test: the precondition above is about the
+  // ledger, and reference data is exactly what a migration is allowed to leave
+  // behind. Used to prove a reversal carries the original's reason as well as
+  // its machine.
+  const [reason] = await sql`
+    select id from reason_codes where code = 'BREAKAGE'`;
+  if (!reason) {
+    bad("reason code BREAKAGE is missing — 0004 should have seeded it");
+    process.exit(1);
+  }
+
   const makeItem = async (code, description, cost) => {
     const [item] = await sql`
       insert into items (item_code, description, category_id, uom,
@@ -136,7 +147,8 @@ async function main() {
 
   await book({ itemId: itemC, deltaQty: "20.000", txnType: "RECEIPT", unitCost: "25.00" });
   const cReversed = await book({
-    itemId: itemC, deltaQty: "-5.000", txnType: "ISSUE", unitCost: "25.00", machineId: machine.id,
+    itemId: itemC, deltaQty: "-5.000", txnType: "ISSUE", unitCost: "25.00",
+    machineId: machine.id, reasonId: reason.id,
   });
   await reverse(cReversed.ledger_id, admin.id, "reports test: fully reversed");
 
@@ -181,47 +193,46 @@ async function main() {
 
   // ── 2. By machine ──────────────────────────────────────────────────
   //
-  // KNOWN DEFECT, pinned here rather than blessed in silence.
+  // This section found a real defect when it was written, and now guards the
+  // fix. `reverse()` used to copy the item, the magnitude, the txn type and
+  // the unit cost of the row it corrects — but not its `machine_id`. So a
+  // reversal of an issue booked to a machine was filed under "no machine
+  // recorded", which left the machine charged for stock that came back (22
+  // here, where the truth is 17) and drove the unassigned bucket NEGATIVE
+  // (-1), a quantity nothing consumed.
   //
-  // `reverse()` in src/lib/ledger.ts copies the item, the magnitude, the txn
-  // type and the unit cost of the row it corrects — but not its `machine_id`.
-  // So reversing an issue that was booked to a machine files the correction
-  // under "no machine recorded". The consequences, both visible below:
+  // The totals reconciled throughout, which is exactly why nothing caught it:
+  // the stock was all accounted for, just against the wrong machine. §11 says
+  // a multi-machine issue writes one row per machine "so consumption-by-machine
+  // stays attributable", and reports.ts says reversals "net themselves out
+  // with no special case"; both were true by item, by category and in total,
+  // and neither was true per machine.
   //
-  //   * the machine stays charged for stock that came back — 22 here, where
-  //     the truth is 17;
-  //   * the unassigned bucket goes NEGATIVE — -1 here — which is not a
-  //     quantity anything consumed, and reads as nonsense on the report.
-  //
-  // §11 says a multi-machine issue writes one row per machine "so
-  // consumption-by-machine stays attributable", and reports.ts says reversals
-  // "net themselves out with no special case". Both are true by item, by
-  // category and in total; neither is true per machine. The totals still
-  // reconcile, which is why nothing has caught this — the stock is all
-  // accounted for, just against the wrong machine.
-  //
-  // Changing `reverse()` is a §7 change and therefore an architect decision
-  // (§15), so this test records the behaviour as it stands and the totals that
-  // must hold either way.
-  step("2. group_by=machine — and where a correction lands");
+  // The reference implementation had it right all along —
+  // `crates/store-db/src/ledger.rs` passes `machine_id` and `reason_id` from
+  // the original — so the fix was parity, not a new rule.
+  step("2. group_by=machine — a correction lands where the original was filed");
   {
     const rows = await consumption("machine");
     const m = find(rows, machine.id);
     const unassigned = find(rows, "unassigned");
 
     if (m) {
-      // Booked to the machine: A -10, A scrap -1, B -6, C -5. The C issue was
-      // reversed, and that reversal did not come back here.
-      expect("machine qty (17 was issued and kept; 22 is the defect above)", m.qty, 22);
-      expect("machine value", m.value, 1525);
+      // Booked to the machine: A -10, A scrap -1, B -6, C -5, and C's reversal
+      // +5 now comes back to the same bucket rather than to "unassigned".
+      expect("machine qty (17 issued and kept; the reversed 5 credits back here)", m.qty, 17);
+      expect("machine value", m.value, 1400);
     } else {
       bad("the machine bucket is missing");
     }
 
-    if (unassigned && num(unassigned.qty) === -1) {
-      ok("the unassigned bucket is -1.000 — a negative consumption, which is the defect's fingerprint");
-    } else if (unassigned) {
-      bad(`the unassigned bucket holds ${unassigned.qty}, expected -1.000`);
+    // A -4 and B -8, and B's reversal +8 nets against it: 4 remain. The point
+    // is the sign as much as the number — consumption is stock that left, so a
+    // negative bucket is nonsense on its face.
+    if (unassigned) {
+      expect("the unassigned bucket", unassigned.qty, 4);
+      if (num(unassigned.qty) > 0) ok("and it is positive — no bucket claims negative consumption");
+      else bad("the unassigned bucket is negative, which is the old defect's fingerprint");
     } else {
       bad("the unassigned bucket is missing, though two issues recorded no machine");
     }
@@ -231,6 +242,54 @@ async function main() {
     // than misfiling it, and this is what rules it out.
     const total = rows.reduce((sum, r) => sum + num(r.qty), 0);
     expect("machine grouping still totals the same as the item grouping", total, 21);
+  }
+
+  // ── 2b. The reversing row itself ───────────────────────────────────
+  //
+  // The arithmetic above would also come out right if the report compensated
+  // for a missing machine_id somewhere in SQL. This asserts the row, so the
+  // fix cannot quietly move into the query.
+  step("2b. a reversal carries the original's machine and reason");
+  {
+    const [row] = await sql`
+      select machine_id, reason_id, txn_type, delta_qty::text as delta_qty, note
+        from stock_ledger where reverses_id = ${cReversed.ledger_id}`;
+
+    if (!row) {
+      bad("no reversing row points at the machine-booked issue");
+    } else {
+      if (row.machine_id === machine.id) ok("the reversing row carries the original's machine_id");
+      else bad(`the reversing row's machine_id is ${row.machine_id}, expected ${machine.id}`);
+
+      if (row.reason_id === reason.id) ok("and the original's reason_id");
+      else bad(`the reversing row's reason_id is ${row.reason_id}, expected ${reason.id}`);
+
+      // Same item, same type, opposite sign — §7's mirror image.
+      expect("the reversing row's delta_qty", row.delta_qty, 5);
+      if (row.txn_type === "ISSUE") ok("and the same txn_type as the row it corrects");
+      else bad(`the reversing row's txn_type is ${row.txn_type}, expected ISSUE`);
+    }
+  }
+
+  // ── 2c. A reversal is not itself reversible ────────────────────────
+  //
+  // A chain would double-count: the pair already nets to nothing, so a third
+  // row moves stock nobody took. `crates/store-db/src/ledger.rs` refuses this
+  // and so must this side.
+  step("2c. reversing a reversal is refused");
+  {
+    const [reversal] = await sql`
+      select id from stock_ledger where reverses_id = ${cReversed.ledger_id}`;
+    try {
+      await reverse(Number(reversal.id), admin.id, "should not be allowed");
+      bad("reversing a reversal was accepted — that chain double-counts");
+    } catch (e) {
+      if (e?.status === 409 && e?.code === "NOT_REVERSIBLE") {
+        ok("reversing a reversal → 409 NOT_REVERSIBLE");
+      } else {
+        bad(`reversing a reversal threw ${e?.status} ${e?.code ?? e?.message}`);
+      }
+    }
   }
 
   // ── 3. By operator and category ────────────────────────────────────
