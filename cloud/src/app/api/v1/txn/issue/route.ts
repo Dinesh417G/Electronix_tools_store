@@ -16,6 +16,7 @@ import { authenticate } from "@/lib/auth";
 import { ApiError, handler } from "@/lib/errors";
 import { findByClientUuid, record, recordMany, type NewMovement } from "@/lib/ledger";
 import { sql } from "@/lib/db";
+import { QtyString } from "@/lib/quantity";
 import { authoriseSession } from "@/lib/sessions";
 import { finish, finishMany, replayed } from "@/lib/txn";
 
@@ -24,14 +25,14 @@ export const dynamic = "force-dynamic";
 
 const Split = z.object({
   machine_id: z.string().uuid(),
-  qty: z.string().regex(/^\d+(\.\d{1,3})?$/, "quantity must be a positive number"),
+  qty: QtyString,
   client_txn_uuid: z.string().uuid().optional(),
 });
 
 const Body = z.object({
   session_id: z.string().uuid(),
   item_id: z.string().uuid(),
-  qty: z.string().regex(/^\d+(\.\d{1,3})?$/).optional(),
+  qty: QtyString.optional(),
   machine_id: z.string().uuid().nullish(),
   reason_id: z.string().uuid().nullish(),
   note: z.string().max(500).nullish(),
@@ -52,7 +53,6 @@ export const POST = handler(async (request: Request) => {
   }
 
   if (!body.qty) throw ApiError.badRequest("qty is required without splits");
-  if (Number(body.qty) <= 0) throw ApiError.badRequest("qty must be greater than zero");
 
   const replay = await replayed(body.client_txn_uuid, body.item_id);
   if (replay) return NextResponse.json(replay);
