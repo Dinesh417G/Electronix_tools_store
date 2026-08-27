@@ -20,6 +20,7 @@ import {
   type LedgerRow,
 } from "../lib/api";
 import { adminApi, type Category, type ItemInput } from "../lib/admin";
+import { useRefreshOnReturn } from "../lib/refresh";
 import { AlertChip, Banner, BigButton, Field, Header, Spinner } from "../components/ui";
 import { PrinterSettings } from "./PrinterSettings";
 import { Serials } from "./Serials";
@@ -49,20 +50,27 @@ export function Admin({ token, operatorName, onSignOut }: Props) {
   const client = useMemo(() => adminApi(token), [token]);
 
   return (
-    <div className="admin flex min-h-full flex-col safe-top safe-bottom">
-      <Header
-        title="Admin"
-        subtitle={operatorName}
-        right={
-          <button
-            type="button"
-            onClick={onSignOut}
-            className="tap rounded-lg px-4 text-sm text-slate-400 active:bg-slate-800"
-          >
-            Sign out
-          </button>
-        }
-      />
+    // `h-dvh` rather than `min-h-full`: on a phone the address bar changes the
+    // viewport as you scroll, and a percentage height resolved against an
+    // auto-height ancestor left the whole page scrolling — which took the
+    // header and the tab bar off the top of the screen. The dynamic viewport
+    // unit plus `min-h-0` on the scroller keeps scrolling inside the list,
+    // where it belongs.
+    <div className="admin flex h-dvh flex-col overflow-hidden">
+      <div className="shrink-0 safe-top">
+        <Header
+          title="Admin"
+          subtitle={operatorName}
+          right={
+            <button
+              type="button"
+              onClick={onSignOut}
+              className="tap rounded-lg px-4 text-sm text-slate-400 active:bg-slate-800"
+            >
+              Sign out
+            </button>
+          }
+        />
 
       {error && (
         <div className="px-4 pb-2">
@@ -81,7 +89,7 @@ export function Admin({ token, operatorName, onSignOut }: Props) {
 
       {/* Six tabs will not fit across a 390 px phone in one row, so they wrap
           into two of three and spread out again on anything wider. */}
-      <nav className="grid grid-cols-3 gap-1 px-4 pb-3 sm:grid-cols-6">
+        <nav className="grid grid-cols-3 gap-1 px-4 pb-3 sm:grid-cols-6">
         {(
           [
             ["catalog", "Catalog"],
@@ -103,9 +111,10 @@ export function Admin({ token, operatorName, onSignOut }: Props) {
             {label}
           </button>
         ))}
-      </nav>
+        </nav>
+      </div>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 safe-bottom">
         {tab === "catalog" && (
           <Catalog client={client} onError={setError} onNotice={setNotice} />
         )}
@@ -261,17 +270,27 @@ function Catalog({
   const [serialsFor, setSerialsFor] = useState<Item | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       setItems(query.trim().length >= 2 ? await api.search(query) : await api.stock("limit=200"));
+      setFailed(false);
     } catch (err) {
+      // Recorded on the screen as well as raised as a banner. A banner can be
+      // dismissed, and a dismissed banner over an empty list is indistinguishable
+      // from a store with no items in it.
+      setFailed(true);
       onError(describe(err));
     } finally {
       setLoading(false);
     }
   }, [query, onError]);
+
+  // The tab was backgrounded for the print dialogue, or the radio dropped.
+  // Coming back should fix itself rather than need a reload.
+  useRefreshOnReturn(load);
 
   useEffect(() => {
     const t = setTimeout(() => void load(), 200);
@@ -373,6 +392,25 @@ function Catalog({
 
       {loading && items.length === 0 && <Spinner label="Loading catalog…" />}
 
+      {!loading && failed && items.length === 0 && (
+        <div className="space-y-3 py-10 text-center">
+          <p className="text-slate-400">The catalog did not load.</p>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="tap rounded-xl bg-sky-600 px-6 py-3 font-semibold text-white"
+          >
+            Try again
+          </button>
+        </div>
+      )}
+
+      {!loading && !failed && items.length === 0 && (
+        <p className="py-10 text-center text-slate-500">
+          {query.trim() ? "Nothing matches." : "No items yet. Add one with + Item."}
+        </p>
+      )}
+
       {items.map((item) => (
         <div
           key={item.id}
@@ -421,11 +459,95 @@ function Catalog({
         </div>
       ))}
 
-      {!loading && items.length === 0 && (
-        <p className="py-10 text-center text-slate-500">Nothing matches.</p>
-      )}
     </div>
   );
+}
+
+/**
+ * The stock band, edited where the problem is visible.
+ *
+ * "Two to five" is how a storekeeper describes a bin, so both ends are on one
+ * row and the minimum is first. The maximum may be left empty — plenty of a
+ * 90-line catalog will never have one — and clearing it is a deliberate action
+ * rather than a side effect of not typing anything.
+ */
+function LevelBand({
+  alert,
+  onSave,
+  onCancel,
+}: {
+  alert: AlertRow;
+  onSave: (levels: { reorder_level: string; max_level: string | null }) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [min, setMin] = useState(trimQty(alert.reorder_level));
+  const [max, setMax] = useState(alert.max_level ? trimQty(alert.max_level) : "");
+  const [busy, setBusy] = useState(false);
+
+  const invalid = max.trim() !== "" && Number(max) < Number(min || 0);
+
+  return (
+    <div className="mt-3 space-y-2 rounded-xl bg-slate-950/60 p-3">
+      <div className="flex items-end gap-2">
+        <label className="flex-1 text-xs text-slate-400">
+          Reorder at
+          <input
+            value={min}
+            onChange={(e) => setMin(e.target.value.replace(/[^\d.]/g, ""))}
+            inputMode="decimal"
+            className="tap mt-1 w-full rounded-lg bg-slate-800 px-3 text-base text-slate-100"
+          />
+        </label>
+        <span className="pb-3 text-slate-500">to</span>
+        <label className="flex-1 text-xs text-slate-400">
+          Full at
+          <input
+            value={max}
+            onChange={(e) => setMax(e.target.value.replace(/[^\d.]/g, ""))}
+            inputMode="decimal"
+            placeholder="optional"
+            className="tap mt-1 w-full rounded-lg bg-slate-800 px-3 text-base text-slate-100"
+          />
+        </label>
+      </div>
+
+      {invalid && (
+        <p className="text-xs text-amber-400">
+          The maximum cannot be below the reorder level.
+        </p>
+      )}
+
+      <div className="flex gap-2">
+        <button
+          type="button"
+          disabled={busy || invalid || min.trim() === ""}
+          onClick={async () => {
+            setBusy(true);
+            await onSave({
+              reorder_level: min.trim(),
+              max_level: max.trim() === "" ? null : max.trim(),
+            });
+            setBusy(false);
+          }}
+          className="tap flex-1 rounded-lg bg-sky-600 px-4 text-sm font-semibold disabled:opacity-40"
+        >
+          {busy ? "Saving…" : "Save"}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="tap rounded-lg bg-slate-800 px-4 text-sm text-slate-300"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** `numeric(12,3)` arrives as "2.000"; nobody types trailing zeroes. */
+function trimQty(value: string): string {
+  return value.includes(".") ? value.replace(/\.?0+$/, "") : value;
 }
 
 const UOMS = ["NOS", "SET", "BOX", "LTR", "KG"] as const;
@@ -705,11 +827,14 @@ function AlertsTab({
 }) {
   const [rows, setRows] = useState<AlertRow[] | null>(null);
 
+  const [editing, setEditing] = useState<string | null>(null);
+
   const load = useCallback(() => {
     void api.alerts().then(setRows).catch(() => setRows([]));
   }, []);
 
   useEffect(load, [load]);
+  useRefreshOnReturn(load);
 
   return (
     <div className="space-y-2">
@@ -732,9 +857,38 @@ function AlertsTab({
           </div>
           <div className="text-sm text-slate-400">{alert.description}</div>
           <div className="pt-1 text-sm tabular-nums text-slate-300">
-            {formatQty(alert.on_hand)} on hand · reorder at {formatQty(alert.reorder_level)}
-            {alert.reorder_qty ? ` · order ${formatQty(alert.reorder_qty)}` : ""}
+            {formatQty(alert.on_hand)} on hand · band {formatQty(alert.reorder_level)}
+            {alert.max_level ? `–${formatQty(alert.max_level)}` : "–—"}
+            {alert.max_level
+              ? ` · short ${formatQty(
+                  String(Math.max(0, Number(alert.max_level) - Number(alert.on_hand))),
+                )}`
+              : ""}
           </div>
+
+          {editing === alert.item_id ? (
+            <LevelBand
+              alert={alert}
+              onCancel={() => setEditing(null)}
+              onSave={async (levels) => {
+                try {
+                  await client.setLevels(alert.item_id, levels);
+                  setEditing(null);
+                  load();
+                } catch (err) {
+                  onError(describe(err));
+                }
+              }}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setEditing(alert.item_id)}
+              className="tap mt-2 mr-2 rounded-lg bg-slate-800 px-4 text-sm text-slate-300"
+            >
+              Set levels
+            </button>
+          )}
           {alert.acknowledged_at ? (
             <div className="pt-1 text-xs text-slate-500">Acknowledged</div>
           ) : (

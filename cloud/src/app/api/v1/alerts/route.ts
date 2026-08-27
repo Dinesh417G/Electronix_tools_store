@@ -16,7 +16,7 @@ export const GET = handler(async (request: Request) => {
     await sql`
       select a.id, a.item_id, i.item_code, i.description, a.level,
              a.raised_at, a.acknowledged_at,
-             s.on_hand::text as on_hand, i.reorder_level::text as reorder_level,
+             s.on_hand::text as on_hand, i.reorder_level::text as reorder_level, i.max_level::text as max_level,
              i.bin_location
         from stock_alerts a
         join items i on i.id = a.item_id

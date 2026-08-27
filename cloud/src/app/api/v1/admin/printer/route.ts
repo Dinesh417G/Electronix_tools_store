@@ -28,6 +28,7 @@ const Body = z.object({
   port: z.number().int().min(1).max(65535).optional(),
   dpi: z.union([z.literal(203), z.literal(300), z.literal(600)]).optional(),
   label_width_mm: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+  sheet_paper: z.enum(["EXACT", "A4", "LETTER"]).optional(),
   label_height_mm: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
 });
 

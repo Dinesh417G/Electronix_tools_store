@@ -77,14 +77,34 @@ async function request<T>(
     headers.set("authorization", `Bearer ${token}`);
   }
 
-  let response: Response;
-  try {
-    response = await fetch(path, { ...init, headers });
-  } catch (cause) {
-    // A fetch that throws never reached the server. Distinguishing this from an
-    // error response is what lets the outbox know a write is safe to queue.
-    throw new OfflineError(cause);
+  // A fetch that throws never reached the server, and on a phone that is
+  // usually nothing: the tab was backgrounded for the print dialogue, the
+  // radio changed cell, the screen locked for a moment. The first version
+  // surfaced the first such failure as "The store server is not reachable."
+  // and left the screen spinning — a red alarm for a blip, and no way back
+  // without a reload.
+  //
+  // Reads are retried; writes are not. A POST that threw may still have been
+  // received and committed, and §7 does not allow a second ledger row on a
+  // guess — that is what the outbox and `client_txn_uuid` are for.
+  const method = (init.method ?? "GET").toUpperCase();
+  const retryable = method === "GET" || method === "HEAD";
+  const attempts = retryable ? 3 : 1;
+
+  let response: Response | undefined;
+  let lastCause: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      response = await fetch(path, { ...init, headers });
+      break;
+    } catch (cause) {
+      lastCause = cause;
+      // Offline outright: no point burning the battery on a retry loop.
+      if (typeof navigator !== "undefined" && navigator.onLine === false) break;
+      if (attempt < attempts) await delay(attempt * 400);
+    }
   }
+  if (!response) throw new OfflineError(lastCause);
 
   if (response.status === 204) return undefined as T;
 
@@ -99,6 +119,9 @@ async function request<T>(
 
   return body as T;
 }
+
+/** Somewhere to wait between retries without pulling in a scheduler. */
+const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 function safeJson(text: string): Record<string, unknown> | null {
   try {
@@ -149,6 +172,7 @@ export interface Item {
   bin_location: string | null;
   unit_cost: string | null;
   reorder_level: string;
+  max_level: string | null;
   reorder_qty: string | null;
   allow_negative: boolean;
   active: boolean;
@@ -196,6 +220,7 @@ export interface AlertRow {
   level: "LOW" | "EMPTY";
   on_hand: string;
   reorder_level: string;
+  max_level: string | null;
   reorder_qty: string | null;
   raised_at: string;
   acknowledged_at: string | null;

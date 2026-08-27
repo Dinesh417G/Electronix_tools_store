@@ -213,10 +213,20 @@ export async function openManualSession(
   }
   if (!(await verifyPin(pin, operator.pin_hash))) throw refuse();
 
+  // `identity_source` is not optional here, whatever the column default says.
+  // 0007 added `sessions_identity_source_matches_punch`, which requires
+  // PUNCH exactly when there is a punch — and this session has none. Leaving it
+  // to the default meant every manual sign-in was refused by the constraint,
+  // which is §10's fallback for "the reader is down" and, before a reader is
+  // installed at all, the only way in. The migration backfilled the rows it
+  // found; nothing updated the code that writes new ones.
+  //
+  // §8: PIN is the weakest of the three identities and `manual_identity` stays
+  // true, because both facts are read by the reports.
   const created = await sql<{ id: string }[]>`
     insert into sessions (operator_id, punch_id, state, manual_identity,
-                          tablet_id, claimed_at)
-    values (${operator.id}, null, 'ACTIVE', true, ${tabletId}, now())
+                          identity_source, tablet_id, claimed_at)
+    values (${operator.id}, null, 'ACTIVE', true, 'PIN', ${tabletId}, now())
     returning id
   `;
 

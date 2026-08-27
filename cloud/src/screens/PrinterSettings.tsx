@@ -17,6 +17,12 @@ interface Props {
   onError: (message: string) => void;
 }
 
+const PAPER_OPTIONS = [
+  { value: "A4" as const, label: "A4", blurb: "grid + cut guides" },
+  { value: "LETTER" as const, label: "Letter", blurb: "grid + cut guides" },
+  { value: "EXACT" as const, label: "Label roll", blurb: "one per page" },
+];
+
 const DPI_OPTIONS = [203, 300, 600] as const;
 
 export function PrinterSettings({ client, onNotice, onError }: Props) {
@@ -161,6 +167,31 @@ export function PrinterSettings({ client, onNotice, onError }: Props) {
             />
           </Field>
         </div>
+
+        <Field
+          label="Paper"
+          hint="What the labels are printed onto. A browser ignores an exact page size, so an office printer needs a grid."
+        >
+          <div className="grid grid-cols-3 gap-2">
+            {PAPER_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => set("sheet_paper", option.value)}
+                className={`tap rounded-xl px-2 py-3 text-sm font-semibold ${
+                  settings.sheet_paper === option.value
+                    ? "bg-sky-600 text-white"
+                    : "bg-slate-800 text-slate-300"
+                }`}
+              >
+                {option.label}
+                <span className="block pt-0.5 text-xs font-normal opacity-70">
+                  {option.blurb}
+                </span>
+              </button>
+            ))}
+          </div>
+        </Field>
       </section>
 
       <BigButton onClick={save} variant="primary" className="w-full" disabled={saving}>

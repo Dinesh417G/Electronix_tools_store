@@ -29,6 +29,7 @@ export interface ItemInput {
   mfr_part_no: string | null;
   diameter_mm: string | null;
   flutes: number | null;
+  max_level?: string | null;
   reorder_level: string;
   reorder_qty: string | null;
   bin_location: string | null;
@@ -66,6 +67,7 @@ export interface PrinterSettings {
   dpi: number;
   label_width_mm: string;
   label_height_mm: string;
+  sheet_paper: "EXACT" | "A4" | "LETTER";
   last_seen_at: string | null;
 }
 
@@ -284,6 +286,17 @@ export function adminApi(token: string) {
         method: "POST",
         body: JSON.stringify({ code, kind }),
       }),
+
+    /// The stock band from the alert card, without opening the item form.
+    setLevels: (
+      id: string,
+      levels: { reorder_level?: string; max_level?: string | null; reorder_qty?: string | null },
+    ) =>
+      json<{ id: string; reorder_level: string; max_level: string | null }>(
+        token,
+        `/api/v1/admin/items/${id}`,
+        { method: "PATCH", body: JSON.stringify(levels) },
+      ),
 
     ackAlert: (id: string) =>
       json<void>(token, `/api/v1/alerts/${id}/ack`, { method: "POST" }),

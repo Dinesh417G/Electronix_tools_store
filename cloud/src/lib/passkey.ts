@@ -131,6 +131,41 @@ export async function signInWithPasskey(): Promise<PasskeySession> {
   );
 }
 
+/** What the console gets back: a named operator and a 12 hour token. */
+export interface PasskeyOperator {
+  token: string;
+  operator_id: string;
+  emp_code: string;
+  full_name: string;
+  role: "OPERATOR" | "STOREKEEPER" | "ADMIN";
+}
+
+/**
+ * Sign in to the admin console with a passkey.
+ *
+ * The same two endpoints as the terminal's sign-in, and the difference is one
+ * header: `/login/verify` opens a *terminal session* when a device token is
+ * present and returns an *operator token* when it is not. On an enrolled
+ * tablet the device token is sitting in localStorage, so signing in to the
+ * console has to deliberately withhold it — otherwise the console asks for a
+ * login and gets a shop-floor session back.
+ */
+export async function signInWithPasskeyAsOperator(): Promise<PasskeyOperator> {
+  const options = await post<Parameters<typeof startAuthentication>[0]["optionsJSON"]>(
+    "/api/v1/auth/webauthn/login/options",
+  );
+
+  let response;
+  try {
+    response = await startAuthentication({ optionsJSON: options });
+  } catch (err) {
+    throw friendly(err);
+  }
+
+  // No token argument, deliberately. See above.
+  return post<PasskeyOperator>("/api/v1/auth/webauthn/login/verify", { response });
+}
+
 /**
  * The browser's own errors are unhelpful on a shop floor — "NotAllowedError"
  * covers a cancelled prompt, a timeout and a finger the sensor did not

@@ -30,6 +30,7 @@ export const ItemBody = z.object({
   diameter_mm: decimal(3).nullish(),
   flutes: z.number().int().positive().nullish(),
   reorder_level: decimal(3),
+  max_level: z.string().regex(/^\d+(\.\d{1,3})?$/).nullish(),
   reorder_qty: decimal(3).nullish(),
   bin_location: z.string().trim().max(64).nullish(),
   unit_cost: decimal(2).nullish(),
@@ -80,12 +81,13 @@ export const POST = handler(async (request: Request) => {
       insert into items (
         item_code, description, category_id, uom, iso_code, grade,
         manufacturer, mfr_part_no, diameter_mm, flutes,
-        reorder_level, reorder_qty, bin_location, unit_cost, allow_negative
+        max_level, reorder_level, reorder_qty, bin_location, unit_cost, allow_negative
       ) values (
         ${b.item_code}, ${b.description}, ${b.category_id ?? null}, ${b.uom},
         ${b.iso_code ?? null}, ${b.grade ?? null}, ${b.manufacturer ?? null},
         ${b.mfr_part_no ?? null}, ${b.diameter_mm ?? null}, ${b.flutes ?? null},
-        ${b.reorder_level}, ${b.reorder_qty ?? null}, ${b.bin_location ?? null},
+        ${b.max_level ?? null}, ${b.reorder_level}, ${b.reorder_qty ?? null},
+        ${b.bin_location ?? null},
         ${b.unit_cost ?? null}, ${b.allow_negative}
       )
       returning id, item_code, description, active

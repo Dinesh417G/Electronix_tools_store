@@ -220,8 +220,12 @@ jobs:
       # mock: punch → claim → issue → on_hand falls → reversal → reconcile.
       # `next start` serves the build produced above.
       #
-      # tests/webauthn.mjs runs in the same step because it needs that same
-      # server. It drives §8's passkey path end to end against a CDP virtual
+      # tests/webauthn.mjs and tests/terminal-flow.mjs run in the same step
+      # because they need that same server. terminal-flow is the operator's own
+      # path — manual sign-in, TAKE OUT, search, quantity, confirm — driven
+      # through the screens rather than the API, which is where the two bugs it
+      # found were hiding: manual sign-in refused by a constraint added in 0007,
+      # and a numeric pad that turned a tap on 2 into a quantity of 12. It drives §8's passkey path end to end against a CDP virtual
       # authenticator — register, sign in, revoke, and prove the revoked
       # credential can no longer open a session. §13 called this "needs a real
       # device on HTTPS"; it needs a real WebAuthn stack, which the runner's
@@ -235,6 +239,7 @@ jobs:
           done
           npm run test:e2e
           npm run test:webauthn
+          npm run test:terminal
         working-directory: cloud
         env:
           DATABASE_URL: postgresql://postgres:throwaway@localhost:5432/store

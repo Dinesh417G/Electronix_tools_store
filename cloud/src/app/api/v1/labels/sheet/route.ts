@@ -8,7 +8,7 @@ import { z } from "zod";
 import { requireRole } from "@/lib/auth";
 import { sql } from "@/lib/db";
 import { ApiError, handler } from "@/lib/errors";
-import { printSheetHtml, type LabelData } from "@/lib/labels";
+import { printSheetHtml, type LabelData, type SheetPaper } from "@/lib/labels";
 import { getPrinterSettings } from "@/lib/serials";
 
 export const runtime = "nodejs";
@@ -77,10 +77,15 @@ export const GET = handler(async (request: Request) => {
   }
 
   const printer = await getPrinterSettings();
-  const html = await printSheetHtml(labels, {
-    widthMm: Number(printer.label_width_mm),
-    heightMm: Number(printer.label_height_mm),
-  }, copies);
+  const html = await printSheetHtml(
+    labels,
+    {
+      widthMm: Number(printer.label_width_mm),
+      heightMm: Number(printer.label_height_mm),
+    },
+    copies,
+    printer.sheet_paper as SheetPaper,
+  );
 
   return new Response(html, {
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
