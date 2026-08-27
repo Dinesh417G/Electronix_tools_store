@@ -817,12 +817,16 @@ named below rather than buried:
   `having`, and the month coming from `created_at` while `device_ts` claims six
   months later. It must run before the catalog seed, and asserts that
   precondition rather than assuming it.
-  **It also found a real defect, which is recorded there and not yet fixed:**
-  `reverse()` does not copy the original row's `machine_id`, so reversing an
-  issue booked to a machine leaves the machine charged for stock that came back
-  and files the credit under "no machine recorded" — which can make that bucket
-  negative. Totals still reconcile, which is why nothing caught it. Changing
-  `reverse()` is a §7 change and therefore an architect decision (§15).
+  **It also found a real defect, since fixed:** `reverse()` did not copy the
+  original row's `machine_id`, so reversing an issue booked to a machine left
+  the machine charged for stock that came back and filed the credit under "no
+  machine recorded" — which drove that bucket negative. Totals still
+  reconciled, which is why nothing caught it. The reference implementation had
+  it right (`crates/store-db/src/ledger.rs` passes both `machine_id` and
+  `reason_id`), so the fix was parity rather than a new rule; the same commit
+  refuses reversing a reversal, which `crates/` also refuses and the cloud
+  allowed. `tests/reports-db.mjs` now asserts the reversing *row*, not only the
+  report arithmetic, so the fix cannot migrate into the SQL.
 - **M9's `reconcile` and `backup` are Rust-only.** They work, and they point at
   the same database, so the invariant is still checkable; it is checkable from a
   laptop with the connection string rather than from the deployment.
@@ -906,9 +910,10 @@ way rather than designed in:
   fails it loudly instead of quietly changing every number.
 
 What is still not covered: `typecheck` cannot see the database, so a column
-rename passes CI and fails at runtime anywhere these paths do not go; and
-`reverse()`'s dropped `machine_id` (§13) is pinned as current behaviour rather
-than fixed.
+rename passes CI and fails at runtime anywhere these paths do not go. And
+nothing asserts that a table added by a later migration enables RLS (§6) —
+0008 covered the twenty that existed, and there is no default that turns it on
+for the twenty-first.
 
 The shared migrations remain what makes the rest survivable: the §7 trigger, the
 negative-stock guard and the append-only constraint are the same objects in both
