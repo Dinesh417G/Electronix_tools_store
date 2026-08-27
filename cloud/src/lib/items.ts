@@ -4,9 +4,9 @@
 // They do, because both come back through `ItemRow` and both join the same
 // stock read model.
 
-import { sql } from "./db";
-import { ApiError } from "./errors";
-import type { AlertState } from "./ledger";
+import { sql } from "./db.ts";
+import { ApiError } from "./api-error.ts";
+import type { AlertState } from "./ledger.ts";
 
 export interface ItemRow {
   id: string;

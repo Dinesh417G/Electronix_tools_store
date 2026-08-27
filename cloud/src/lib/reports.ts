@@ -16,12 +16,12 @@
 // from a query string, and each variant gets to name its "unassigned" bucket in
 // words that make sense for it.
 
-import { sql } from "./db";
-import { ApiError } from "./errors";
-import { GROUP_BY, normaliseGroupBy, type ConsumptionRow, type GroupBy } from "./report-format";
+import { sql } from "./db.ts";
+import { ApiError } from "./api-error.ts";
+import { GROUP_BY, normaliseGroupBy, type ConsumptionRow, type GroupBy } from "./report-format.ts";
 
-export { GROUP_BY, toCsv } from "./report-format";
-export type { ConsumptionRow, GroupBy } from "./report-format";
+export { GROUP_BY, toCsv } from "./report-format.ts";
+export type { ConsumptionRow, GroupBy } from "./report-format.ts";
 
 /** The grouping asked for, or a 400 naming the ones that exist. */
 export function parseGroupBy(value: string | null): GroupBy {

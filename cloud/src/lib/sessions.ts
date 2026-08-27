@@ -1,9 +1,9 @@
 // Session reads and writes (CLAUDE.md §10). The rules live in `session.ts`;
 // this file only persists what the machine decides.
 
-import { sql } from "./db";
-import { ApiError } from "./errors";
-import { verifyPin, DUMMY_PIN_HASH, type Auth } from "./auth";
+import { sql } from "./db.ts";
+import { ApiError } from "./api-error.ts";
+import { verifyPin, DUMMY_PIN_HASH, type Auth } from "./auth.ts";
 import {
   effectiveState,
   statusFor,
@@ -11,7 +11,7 @@ import {
   type CloseReason,
   type SessionEvent,
   type SessionState,
-} from "./session";
+} from "./session.ts";
 
 export interface SessionRow {
   id: string;

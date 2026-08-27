@@ -1,11 +1,11 @@
 // The shared shape of a confirmed transaction, and the two pieces of ordering
 // that make the offline outbox safe (CLAUDE.md §7, §10, §12).
 
-import { sql } from "./db";
-import { ApiError } from "./errors";
-import { getItem } from "./items";
-import { findByClientUuid, type MovementReceipt } from "./ledger";
-import { closeSession } from "./sessions";
+import { sql } from "./db.ts";
+import { ApiError } from "./api-error.ts";
+import { getItem } from "./items.ts";
+import { findByClientUuid, type MovementReceipt } from "./ledger.ts";
+import { closeSession } from "./sessions.ts";
 
 export interface TxnResponse {
   ledger_id: number;
