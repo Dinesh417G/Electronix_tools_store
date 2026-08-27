@@ -417,6 +417,19 @@ webauthn_credentials  -- per operator: credential id, public key, sign count
 webauthn_challenges   -- short-lived, single-use
 
 sessions.identity_source text not null  -- PUNCH | WEBAUTHN | PIN  (§8)
+
+-- ── Row Level Security (0008) ───────────────────────────────────────
+-- Every table above has RLS enabled and no policies, which denies the roles
+-- Supabase's PostgREST uses and leaves both implementations untouched: the
+-- tables are owned by `postgres`, which carries BYPASSRLS, and that is the
+-- role behind DATABASE_URL. Not FORCEd, deliberately.
+--
+-- This is not decoration. Supabase publishes an HTTP endpoint over this
+-- schema, reachable with a key meant to live in a browser, and before 0008 it
+-- served operators.pin_hash and accepted an INSERT into stock_ledger — which
+-- satisfies the triggers while bypassing every §7 guard the application
+-- enforces. A table added by a later migration is NOT covered; enable it in
+-- the migration that creates it.
 ```
 
 ---

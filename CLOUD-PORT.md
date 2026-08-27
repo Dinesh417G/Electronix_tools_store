@@ -264,9 +264,62 @@ next — an argument for a stable domain.
 The catalog is loaded (see **Seeding** above), and `CLAUDE.md` §2 was rewritten
 to describe where this actually runs.
 
+## The database has an HTTP front door
+
+Supabase puts PostgREST in front of the schema, reachable with a *publishable*
+key — a key designed to sit in a browser. `crates/store-db/migrations` was
+written for a Postgres that only our own server could reach, so nothing in it
+turned Row Level Security on, and the assumption travelled to a database where
+it is false.
+
+Measured on 2026-08-27, before the fix, against the live project:
+
+```
+GET  /rest/v1/operators    → 200, the ADMIN row including pin_hash
+GET  /rest/v1/stock_ledger → 200, ledger rows
+POST /rest/v1/items        → 201. It inserted.
+```
+
+A direct `INSERT` into `stock_ledger` over that path satisfies the triggers —
+`item_stock` recalculates — while bypassing the negative-stock guard, the
+session binding and the operator attribution that make the ledger evidence.
+The books would still balance and would no longer be true. And `pin_hash` is
+argon2 over four digits, so reading it is reading the PIN, given an afternoon.
+
+`0008_rls_lockdown` enables RLS on all 20 tables and adds **no policies**,
+which denies `anon` and `authenticated` everything. It is invisible to both
+implementations: the tables are owned by `postgres`, which also carries
+`BYPASSRLS`, and that is the role behind `DATABASE_URL`. It is deliberately not
+`FORCE`d — the point is to remove the HTTP path, not to constrain our own
+server. Verified after applying: both keys read `[]` from every table, and a
+write returns `42501 new row violates row-level security policy`, while the
+ADMS handshake still upserts its device row and operator login still verifies a
+PIN.
+
+**A table added by a later migration is not covered.** There is no default that
+turns this on; the migration that creates it must enable it.
+
+## Where the functions run
+
+Vercel defaulted this project to `iad1` (Washington DC) while Supabase is in
+`ap-south-1` (Mumbai), so every query crossed the planet twice. Measured warm
+from India, before the fix:
+
+| endpoint | warm | budget |
+|---|---|---|
+| `/api/v1/version` (no database) | ~330 ms | — |
+| `/iclock/cdata` handshake (one device upsert) | **~720 ms** | §9's ~200 ms |
+
+The ~330 ms is this side's network to Virginia; the difference is the function
+talking to Mumbai. `cloud/vercel.json` now pins `"regions": ["bom1"]`, which
+puts the function in the same region as the database and on the same continent
+as the door terminal that has to be acknowledged inside 200 ms (§9.5). A device
+that does not get `OK: <n>` in time retries, and a retried batch is a duplicate
+punch unless the dedup index catches it.
+
 ## Deployment notes worth keeping
 
-- `cloud/vercel.json` pins `"framework": "nextjs"`. Without it the project
+- `cloud/vercel.json` pins `"framework": "nextjs"` and `"regions": ["bom1"]`. Without it the project
   builds every route successfully and the edge still answers
   `X-Vercel-Error: NOT_FOUND` for every path, because the routing was never
   told it was Next.
