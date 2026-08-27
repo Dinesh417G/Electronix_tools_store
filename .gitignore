@@ -10,3 +10,5 @@
 /crates/store-admin/src-tauri/target
 *.apk
 *.log
+.vercel
+.env*

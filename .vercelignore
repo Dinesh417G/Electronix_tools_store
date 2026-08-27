@@ -1,0 +1,16 @@
+# Vercel builds only `cloud/` (the project's Root Directory), so everything the
+# Rust workspace needs is upload weight for a build that will not read it.
+#
+# Kept deliberately explicit rather than a bare `*` + negation: a future
+# contributor adding a second deployable directory should have to think about
+# it, not discover that it was silently excluded.
+/target
+/crates
+/deploy
+/.git
+/.github
+/.claude
+*.png
+*.log
+Cargo.lock
+Cargo.toml

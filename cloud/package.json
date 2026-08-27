@@ -1,0 +1,41 @@
+{
+  "name": "cloud",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "test:labels": "node --experimental-strip-types tests/label-roundtrip.mjs",
+    "typecheck": "tsc --noEmit",
+    "seed": "node --experimental-strip-types scripts/seed.mts",
+    "test:reports": "node --experimental-strip-types tests/reports-csv.mjs",
+    "test:e2e": "node tests/e2e.mjs",
+    "operator": "node --experimental-strip-types scripts/operator.mts"
+  },
+  "dependencies": {
+    "@node-rs/argon2": "^2.1.0",
+    "@simplewebauthn/browser": "^13.3.0",
+    "@simplewebauthn/server": "^13.3.3",
+    "bwip-js": "^4.11.4",
+    "next": "16.3.3",
+    "postgres": "^3.4.9",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/pngjs": "^6.0.5",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.3",
+    "jsqr": "^1.4.0",
+    "pngjs": "^7.0.0",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

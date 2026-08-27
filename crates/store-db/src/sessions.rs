@@ -305,9 +305,12 @@ pub async fn open_manual(
         r#"
         insert into sessions (
             operator_id, punch_id, state, manual_identity,
-            tablet_id, claimed_at, last_activity_at
+            identity_source, tablet_id, claimed_at, last_activity_at
         )
-        values ($1, null, 'ACTIVE', true, $2, now(), now())
+        -- 0007 made identity strength three-valued. This path is the typed
+        -- emp code and PIN, which is the weakest of the three; the column
+        -- defaults to PUNCH, and a punchless PUNCH row is refused outright.
+        values ($1, null, 'ACTIVE', true, 'PIN', $2, now(), now())
         returning id
         "#,
         operator_id,
