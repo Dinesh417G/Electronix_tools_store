@@ -776,24 +776,45 @@ than across the room. That is the §2 offline question in its concrete form.
 ## 13. Milestones — each gated by its acceptance test
 
 Status as of the current branch. **In `crates/`: M0–M10 complete and gated.**
-The cloud app carries the same milestones with two exceptions worth naming
-rather than burying:
+**In `cloud/`: M1, M3, M4 and M8 are now gated too** — each by a test that runs
+in CI against a real Postgres with these migrations applied. What is left is
+named below rather than buried:
 
-- **M8 is met in the cloud on the rendering half only.** The report endpoints
-  and the CSV are there, and the CSV is checked in CI against a fixture computed
-  by hand. The aggregation itself is SQL, and no automated test runs it against
-  a database on this side — it was verified once, by hand, over a synthetic
-  ledger including a reversal that nets out and a `RECEIPT` that is not
-  consumption. That is weaker than M8's gate asks for. See §14.
+- **M1 is gated by `cloud/tests/ledger-property.mjs`.** 10 000 random ledger
+  ops through `src/lib/ledger.ts`, with `item_stock.on_hand` compared against
+  `sum(delta_qty)` — by Postgres, in `numeric` — after every single one. Not a
+  port of the Rust property test, because there is no fold on this side to
+  check: what is unprovable anywhere else is that the TypeScript service drives
+  the trigger correctly, appends one row per movement, and rolls back cleanly
+  when the guard fires. Non-vacuity has its own deterministic issue-heavy run;
+  the random walk cannot be trusted to hit zero, because the guard reflects it
+  off zero and it then drifts upward.
+- **M3 is gated by `cloud/tests/session-transitions.mjs`.** All 20 (state,
+  event) pairs, with the same 12-legal / 8-refused split the Rust sweep
+  asserts, plus the half that has no Rust counterpart at all: `effectiveState`,
+  the derive-on-read rule that replaced the two reapers (§10). It needs no
+  database, so it runs before Postgres is even up.
+- **M4 is gated by `cloud/tests/e2e.mjs`.** Punch → claim → issue → on-hand
+  falls → reversal, over HTTP against a real Postgres in CI, plus the §11
+  status codes.
+- **M8 is now gated on both halves.** `tests/reports-csv.mjs` checks the
+  rendering against a hand-computed fixture; `tests/reports-db.mjs` checks the
+  aggregation against a ledger it builds itself — receipts excluded from
+  consumption, a reversal netting out, a fully-reversed item dropping out under
+  `having`, and the month coming from `created_at` while `device_ts` claims six
+  months later. It must run before the catalog seed, and asserts that
+  precondition rather than assuming it.
+  **It also found a real defect, which is recorded there and not yet fixed:**
+  `reverse()` does not copy the original row's `machine_id`, so reversing an
+  issue booked to a machine leaves the machine charged for stock that came back
+  and files the credit under "no machine recorded" — which can make that bucket
+  negative. Totals still reconcile, which is why nothing caught it. Changing
+  `reverse()` is a §7 change and therefore an architect decision (§15).
 - **M9's `reconcile` and `backup` are Rust-only.** They work, and they point at
   the same database, so the invariant is still checkable; it is checkable from a
   laptop with the connection string rather than from the deployment.
   `cloud/tests/e2e.mjs` now runs the reconciliation query itself as its ninth
   step, so CI fails on drift even though the CLI that reports it is Rust.
-- **M4 is gated in the cloud too, as of `cloud/tests/e2e.mjs`.** Punch → claim →
-  issue → on-hand falls → reversal, over HTTP against a real Postgres in CI,
-  plus the §11 status codes. M1's property test and M3's exhaustive transition
-  sweep still have no cloud equivalent (§14).
 
 What remains beyond those: the live loop verified end to end against **Supabase**
 — the e2e test proves the code and the schema, but runs against a local
@@ -832,10 +853,11 @@ WhatsApp/email alerts, multi-store, vending-machine integration, mobile app for 
 - Keep the raw ADMS capture from M2 as a fixture and replay it in CI forever. When firmware
   changes, that fixture is how you find out.
 
-**The cloud app is the thinner half of this, and pretending otherwise would be
-the expensive mistake.** Its CI job is `typecheck`, `build`, the label
-round-trip, the consumption CSV — and, since the port, `cloud/tests/e2e.mjs`
-against a real Postgres with `crates/store-db/migrations` applied verbatim.
+**The cloud app is still the thinner half of this, and pretending otherwise
+would be the expensive mistake.** Its CI job is `typecheck`, `build`, the label
+round-trip, the consumption CSV, the session sweep — and then, against a real
+Postgres with `crates/store-db/migrations` applied verbatim, the report
+aggregation, the ledger property test and `cloud/tests/e2e.mjs`.
 That test drives M4's gate over HTTP: ADMS handshake, a punch and its identical
 retry, claim, a second tablet refused, lookup, issue, `on_hand` falling by
 exactly that much, a reversal, reconcile over every item, and `UPDATE`/`DELETE`
@@ -844,20 +866,40 @@ on `stock_ledger` refused by the trigger. It also pins the three status codes
 second claim — because each is a branch in the UI where a wrong code fails
 silently.
 
-What that test does *not* cover is still worth naming. It is one path through
-the system, not a suite: no property test over random ledger operations (M1's
-gate, which only `store-core` meets), no exhaustive sweep of the session
-machine's illegal transitions (M3's), and no coverage of the report
-aggregation, which remains SQL verified once by hand. The `typecheck` still
-cannot see the database, so a column rename passes CI and fails at runtime
-anywhere the e2e path does not go.
+The e2e test is one path through the system, not a suite, and the three tests
+written alongside it are what stop that from being the whole story:
+
+| Test | Gate | Database |
+|---|---|---|
+| `tests/session-transitions.mjs` | M3 | none — the machine is pure |
+| `tests/reports-db.mjs` | M8's aggregation half | yes, and it must run on an **empty ledger** |
+| `tests/ledger-property.mjs` | M1 | yes |
+| `tests/e2e.mjs` | M4 | yes |
+
+Two things about them are worth stating, because both were learned the hard
+way rather than designed in:
+
+- **A property test that never exercises its guard passes for the wrong
+  reason.** The random ledger walk cannot be relied on to hit zero: §7's guard
+  refuses the step that would cross it, which makes zero a reflecting barrier,
+  so the balance drifts upward and refusals bunch into the first few dozen ops.
+  One seed ran 200 operations without a single refusal. Non-vacuity therefore
+  gets its own deterministic issue-heavy sequence, exactly as the Rust test
+  does, and the random run's refusal count is reported but not asserted.
+- **A report test that does not own the ledger is measuring the seed.** The
+  consumption queries aggregate the whole table with no item filter, so
+  `tests/reports-db.mjs` runs after `migrate` and before `npm run seed`, and
+  asserts that the ledger is empty before it starts. Reordering the workflow
+  fails it loudly instead of quietly changing every number.
+
+What is still not covered: `typecheck` cannot see the database, so a column
+rename passes CI and fails at runtime anywhere these paths do not go; and
+`reverse()`'s dropped `machine_id` (§13) is pinned as current behaviour rather
+than fixed.
 
 The shared migrations remain what makes the rest survivable: the §7 trigger, the
 negative-stock guard and the append-only constraint are the same objects in both
 implementations, so the Rust suite proving them proves them for the cloud too.
-The next tests worth writing are the two gates above — the ledger property test
-and the session transition sweep — ported to run against the same throwaway
-Postgres this one uses.
 
 ---
 
