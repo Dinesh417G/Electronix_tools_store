@@ -8,6 +8,7 @@ import { z } from "zod";
 import { authenticate } from "@/lib/auth";
 import { ApiError, handler } from "@/lib/errors";
 import { record } from "@/lib/ledger";
+import { CostString, QtyString } from "@/lib/quantity";
 import { authoriseSession } from "@/lib/sessions";
 import { finish, replayed } from "@/lib/txn";
 
@@ -17,8 +18,8 @@ export const dynamic = "force-dynamic";
 const Body = z.object({
   session_id: z.string().uuid(),
   item_id: z.string().uuid(),
-  qty: z.string().regex(/^\d+(\.\d{1,3})?$/, "quantity must be a positive number"),
-  unit_cost: z.string().regex(/^\d+(\.\d{1,2})?$/).nullish(),
+  qty: QtyString,
+  unit_cost: CostString.nullish(),
   reason_id: z.string().uuid().nullish(),
   note: z.string().max(500).nullish(),
   client_txn_uuid: z.string().uuid().optional(),
@@ -32,7 +33,6 @@ export const POST = handler(async (request: Request) => {
   }
   const body = parsed.data;
 
-  if (Number(body.qty) <= 0) throw ApiError.badRequest("qty must be greater than zero");
 
   const replay = await replayed(body.client_txn_uuid, body.item_id);
   if (replay) return NextResponse.json(replay);

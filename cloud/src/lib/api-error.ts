@@ -69,6 +69,13 @@ const PG_CODES: Record<string, (message: string) => ApiError> = {
   "23503": (m) => ApiError.badRequest(m),
   // check_violation — a constraint the state machine should have prevented
   "23514": (m) => ApiError.badRequest(m),
+  // numeric_value_out_of_range — a quantity or cost the column cannot hold.
+  // lib/quantity.ts refuses these at the edge with a sentence an operator can
+  // act on; this is the backstop for any path that does not go through it,
+  // and it exists because the alternative is a 500 for what is plainly a bad
+  // request. `store_core::ledger::validate_qty_domain` is the Rust side of the
+  // same rule.
+  "22003": (m) => ApiError.badRequest(m),
 };
 
 export function toApiError(e: unknown): ApiError {

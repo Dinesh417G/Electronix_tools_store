@@ -17,6 +17,7 @@
 //   4. items/lookup                          §11 — budget 100 ms
 //   5. issue, and on_hand falls by that much §7
 //   6. an issue past zero                    §7  — 409 INSUFFICIENT_STOCK
+//   6b. a quantity past numeric(12,3)      §11 — 400, not an unmapped 500
 //   7. reverse, and on_hand comes back       §7
 //   8. submit after close                    §10 — 410
 //   9. reconcile every item                  §7  — sum(delta_qty) == on_hand
@@ -215,6 +216,32 @@ try {
   const afterOverdraw = await onHand(item.id);
   if (afterOverdraw === afterIssue) ok("a refused issue moved no stock");
   else bad("on_hand changed on a refused issue: " + afterIssue + " -> " + afterOverdraw);
+
+  step("6b. a quantity the column cannot hold is a bad request, not a 500");
+  // `numeric(12,3)` holds values under 10^9. Before lib/quantity.ts this
+  // reached Postgres and came back as an unmapped 22003, which the API
+  // reported as INTERNAL — the same failure mode api-error.ts already refuses
+  // for the §7 guards: a bad number from a terminal is the caller's problem to
+  // fix, and it can only fix what it is told. `store_core` has rejected this in
+  // the domain since M1; this side did not.
+  // A distinct device_ts: the dedup key is (device, user, device_ts), so
+  // reusing an offset would resolve to the punch above instead of a new one.
+  const oversizeSession = await openSession(operator, tabletTok, TABLET, 6);
+  const oversize = await call("/api/v1/txn/issue", {
+    method: "POST",
+    headers: bearer(tabletTok),
+    body: JSON.stringify({
+      session_id: oversizeSession.id,
+      item_id: item.id,
+      qty: "1000000000",
+      client_txn_uuid: randomUUID(),
+    }),
+  });
+  if (oversize.status === 400) ok("400 on a quantity past the column's range");
+  else bad("oversize qty -> " + oversize.status + ", expected 400");
+  const afterOversize = await onHand(item.id);
+  if (afterOversize === afterOverdraw) ok("and it moved no stock");
+  else bad("on_hand changed on a refused oversize issue");
 
   step("7. reverse (§7 — correct by a reversing row, never an edit)");
   const reverse = ledgerId

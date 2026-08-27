@@ -160,6 +160,29 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:throwaway@localhost:5432/store
 
+      # 0008 turned Row Level Security on for the twenty tables that existed
+      # when it was written. Postgres has no default that turns it on for the
+      # twenty-first, and the deployed database sits behind PostgREST, where a
+      # table without RLS is readable and writable with a key designed to live
+      # in a browser (CLOUD-PORT.md). A migration that adds a table and forgets
+      # the line is therefore a silent hole, and this is what makes it loud.
+      - name: every table has RLS
+        run: |
+          missing=$(psql -tAX "$DATABASE_URL" -c "
+            select string_agg(c.relname, ', ' order by c.relname)
+              from pg_class c
+              join pg_namespace n on n.oid = c.relnamespace
+             where n.nspname = 'public' and c.relkind = 'r'
+               and not c.relrowsecurity")
+          if [ -n "$missing" ]; then
+            echo "::error::tables without RLS: $missing"
+            echo "Add 'alter table <name> enable row level security;' to the migration that creates it."
+            exit 1
+          fi
+          echo "  every public table has RLS enabled"
+        env:
+          DATABASE_URL: postgresql://postgres:throwaway@localhost:5432/store
+
       # M8's aggregation half, which §13 admitted was verified once by hand and
       # never since. It MUST run before the catalog seed: the report queries
       # aggregate the whole ledger with no item filter, so the seed's opening
