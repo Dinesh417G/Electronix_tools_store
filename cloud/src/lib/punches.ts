@@ -1,8 +1,8 @@
 // Persisting what the door terminal pushed, and turning it into a session
 // offer (CLAUDE.md §9, §10).
 
-import { sql } from "./db";
-import type { AttlogRecord } from "./adms";
+import { sql } from "./db.ts";
+import type { AttlogRecord } from "./adms.ts";
 
 export type SessionOffer =
   | { kind: "OPENED"; sessionId: string; operatorId: string }

@@ -6,8 +6,8 @@
 // UNIQUE), not a check in this file: a serial that could be typed onto two
 // tools is not a serial.
 
-import { sql } from "./db";
-import { ApiError } from "./errors";
+import { sql } from "./db.ts";
+import { ApiError } from "./api-error.ts";
 
 export interface ToolSerial {
   id: string;

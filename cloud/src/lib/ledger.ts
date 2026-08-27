@@ -9,8 +9,8 @@
 // what was attempted.
 
 import type { Sql, TransactionSql } from "postgres";
-import { sql } from "./db";
-import { ApiError } from "./errors";
+import { sql } from "./db.ts";
+import { ApiError } from "./api-error.ts";
 
 export type TxnType = "ISSUE" | "RECEIPT" | "ADJUST" | "OPENING" | "SCRAP";
 export type AlertState = "OK" | "LOW" | "EMPTY";

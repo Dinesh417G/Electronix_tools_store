@@ -15,8 +15,8 @@ import {
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
 } from "@simplewebauthn/server";
-import { sql } from "./db";
-import { ApiError } from "./errors";
+import { sql } from "./db.ts";
+import { ApiError } from "./api-error.ts";
 
 /**
  * Relying-party identity.
