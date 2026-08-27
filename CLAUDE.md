@@ -710,6 +710,11 @@ reach places the CLI used to guard:
   from this API; without the guard, the last one can leave through it, and then
   nothing can create the person who would fix that.
 
+Every one of these is reachable from the console: a **Reports** tab, and
+**Setup → People / Machines / Reasons / Door**. An endpoint with no screen is
+this project's known failure mode — built at both ends, never connected — so a
+new endpoint is not finished until something can call it.
+
 Status codes the tablet UX depends on:
 
 | Situation | Code | What the tablet does |

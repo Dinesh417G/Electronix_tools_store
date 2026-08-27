@@ -146,6 +146,9 @@ digesting the DB rows and the CSV independently and comparing the hashes, and
 - [x] A `cloud (next.js)` CI job — typecheck, build, label round-trip
 - [x] Deployed to Vercel as a preview
 - [x] Catalog seeded into Supabase from the CSV the Rust CLI reads
+- [x] Consumption reports (M8) with CSV, and a fixture test in CI
+- [x] Admin screens for people, machines, reasons and the door — every endpoint
+      §11 asks for is now reachable from the console rather than by curl
 
 ## Live
 

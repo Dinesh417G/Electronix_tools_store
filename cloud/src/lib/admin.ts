@@ -78,6 +78,110 @@ export interface PrintResult {
   serial: ToolSerial;
 }
 
+// ── People, pickers, the door and the reports ────────────────────────────
+
+export type Role = "OPERATOR" | "STOREKEEPER" | "ADMIN";
+
+export interface Operator {
+  id: string;
+  emp_code: string;
+  full_name: string;
+  role: Role;
+  /** The id programmed into the door terminal. Null means they cannot punch in. */
+  zk_user_id: string | null;
+  department: string | null;
+  active: boolean;
+  /** Never the hash. Whether the manual fallback path (§8) is open to them. */
+  has_pin: boolean;
+  passkey_count: number;
+  last_txn_at: string | null;
+  created_at: string;
+}
+
+export interface OperatorInput {
+  emp_code: string;
+  full_name: string;
+  role: Role;
+  zk_user_id: string | null;
+  department: string | null;
+  /** Only ever sent, never received. Omit to leave an existing PIN alone. */
+  pin?: string | null;
+}
+
+export interface Machine {
+  id: string;
+  code: string;
+  name: string | null;
+  active: boolean;
+  /** How much history is attached. Renaming a busy machine relabels its past. */
+  txn_count: number;
+}
+
+export interface ReasonCode {
+  id: string;
+  code: string;
+  label: string;
+  applies_to: "ISSUE" | "RECEIPT";
+  sort_order: number;
+  active: boolean;
+  txn_count: number;
+}
+
+export interface DeviceRow {
+  id: string;
+  serial_no: string;
+  name: string | null;
+  location: string | null;
+  firmware: string | null;
+  timezone_offset_min: number | null;
+  last_seen_at: string | null;
+  punch_count: number;
+  last_punch_at: string | null;
+}
+
+export interface PunchRow {
+  id: string;
+  zk_user_id: string;
+  device_serial: string;
+  /** What the server observed. §9.3 says business logic uses this one. */
+  received_at: string;
+  /** What the terminal claimed. Diagnostic only — clocks drift. */
+  device_ts: string | null;
+  verify_mode: string | null;
+  claimed?: boolean;
+  emp_code?: string | null;
+  full_name?: string | null;
+}
+
+export interface DoorStatus {
+  devices: DeviceRow[];
+  unknown_users: PunchRow[];
+  recent_punches: PunchRow[];
+}
+
+export type GroupBy = "item" | "machine" | "operator" | "category" | "month";
+
+export interface ConsumptionRow {
+  bucket_key: string;
+  bucket_label: string;
+  /** Strings, like every other quantity and price here. */
+  qty: string;
+  value: string;
+  txn_count: number;
+}
+
+export interface DateRange {
+  from?: string | null;
+  to?: string | null;
+}
+
+function reportQuery(groupBy: GroupBy, range: DateRange): string {
+  const p = new URLSearchParams({ group_by: groupBy });
+  if (range.from) p.set("from", range.from);
+  if (range.to) p.set("to", range.to);
+  return p.toString();
+}
+
 export interface LoginResult {
   token: string;
   operator_id: string;
@@ -244,6 +348,103 @@ export function adminApi(token: string) {
         method: "PUT",
         body: JSON.stringify(patch),
       }),
+
+    // ── People ──────────────────────────────────────────────────────────
+    //
+    // ADMIN only, server-side. A storekeeper who opens this tab gets a 403 with
+    // a sentence rather than an empty list, which is the difference between
+    // "you may not" and "there is nobody here".
+
+    operators: (includeInactive = false) =>
+      json<Operator[]>(
+        token,
+        `/api/v1/admin/operators?include_inactive=${includeInactive}`,
+      ),
+
+    createOperator: (input: OperatorInput) =>
+      json<Operator>(token, "/api/v1/admin/operators", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+
+    /// Partial: what is not sent is not changed. Omitting `pin` leaves the
+    /// existing one alone; sending null clears it and closes the PIN path.
+    updateOperator: (id: string, patch: Partial<OperatorInput> & { active?: boolean }) =>
+      json<Operator>(token, `/api/v1/admin/operators/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      }),
+
+    /// Deactivates. Their ledger rows keep their name on them (§7).
+    deactivateOperator: (id: string) =>
+      json<Operator>(token, `/api/v1/admin/operators/${id}`, { method: "DELETE" }),
+
+    // ── Pickers ─────────────────────────────────────────────────────────
+
+    machines: () => json<Machine[]>(token, "/api/v1/admin/machines"),
+
+    createMachine: (input: { code: string; name: string | null }) =>
+      json<Machine>(token, "/api/v1/admin/machines", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+
+    updateMachine: (id: string, input: { code: string; name: string | null; active?: boolean }) =>
+      json<Machine>(token, `/api/v1/admin/machines/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(input),
+      }),
+
+    deactivateMachine: (id: string) =>
+      json<Machine>(token, `/api/v1/admin/machines/${id}`, { method: "DELETE" }),
+
+    reasonCodes: () => json<ReasonCode[]>(token, "/api/v1/admin/reason-codes"),
+
+    createReasonCode: (input: Omit<ReasonCode, "id" | "active" | "txn_count">) =>
+      json<ReasonCode>(token, "/api/v1/admin/reason-codes", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+
+    updateReasonCode: (
+      id: string,
+      input: {
+        code: string;
+        label: string;
+        applies_to: "ISSUE" | "RECEIPT";
+        sort_order: number;
+        active?: boolean;
+      },
+    ) =>
+      json<ReasonCode>(token, `/api/v1/admin/reason-codes/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(input),
+      }),
+
+    deactivateReasonCode: (id: string) =>
+      json<ReasonCode>(token, `/api/v1/admin/reason-codes/${id}`, { method: "DELETE" }),
+
+    // ── The door ────────────────────────────────────────────────────────
+
+    door: () => json<DoorStatus>(token, "/api/v1/admin/devices"),
+
+    // ── Reports (M8) ────────────────────────────────────────────────────
+
+    consumption: (groupBy: GroupBy, range: DateRange = {}) =>
+      json<ConsumptionRow[]>(
+        token,
+        `/api/v1/reports/consumption?${reportQuery(groupBy, range)}`,
+      ),
+
+    /// Fetched rather than linked: the endpoint needs the operator token, and a
+    /// bare href carries no Authorization header.
+    consumptionCsv: async (groupBy: GroupBy, range: DateRange = {}): Promise<Blob> => {
+      const response = await send(
+        token,
+        `/api/v1/reports/consumption.csv?${reportQuery(groupBy, range)}`,
+      );
+      return response.blob();
+    },
 
     health: () => json<Record<string, unknown>>(token, "/api/v1/admin/health"),
   };

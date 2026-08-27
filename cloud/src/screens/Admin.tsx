@@ -23,8 +23,16 @@ import { adminApi, type Category, type ItemInput } from "../lib/admin";
 import { AlertChip, Banner, BigButton, Field, Header, Spinner } from "../components/ui";
 import { PrinterSettings } from "./PrinterSettings";
 import { Serials } from "./Serials";
+import { People } from "./People";
+import { Machines, ReasonCodes } from "./Pickers";
+import { Door } from "./Door";
+import { Reports } from "./Reports";
 
-type Tab = "catalog" | "stock" | "alerts" | "activity" | "settings";
+type Tab = "catalog" | "stock" | "alerts" | "activity" | "reports" | "settings";
+
+/** The things behind Setup. Each is a screen of its own, not a tab: they are
+ *  visited when something changes, not while working. */
+type SetupSection = "printer" | "people" | "machines" | "reasons" | "door";
 
 interface Props {
   token: string;
@@ -70,13 +78,16 @@ export function Admin({ token, operatorName, onSignOut }: Props) {
         </div>
       )}
 
-      <nav className="flex gap-1 px-4 pb-3">
+      {/* Six tabs will not fit across a 390 px phone in one row, so they wrap
+          into two of three and spread out again on anything wider. */}
+      <nav className="grid grid-cols-3 gap-1 px-4 pb-3 sm:grid-cols-6">
         {(
           [
             ["catalog", "Catalog"],
             ["stock", "Stock"],
             ["alerts", "Alerts"],
             ["activity", "Ledger"],
+            ["reports", "Reports"],
             ["settings", "Setup"],
           ] as const
         ).map(([key, label]) => (
@@ -84,7 +95,7 @@ export function Admin({ token, operatorName, onSignOut }: Props) {
             key={key}
             type="button"
             onClick={() => setTab(key)}
-            className={`tap flex-1 rounded-xl px-2 text-sm font-semibold ${
+            className={`tap rounded-xl px-2 text-sm font-semibold ${
               tab === key ? "bg-sky-600 text-white" : "bg-slate-800 text-slate-300"
             }`}
           >
@@ -99,13 +110,101 @@ export function Admin({ token, operatorName, onSignOut }: Props) {
         )}
         {tab === "stock" && <StockTab />}
         {tab === "alerts" && <AlertsTab client={client} onError={setError} />}
+        {tab === "reports" && (
+          <Reports client={client} onError={setError} onNotice={setNotice} />
+        )}
         {tab === "settings" && (
-          <PrinterSettings client={client} onNotice={setNotice} onError={setError} />
+          <Setup client={client} onError={setError} onNotice={setNotice} />
         )}
         {tab === "activity" && (
           <ActivityTab client={client} onError={setError} onNotice={setNotice} />
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Setup ───────────────────────────────────────────────────────────────
+//
+// A hub rather than five more tabs. Everything behind it is something you
+// change when the store changes — a new machine arrives, somebody joins, the
+// reader moves — not something you look at while working. Putting them in the
+// tab bar would push the things that *are* daily off the edge of a phone.
+
+function Setup({
+  client,
+  onError,
+  onNotice,
+}: {
+  client: ReturnType<typeof adminApi>;
+  onError: (m: string) => void;
+  onNotice: (m: string) => void;
+}) {
+  const [section, setSection] = useState<SetupSection | null>(null);
+  const back = () => setSection(null);
+
+  if (section === "people") {
+    return <People client={client} onBack={back} onError={onError} onNotice={onNotice} />;
+  }
+  if (section === "machines") {
+    return <Machines client={client} onBack={back} onError={onError} onNotice={onNotice} />;
+  }
+  if (section === "reasons") {
+    return <ReasonCodes client={client} onBack={back} onError={onError} onNotice={onNotice} />;
+  }
+  if (section === "door") {
+    return <Door client={client} onBack={back} onError={onError} />;
+  }
+  if (section === "printer") {
+    return (
+      <div className="space-y-3">
+        <Header title="Printer" subtitle="Labels and the label size" onBack={back} />
+        <PrinterSettings client={client} onNotice={onNotice} onError={onError} />
+      </div>
+    );
+  }
+
+  const sections: { key: SetupSection; title: string; blurb: string }[] = [
+    {
+      key: "people",
+      title: "People",
+      blurb: "Who can take stock out, and what they may do. Admin only.",
+    },
+    {
+      key: "machines",
+      title: "Machines",
+      blurb: "The picker on the optional step — and the axis of the by-machine report.",
+    },
+    {
+      key: "reasons",
+      title: "Reasons",
+      blurb: "Why stock moved, when anybody bothers to say.",
+    },
+    {
+      key: "door",
+      title: "Door",
+      blurb: "Is the reader still talking to us, and what has it sent.",
+    },
+    {
+      key: "printer",
+      title: "Printer",
+      blurb: "Label size, and whether printing goes through the browser or the shop agent.",
+    },
+  ];
+
+  return (
+    <div className="space-y-2">
+      {sections.map((entry) => (
+        <button
+          key={entry.key}
+          type="button"
+          onClick={() => setSection(entry.key)}
+          className="tap block w-full rounded-xl bg-slate-900 px-4 py-3 text-left"
+        >
+          <div className="font-semibold">{entry.title}</div>
+          <div className="text-sm text-slate-400">{entry.blurb}</div>
+        </button>
+      ))}
     </div>
   );
 }
