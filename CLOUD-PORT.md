@@ -185,10 +185,8 @@ next — an argument for a stable domain.
    Postgres to the server PC. §16 says that file wins and must be updated when
    a decision changes; leaving it is exactly the stale spec §16 warns about.
 3. **Decide the offline question** (above). It is parked, not solved.
-4. Delete the stray empty Vercel project `tools_store`, left by a first attempt
-   that built nothing and still reported Ready.
 
-The catalog is loaded — see below.
+The catalog is loaded — see **Seeding** above.
 
 ## Deployment notes worth keeping
 
@@ -200,4 +198,6 @@ The catalog is loaded — see below.
   **repo root**; running it inside `cloud/` makes Vercel look for `cloud/cloud`.
   The root `.vercelignore` keeps the Rust workspace out of the upload.
 - Read the build log before believing a deployment. A build that completes in
-  264 ms installed nothing and built nothing, and still says `● Ready`.
+  264 ms installed nothing and built nothing, and still says `● Ready`. The
+  project that first attempt created, `tools_store`, 404’d on every path and
+  posted a green check on every PR regardless; it was deleted on 2026-08-27.
