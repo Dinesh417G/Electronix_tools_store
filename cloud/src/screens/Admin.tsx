@@ -26,13 +26,14 @@ import { Serials } from "./Serials";
 import { People } from "./People";
 import { Machines, ReasonCodes } from "./Pickers";
 import { Door } from "./Door";
+import { Passkeys } from "./Passkeys";
 import { Reports } from "./Reports";
 
 type Tab = "catalog" | "stock" | "alerts" | "activity" | "reports" | "settings";
 
 /** The things behind Setup. Each is a screen of its own, not a tab: they are
  *  visited when something changes, not while working. */
-type SetupSection = "printer" | "people" | "machines" | "reasons" | "door";
+type SetupSection = "printer" | "people" | "machines" | "reasons" | "door" | "passkeys";
 
 interface Props {
   token: string;
@@ -114,7 +115,13 @@ export function Admin({ token, operatorName, onSignOut }: Props) {
           <Reports client={client} onError={setError} onNotice={setNotice} />
         )}
         {tab === "settings" && (
-          <Setup client={client} onError={setError} onNotice={setNotice} />
+          <Setup
+            client={client}
+            token={token}
+            operatorName={operatorName}
+            onError={setError}
+            onNotice={setNotice}
+          />
         )}
         {tab === "activity" && (
           <ActivityTab client={client} onError={setError} onNotice={setNotice} />
@@ -133,10 +140,17 @@ export function Admin({ token, operatorName, onSignOut }: Props) {
 
 function Setup({
   client,
+  token,
+  operatorName,
   onError,
   onNotice,
 }: {
   client: ReturnType<typeof adminApi>;
+  // Passkey registration needs the raw token, not the client wrapped around
+  // it: the ceremony is the browser's, and §8 requires proving who you are by
+  // the means that already exist before enrolling a new one.
+  token: string;
+  operatorName: string;
   onError: (m: string) => void;
   onNotice: (m: string) => void;
 }) {
@@ -154,6 +168,18 @@ function Setup({
   }
   if (section === "door") {
     return <Door client={client} onBack={back} onError={onError} />;
+  }
+  if (section === "passkeys") {
+    return (
+      <Passkeys
+        client={client}
+        token={token}
+        operatorName={operatorName}
+        onBack={back}
+        onError={onError}
+        onNotice={onNotice}
+      />
+    );
   }
   if (section === "printer") {
     return (
@@ -184,6 +210,11 @@ function Setup({
       key: "door",
       title: "Door",
       blurb: "Is the reader still talking to us, and what has it sent.",
+    },
+    {
+      key: "passkeys",
+      title: "Passkeys",
+      blurb: "Which of your devices can sign in, and forgetting one you have lost.",
     },
     {
       key: "printer",

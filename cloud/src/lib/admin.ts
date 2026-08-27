@@ -249,6 +249,15 @@ export async function login(empCode: string, pin: string): Promise<LoginResult> 
   return (await response.json()) as LoginResult;
 }
 
+/** One registered passkey, as `/auth/webauthn/credentials` reports it. */
+export interface Passkey {
+  id: string;
+  device_label: string | null;
+  backed_up: boolean;
+  created_at: string;
+  last_used_at: string | null;
+}
+
 export function adminApi(token: string) {
   return {
     categories: () => json<Category[]>(token, "/api/v1/admin/categories"),
@@ -295,6 +304,21 @@ export function adminApi(token: string) {
       return response.blob();
     },
 
+
+    // ── Passkeys (§8) ───────────────────────────────────────────────────
+    //
+    // Scoped to the caller by the server, always: listing another operator's
+    // devices would tell you which phones open the crib, which is
+    // reconnaissance dressed as a feature. Registration is not here — it needs
+    // the raw token and the browser's WebAuthn ceremony, so it lives in
+    // lib/passkey.ts.
+
+    passkeys: () => json<Passkey[]>(token, "/api/v1/auth/webauthn/credentials"),
+
+    /// Revoked rather than deleted, so "this phone could open the crib until
+    /// the 14th" stays answerable after the phone is gone.
+    revokePasskey: (id: string) =>
+      json<void>(token, `/api/v1/auth/webauthn/credentials/${id}`, { method: "DELETE" }),
 
     // ── Serials ─────────────────────────────────────────────────────────
     //
