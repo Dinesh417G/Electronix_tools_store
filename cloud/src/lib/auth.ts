@@ -12,8 +12,12 @@
 
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { hash as argonHash, verify as argonVerify } from "@node-rs/argon2";
-import { sql } from "./db";
-import { ApiError } from "./errors";
+// Explicit .ts extensions: scripts/ reaches this module through
+// `node --experimental-strip-types`, which resolves real file paths and will
+// not guess an extension. `allowImportingTsExtensions` makes it legal here and
+// the bundler resolves it unchanged, so this costs the app nothing.
+import { sql } from "./db.ts";
+import { ApiError } from "./api-error.ts";
 
 export type Role = "OPERATOR" | "STOREKEEPER" | "ADMIN";
 
