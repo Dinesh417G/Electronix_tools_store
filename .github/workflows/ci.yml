@@ -72,6 +72,26 @@ jobs:
     name: cloud (next.js)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+
+    # The end-to-end test needs a real database, for the reason §14 gives: the
+    # ledger service, the session machine and the ADMS handler were covered
+    # only by the Rust suite testing the *other* implementation of the same
+    # rules. Migrations from crates/store-db are the schema of record (§2), so
+    # this container runs exactly what Supabase runs.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: throwaway
+          POSTGRES_DB: store
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v5
 
@@ -113,6 +133,51 @@ jobs:
       - name: consumption report
         run: npm run test:reports
         working-directory: cloud
+
+      # From here down the job has a database. Everything above deliberately
+      # does not, and the `build` step in particular must stay that way.
+
+      # crates/store-db/migrations is the schema of record for both
+      # implementations (§2). Applying it verbatim here is what stops a
+      # migration written for one side from never landing on the other.
+      - name: migrate
+        run: |
+          for f in crates/store-db/migrations/*.up.sql; do
+            echo "  $(basename "$f")"
+            psql -v ON_ERROR_STOP=1 -q -f "$f" "$DATABASE_URL"
+          done
+        env:
+          DATABASE_URL: postgresql://postgres:throwaway@localhost:5432/store
+
+      # §11: the first admin cannot come from the API, and store-cli needs a
+      # Rust toolchain this job does not have. The PIN is piped rather than
+      # passed as an argument — an argument lands in the process list.
+      - name: bootstrap admin and seed the catalog
+        run: |
+          echo 1111 | npm run operator -- \
+            add --emp-code E1001 --name "CI Admin" --role ADMIN --zk-user-id 1
+          npm run seed -- --demo-operators
+        working-directory: cloud
+        env:
+          DATABASE_URL: postgresql://postgres:throwaway@localhost:5432/store
+
+      # M4's acceptance gate, against the deployed code path rather than a
+      # mock: punch → claim → issue → on_hand falls → reversal → reconcile.
+      # `next start` serves the build produced above.
+      - name: end-to-end
+        run: |
+          npm run start &
+          for _ in $(seq 1 60); do
+            curl -sf http://localhost:3100/api/v1/version >/dev/null && break
+            sleep 1
+          done
+          npm run test:e2e
+        working-directory: cloud
+        env:
+          DATABASE_URL: postgresql://postgres:throwaway@localhost:5432/store
+          STORE_ENROLMENT_SECRET: ci-enrolment-secret
+          STORE_BASE: http://localhost:3100
+          PORT: 3100
 
   # Format and the offline build. Deliberately has no database: this job is what
   # proves the checked-in .sqlx data is current, so a contributor who changes a
