@@ -181,12 +181,11 @@ next — an argument for a stable domain.
 
 1. **Verify the live loop**: enrol → punch at `/iclock/cdata` → claim → issue →
    ledger row → `reconcile` clean.
-2. **Update `CLAUDE.md` §2.** It still describes the Rust deployment and locked
-   Postgres to the server PC. §16 says that file wins and must be updated when
-   a decision changes; leaving it is exactly the stale spec §16 warns about.
-3. **Decide the offline question** (above). It is parked, not solved.
+2. **Decide the offline question** (above). It is parked, not solved, and
+   `CLAUDE.md` §2 now says so in as many words.
 
-The catalog is loaded — see **Seeding** above.
+The catalog is loaded (see **Seeding** above), and `CLAUDE.md` §2 was rewritten
+to describe where this actually runs.
 
 ## Deployment notes worth keeping
 
