@@ -12,3 +12,7 @@
 *.log
 .vercel
 .env*
+
+# Screenshots dropped in the repo root while debugging. Rooted rather than
+# bare `*.png` so an image committed alongside documentation still works.
+/*.png
