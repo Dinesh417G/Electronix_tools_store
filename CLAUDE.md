@@ -35,9 +35,10 @@ Two implementations of one system (§2):
    `store-cli`, `store-label`. Its migrations are the schema of record, and an
    on-prem install would be built from it.
 
-`store-cli` is the one thing with no cloud twin worth noting: seeding has an
-equivalent (`npm run seed`, §2), but `reconcile`, `backup`, `export` and
-`device-probe` are Rust-only and are run against the same database.
+`store-cli` is the one thing with no full cloud twin: seeding and operator
+management have equivalents (`npm run seed`, `npm run operator`, §2), but
+`reconcile`, `backup`, `export` and `device-probe` are Rust-only and are run
+against the same database.
 
 The original plan was three binaries — `store-server`, a Tauri Android
 `store-tablet` and a Tauri desktop `store-admin`. All three decisions changed;
@@ -665,7 +666,9 @@ GET    /api/v1/admin/health                DB, device last-seen, ledger reconcil
 # is live, including Supabase.
 store-cli seed | reconcile | export | device-probe | backup | update
 store-cli operator add | set-pin | list
-# cloud equivalent of seed only: cd cloud && npm run seed  (--sql to print it)
+# cloud equivalents (cd cloud): npm run seed  (--sql to print it)
+#                                npm run operator -- add | set-pin | list
+# reconcile, backup, export and device-probe stay Rust-only.
 ```
 
 Auth: tablets hold a device token; admin uses operator login. Every write carries an
@@ -682,6 +685,13 @@ write from a tablet takes its `operator_id` from the session, never from the tok
 > substitute: it also inserts a demo catalog, and nobody should commission a real store by
 > deleting a fake one. This grants no privilege the caller lacked — running it needs
 > `DATABASE_URL`, and whoever holds that already owns every row.
+>
+> `npm run operator -- add` is the same command on the cloud side, and it exists
+> because `store-cli` needs a Rust toolchain and a direct connection that a
+> machine deploying only `cloud/` has neither of. Without it the deployed system
+> had no way to reach its own console. The PIN is read from a hidden prompt, or
+> from stdin when there is no terminal, so it never lands in shell history or the
+> process list.
 
 ### Where the two implementations differ
 
@@ -778,11 +788,21 @@ rather than burying:
 - **M9's `reconcile` and `backup` are Rust-only.** They work, and they point at
   the same database, so the invariant is still checkable; it is checkable from a
   laptop with the connection string rather than from the deployment.
+  `cloud/tests/e2e.mjs` now runs the reconciliation query itself as its ninth
+  step, so CI fails on drift even though the CLI that reports it is Rust.
+- **M4 is gated in the cloud too, as of `cloud/tests/e2e.mjs`.** Punch → claim →
+  issue → on-hand falls → reversal, over HTTP against a real Postgres in CI,
+  plus the §11 status codes. M1's property test and M3's exhaustive transition
+  sweep still have no cloud equivalent (§14).
 
-What remains beyond those: the owner's two Vercel environment variables and a
-redeploy, the live loop verified end to end against Supabase, the ADMS capture
-against real firmware (§9's warning), printing a label sheet to close M7's
-optical half, and the offline decision in §2. See `CLOUD-PORT.md` and the README.
+What remains beyond those: the live loop verified end to end against **Supabase**
+— the e2e test proves the code and the schema, but runs against a local
+`next start`, so cold starts, the pooler and internet latency are all absent, and
+§9's ~200 ms budget is untested where it actually has to hold. Then the ADMS
+capture against real firmware (§9's warning), printing a label sheet to close
+M7's optical half, and the offline decision in §2. `DATABASE_URL` is set on
+Vercel **Production only**; preview deployments still have no database. See
+`CLOUD-PORT.md` and the README.
 
 | # | Deliverable | Acceptance gate |
 |---|---|---|
@@ -812,17 +832,32 @@ WhatsApp/email alerts, multi-store, vending-machine integration, mobile app for 
 - Keep the raw ADMS capture from M2 as a fixture and replay it in CI forever. When firmware
   changes, that fixture is how you find out.
 
-**The cloud app is the weak half of this, and pretending otherwise would be the
-expensive mistake.** Its CI job is `typecheck`, `build`, the label round-trip
-and the consumption CSV — no test touches a database, so the ported ledger
-service, session machine, ADMS handler and report queries are covered only by
-the Rust suite testing the *other*
-implementation of the same rules. The shared migrations mean the §7 trigger, the
-negative-stock guard and the append-only constraint are the same objects in both,
-which is what makes this survivable rather than reckless. It is still a gap:
-the first cloud test worth writing is an end-to-end one — mock punch → claim →
-issue → on-hand drops → reversal — against a throwaway Postgres, the same shape
-as M4's gate.
+**The cloud app is the thinner half of this, and pretending otherwise would be
+the expensive mistake.** Its CI job is `typecheck`, `build`, the label
+round-trip, the consumption CSV — and, since the port, `cloud/tests/e2e.mjs`
+against a real Postgres with `crates/store-db/migrations` applied verbatim.
+That test drives M4's gate over HTTP: ADMS handshake, a punch and its identical
+retry, claim, a second tablet refused, lookup, issue, `on_hand` falling by
+exactly that much, a reversal, reconcile over every item, and `UPDATE`/`DELETE`
+on `stock_ledger` refused by the trigger. It also pins the three status codes
+§11 hangs terminal behaviour on — `409` past zero, `410` after close, `409` on a
+second claim — because each is a branch in the UI where a wrong code fails
+silently.
+
+What that test does *not* cover is still worth naming. It is one path through
+the system, not a suite: no property test over random ledger operations (M1's
+gate, which only `store-core` meets), no exhaustive sweep of the session
+machine's illegal transitions (M3's), and no coverage of the report
+aggregation, which remains SQL verified once by hand. The `typecheck` still
+cannot see the database, so a column rename passes CI and fails at runtime
+anywhere the e2e path does not go.
+
+The shared migrations remain what makes the rest survivable: the §7 trigger, the
+negative-stock guard and the append-only constraint are the same objects in both
+implementations, so the Rust suite proving them proves them for the cloud too.
+The next tests worth writing are the two gates above — the ledger property test
+and the session transition sweep — ported to run against the same throwaway
+Postgres this one uses.
 
 ---
 

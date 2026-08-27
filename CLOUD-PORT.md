@@ -149,56 +149,59 @@ digesting the DB rows and the CSV independently and comparing the hashes, and
 - [x] Consumption reports (M8) with CSV, and a fixture test in CI
 - [x] Admin screens for people, machines, reasons and the door — every endpoint
       §11 asks for is now reachable from the console rather than by curl
+- [x] `cloud/tests/e2e.mjs` — M4's gate against a real Postgres in CI, closing
+      the §14 gap where no cloud test touched a database
+- [x] `npm run operator` — the §11 bootstrap, which on a cloud-only machine did
+      not exist (`store-cli` needs a Rust toolchain)
 
 ## Live
 
-https://electronix-tool-crib-3il59edm4-dinesh417gs-projects.vercel.app
+https://electronix-tool-crib.vercel.app
 
-Serving the UI and answering `/api/v1/version`. Every database-backed endpoint
-returns "DATABASE_URL is not set" until the step below is done.
+A stable alias, which matters beyond tidiness: a passkey is bound to an origin,
+so sign-in was untrustworthy while every deployment had its own URL. Production
+is on the database and answering database-backed routes.
 
 ## Environment — one variable left
 
 **`STORE_ENROLMENT_SECRET` is set** on Production, Preview and Development
 (2026-08-27, 32 random bytes, generated and pushed through `vercel env add`
-without ever being printed). Retrieve it with `vercel env pull` if a tablet
-needs enrolling.
+without ever being printed). It is stored **Sensitive**, which means write-only:
+`vercel env pull` returns the literal string `[SENSITIVE]`, and nobody — the
+owner included — can read the value back. To enrol a tablet, set a new value and
+redeploy, or mint the token directly against the database the way
+`cloud/tests/e2e.mjs` does.
 
-**`DATABASE_URL` is still unset, and this is the one step a person has to
-take.** Not for want of trying: Claude drove the Supabase dashboard as far as
-the reset-password dialog, and typing or pasting a password into a credential
-field is refused — the rule holds even when the owner has asked for it, because
-it is the same action whether the intent is good or not. Two attempts were
-blocked, and neither should be worked around.
+**`DATABASE_URL` is set on Production** (2026-08-27) and the site is live at
+a stable alias, https://electronix-tool-crib.vercel.app. It is **not set on
+Preview**, so preview deployments still answer "DATABASE_URL is not set" for
+every database-backed route — harmless, but it means a preview cannot be used
+to check anything real.
 
-So the shape of the remaining work is: **you produce the password, a script
-consumes it, and it is never displayed.** From the repo root, in PowerShell:
+Setting it was the one step a person had to take, and it is worth recording why.
+Claude drove the Supabase dashboard as far as the reset-password dialog and
+stopped: typing or pasting a password into a credential field is refused, and
+the rule holds even when the owner has asked for it, because it is the same
+action whether the intent is good or not. Two attempts were blocked. The value
+is stored **Sensitive**, so it cannot be read back to check — only replaced.
 
-```powershell
-# 1. Supabase dashboard → Project Settings → Database → Reset database password
-#    → Generate a password → Copy. Then: Connect → Transaction pooler (6543)
-#    → copy the URI and paste the password into it.
-# 2. Paste that whole URI at the prompt below. It is not echoed.
-$s = Read-Host "Supabase pooled connection string" -AsSecureString
-$u = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
-       [Runtime.InteropServices.Marshal]::SecureStringToBSTR($s))
-foreach ($e in 'production','preview') {
-  $u | npx vercel env add DATABASE_URL $e --scope dinesh417gs-projects
-}
-npx vercel deploy --prod --yes --scope dinesh417gs-projects
-```
+Three failures on the way in, each of which looked like a different problem:
 
-Use the **pooled** string (port 6543, "Transaction"), not the direct 5432 one:
-serverless opens a connection per instance, and `db.ts` already sets
-`prepare: false` for that pooler. The direct host, for reference, is
-`db.hhpmwnmubibracnwsmos.supabase.co`.
+| Symptom | Cause |
+|---|---|
+| `The specified Root Directory "cloud" does not exist` | `vercel deploy` run from inside `cloud/`. Root Directory is already `cloud`, so it looked for `cloud/cloud`. Deploy from the **repo root**. |
+| `password authentication failed for user "postgres"` | The **direct** connection string (`db.….supabase.co:5432`) instead of the pooler. Supavisor strips the tenant suffix, so the error names plain `postgres` either way — it does not tell you which string you used. |
+| `URI malformed` | A `%` in the password, unescaped. `%` is the URI escape character, so a bare one, or a `%` not followed by two hex digits, makes the decoder throw. |
+
+Use the **pooled** string — port 6543, "Transaction", user
+`postgres.hhpmwnmubibracnwsmos` — not the direct 5432 one: serverless opens a
+connection per instance, and `db.ts` already sets `prepare: false` for that
+pooler. Percent-encode the password rather than hand-editing it;
+`[uri]::EscapeDataString($pw)` in PowerShell handles `%` first, which doing it
+by hand usually does not.
 
 The redeploy is not optional — Vercel bakes environment variables into a
 deployment, so an existing one will not see them.
-
-Everything after that is checkable without you: the live loop, the seeded
-catalog answering `/items/lookup`, a punch through `/iclock/cdata`, an issue,
-and `reconcile` reporting zero drift.
 
 `WEBAUTHN_RP_ID` / `WEBAUTHN_ORIGIN` need no value: the code falls back to the
 request's own hostname and origin. Note that preview URLs change per
@@ -207,9 +210,16 @@ next — an argument for a stable domain.
 
 ## Then
 
-1. **Verify the live loop**: enrol → punch at `/iclock/cdata` → claim → issue →
-   ledger row → `reconcile` clean.
-2. **Decide the offline question** (above). It is parked, not solved, and
+1. **Verify the live loop against Supabase.** `cloud/tests/e2e.mjs` now drives
+   the whole loop — handshake → punch and its retry → claim → lookup → issue →
+   on-hand falls → reversal → reconcile → the §11 status codes — but against a
+   local `next start` and a throwaway Postgres, which is what CI runs. That
+   proves the code and the schema. It does not prove the deployment: cold
+   starts, the pooler and internet latency are all absent, and §9's ~200 ms
+   ADMS budget is exactly the thing that only fails in their presence. Pointing
+   the same test at the live origin needs a token minted against Supabase.
+2. **Set `DATABASE_URL` on Preview**, or accept that previews are UI-only.
+3. **Decide the offline question** (above). It is parked, not solved, and
    `CLAUDE.md` §2 now says so in as many words.
 
 The catalog is loaded (see **Seeding** above), and `CLAUDE.md` §2 was rewritten
