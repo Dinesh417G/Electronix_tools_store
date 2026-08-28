@@ -49,6 +49,18 @@ export function Admin({ token, operatorName, onSignOut }: Props) {
 
   const client = useMemo(() => adminApi(token), [token]);
 
+  /* Both banners belong to the tab that raised them. They are rendered by the
+   * shell, above the tab bar, so without this a `Request failed (504)` from
+   * Catalog stays on screen while you read Setup — which fetches nothing at
+   * all, and so cannot have failed. An error that outlives its context does
+   * not merely linger; it accuses the wrong screen, and the reader believes
+   * it. Leaving the tab is the moment the message stops being true. */
+  const openTab = useCallback((next: Tab) => {
+    setTab(next);
+    setError(null);
+    setNotice(null);
+  }, []);
+
   return (
     // `h-dvh` rather than `min-h-full`: on a phone the address bar changes the
     // viewport as you scroll, and a percentage height resolved against an
@@ -103,7 +115,7 @@ export function Admin({ token, operatorName, onSignOut }: Props) {
           <button
             key={key}
             type="button"
-            onClick={() => setTab(key)}
+            onClick={() => openTab(key)}
             className={`tap rounded-xl px-2 text-sm font-semibold ${
               tab === key ? "bg-sky-600 text-white" : "bg-slate-800 text-slate-300"
             }`}
