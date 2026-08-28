@@ -91,11 +91,35 @@ async function request<T>(
   const retryable = method === "GET" || method === "HEAD";
   const attempts = retryable ? 3 : 1;
 
+  // `fetch` waits forever by default, and on 2026-08-28 it did: the server was
+  // stuck on a query with no bound of its own, and the Confirm button read
+  // "Saving…" for the five minutes it took the platform to kill the function.
+  // No error, no outbox, no way back but a reload — and the operator has no
+  // way to tell that from a slow shop network.
+  //
+  // A write gets longer than a read because it is doing more and because
+  // giving up on it is the more expensive mistake. Both are far below the 300 s
+  // the platform allows, which is the point: the terminal decides when it has
+  // waited long enough, rather than inheriting a number chosen by a cloud.
+  //
+  // An abort lands in the same branch as an unreachable server and becomes an
+  // `OfflineError`, which is exactly right for a write: §12 queues it under the
+  // `client_txn_uuid` it already minted, and if the request did commit before
+  // we stopped listening, the replay resolves to that same row instead of a
+  // second deduction (§7). That is the case M9 names — "the request commits
+  // and the acknowledgement is lost" — and until now the code could not reach
+  // it, because it never stopped listening.
+  const timeoutMs = retryable ? 8_000 : 20_000;
+
   let response: Response | undefined;
   let lastCause: unknown;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      response = await fetch(path, { ...init, headers });
+      response = await fetch(path, {
+        ...init,
+        headers,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
       break;
     } catch (cause) {
       lastCause = cause;
