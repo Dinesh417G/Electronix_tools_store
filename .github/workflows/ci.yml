@@ -230,6 +230,15 @@ jobs:
       # credential can no longer open a session. §13 called this "needs a real
       # device on HTTPS"; it needs a real WebAuthn stack, which the runner's
       # Chrome has.
+      # `test:write-path` gates the 2026-08-28 outage, where every issue against
+      # the deployment hung until Vercel killed the function at 300 s and the
+      # terminal read "Saving…" for five minutes. Nothing bounded a query —
+      # `connect_timeout` covers opening a connection, not waiting on one
+      # already open — so a Supabase config reload that reset the sockets under
+      # us produced an infinite wait rather than an error. It asserts the limits
+      # `db.ts` sets actually reach the session, and drives a write while reads
+      # are in flight, which no other test here does: `e2e.mjs` never has two
+      # requests in the air at once.
       - name: end-to-end
         run: |
           npm run start &
@@ -238,6 +247,7 @@ jobs:
             sleep 1
           done
           npm run test:e2e
+          npm run test:write-path
           npm run test:webauthn
           npm run test:terminal
         working-directory: cloud

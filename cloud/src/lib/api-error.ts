@@ -76,6 +76,22 @@ const PG_CODES: Record<string, (message: string) => ApiError> = {
   // request. `store_core::ledger::validate_qty_domain` is the Rust side of the
   // same rule.
   "22003": (m) => ApiError.badRequest(m),
+  // The bounds `db.ts` puts on every query, arriving as errors. None of them
+  // means the request was wrong, so none of them is a 4xx: the statement was
+  // cancelled, which in a transaction means nothing was committed and the
+  // caller may safely try again. 503 says that, and it is what the terminal
+  // needs to hear to keep the transaction in its outbox rather than drop it
+  // as a refusal (§12).
+  //
+  // query_canceled — statement_timeout
+  "57014": () =>
+    new ApiError(503, "DB_TIMEOUT", "The database took too long. Nothing was saved — try again."),
+  // lock_not_available — lock_timeout, i.e. another transaction holds the row
+  "55P03": () =>
+    new ApiError(503, "DB_BUSY", "That item is being updated by someone else. Try again."),
+  // idle_in_transaction_session_timeout
+  "25P03": () =>
+    new ApiError(503, "DB_TIMEOUT", "The database connection was reset. Nothing was saved — try again."),
 };
 
 export function toApiError(e: unknown): ApiError {
