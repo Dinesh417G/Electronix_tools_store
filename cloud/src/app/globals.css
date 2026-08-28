@@ -81,6 +81,17 @@ body :not(input):not(textarea) {
   justify-content: flex-start;
 }
 
+/* The same collision, one step further in: a button that stacks a title over a
+ * blurb asks for `block`, and the flex display above lays its two children
+ * side by side instead — the Setup menu read "PeopleWho can take stock out".
+ * `block` is one class, `.admin .tap` is two, so the markup loses on
+ * specificity rather than on anything it did wrong. Where it says block,
+ * honour it. */
+.tap-sm.block,
+.admin .tap.block {
+  display: block;
+}
+
 /* Masks a PIN without `type="password"`.
  *
  * A wall terminal is shared, and Chrome offers saved credentials to any
