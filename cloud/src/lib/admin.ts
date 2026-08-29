@@ -6,7 +6,8 @@
 // invites a handler that reaches for the wrong one, and a tablet that could
 // rewrite the catalog is exactly what §11's split is there to prevent.
 
-import { ApiError, OfflineError } from "./api";
+import { ApiError } from "./api";
+import { fetchOrThrow } from "./offline";
 
 export const ADMIN_TOKEN_KEY = "electronix.store.admin_token";
 export const ADMIN_NAME_KEY = "electronix.store.admin_name";
@@ -200,12 +201,12 @@ async function send(
   headers.set("authorization", `Bearer ${token}`);
   if (init.body) headers.set("content-type", "application/json");
 
-  let response: Response;
-  try {
-    response = await fetch(path, { ...init, headers });
-  } catch (cause) {
-    throw new OfflineError(cause);
-  }
+  // Bounded, retried and classified exactly as the terminal's calls are.
+  // Until 2026-08-29 this was a bare `fetch`, which waits forever: the console
+  // had the same unbounded hang PR #14 removed from the terminal, and every
+  // failure here rendered as one sentence that could not tell "this laptop
+  // dropped its Wi-Fi" from "the server never answered".
+  const response = await fetchOrThrow(path, { ...init, headers });
 
   if (!response.ok) {
     const text = await response.text();
@@ -231,16 +232,11 @@ async function json<T>(token: string, path: string, init?: RequestInit): Promise
 
 /// Log in with an employee code and PIN. Returns a 12-hour operator token.
 export async function login(empCode: string, pin: string): Promise<LoginResult> {
-  let response: Response;
-  try {
-    response = await fetch("/api/v1/auth/operator", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ emp_code: empCode, pin }),
-    });
-  } catch (cause) {
-    throw new OfflineError(cause);
-  }
+  const response = await fetchOrThrow("/api/v1/auth/operator", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ emp_code: empCode, pin }),
+  });
 
   if (!response.ok) {
     // One message for every failure, so this cannot be used to work out which

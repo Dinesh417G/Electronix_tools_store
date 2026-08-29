@@ -6,6 +6,8 @@
 // trip from Postgres to the operator's screen intact, so `ApiError` keeps the
 // status rather than flattening everything into a string.
 
+import { fetchOrThrow } from "./offline";
+
 export const TOKEN_KEY = "electronix.store.token";
 export const TERMINAL_KEY = "electronix.store.terminal_id";
 
@@ -35,14 +37,13 @@ export class ApiError extends Error {
   }
 }
 
-/** Thrown when the request never reached the server at all. */
-export class OfflineError extends Error {
-  constructor(cause?: unknown) {
-    super("The store server is not reachable.");
-    this.name = "OfflineError";
-    this.cause = cause;
-  }
-}
+// `OfflineError` lives in `offline.ts` with the deadline and the retry policy
+// it belongs to, and is re-exported here because this is where every screen
+// already imports it from. It carries *why* — device offline, our deadline, or
+// a dropped connection — and how long we waited, because one flat sentence for
+// all three is what made the 2026-08-29 screenshot undiagnosable.
+export { OfflineError } from "./offline";
+export type { OfflineReason } from "./offline";
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
@@ -77,58 +78,17 @@ async function request<T>(
     headers.set("authorization", `Bearer ${token}`);
   }
 
-  // A fetch that throws never reached the server, and on a phone that is
-  // usually nothing: the tab was backgrounded for the print dialogue, the
-  // radio changed cell, the screen locked for a moment. The first version
-  // surfaced the first such failure as "The store server is not reachable."
-  // and left the screen spinning — a red alarm for a blip, and no way back
-  // without a reload.
-  //
-  // Reads are retried; writes are not. A POST that threw may still have been
-  // received and committed, and §7 does not allow a second ledger row on a
-  // guess — that is what the outbox and `client_txn_uuid` are for.
-  const method = (init.method ?? "GET").toUpperCase();
-  const retryable = method === "GET" || method === "HEAD";
-  const attempts = retryable ? 3 : 1;
-
-  // `fetch` waits forever by default, and on 2026-08-28 it did: the server was
-  // stuck on a query with no bound of its own, and the Confirm button read
-  // "Saving…" for the five minutes it took the platform to kill the function.
-  // No error, no outbox, no way back but a reload — and the operator has no
-  // way to tell that from a slow shop network.
-  //
-  // A write gets longer than a read because it is doing more and because
-  // giving up on it is the more expensive mistake. Both are far below the 300 s
-  // the platform allows, which is the point: the terminal decides when it has
-  // waited long enough, rather than inheriting a number chosen by a cloud.
+  // The deadline, the retry policy and the classification of a failure all
+  // live in `offline.ts`, because the admin console and the passkey ceremony
+  // need exactly the same three and used to have none of them.
   //
   // An abort lands in the same branch as an unreachable server and becomes an
   // `OfflineError`, which is exactly right for a write: §12 queues it under the
   // `client_txn_uuid` it already minted, and if the request did commit before
   // we stopped listening, the replay resolves to that same row instead of a
   // second deduction (§7). That is the case M9 names — "the request commits
-  // and the acknowledgement is lost" — and until now the code could not reach
-  // it, because it never stopped listening.
-  const timeoutMs = retryable ? 8_000 : 20_000;
-
-  let response: Response | undefined;
-  let lastCause: unknown;
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    try {
-      response = await fetch(path, {
-        ...init,
-        headers,
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-      break;
-    } catch (cause) {
-      lastCause = cause;
-      // Offline outright: no point burning the battery on a retry loop.
-      if (typeof navigator !== "undefined" && navigator.onLine === false) break;
-      if (attempt < attempts) await delay(attempt * 400);
-    }
-  }
-  if (!response) throw new OfflineError(lastCause);
+  // and the acknowledgement is lost".
+  const response = await fetchOrThrow(path, { ...init, headers });
 
   if (response.status === 204) return undefined as T;
 
@@ -143,9 +103,6 @@ async function request<T>(
 
   return body as T;
 }
-
-/** Somewhere to wait between retries without pulling in a scheduler. */
-const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 function safeJson(text: string): Record<string, unknown> | null {
   try {

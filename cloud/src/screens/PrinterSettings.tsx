@@ -241,7 +241,10 @@ function ModeCard({
 }
 
 function describe(err: unknown): string {
-  if (err instanceof OfflineError) return "The server is not reachable.";
+  // `OfflineError` says which of the three failures it was and how long we
+  // waited; flattening that back to one sentence here is what made the last
+  // report undiagnosable.
+  if (err instanceof OfflineError) return err.message;
   if (err instanceof ApiError) return err.message;
   return "Something went wrong.";
 }

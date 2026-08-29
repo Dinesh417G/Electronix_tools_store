@@ -11,7 +11,8 @@
 // errors that name nothing.
 
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
-import { ApiError, OfflineError, getToken } from "./api";
+import { ApiError, getToken } from "./api";
+import { fetchOrThrow } from "./offline";
 
 /**
  * Whether this browser can do a passkey at all.
@@ -34,19 +35,18 @@ export async function isPasskeySupported(): Promise<boolean> {
 }
 
 async function post<T>(path: string, body?: unknown, token?: string): Promise<T> {
-  let response: Response;
-  try {
-    response = await fetch(path, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-  } catch (cause) {
-    throw new OfflineError(cause);
-  }
+  // A ceremony has a person standing there with a finger on a sensor, so an
+  // unbounded wait is worse here than anywhere: `get()` already failed once in
+  // production with an error that named nothing, and a hang after it names
+  // even less.
+  const response = await fetchOrThrow(path, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
 
   if (!response.ok) {
     const text = await response.text();

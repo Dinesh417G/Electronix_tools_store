@@ -12,6 +12,7 @@
     "seed": "node --experimental-strip-types scripts/seed.mts",
     "test:reports": "node --experimental-strip-types tests/reports-csv.mjs",
     "test:session": "node --experimental-strip-types tests/session-transitions.mjs",
+    "test:offline": "node --experimental-strip-types tests/offline-classify.mjs",
     "test:reports-db": "node --experimental-strip-types tests/reports-db.mjs",
     "test:ledger": "node --experimental-strip-types tests/ledger-property.mjs",
     "test:e2e": "node tests/e2e.mjs",
