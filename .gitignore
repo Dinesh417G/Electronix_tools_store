@@ -16,3 +16,11 @@
 # Screenshots dropped in the repo root while debugging. Rooted rather than
 # bare `*.png` so an image committed alongside documentation still works.
 /*.png
+
+# Screenshots pasted for debugging. Kept out of the repo; the tree itself is
+# committed so the folders exist on a fresh clone.
+/screenshots/**
+!/screenshots/
+!/screenshots/*/
+!/screenshots/**/.gitkeep
+!/screenshots/README.md
