@@ -80,13 +80,21 @@ try {
       values (${id}, 500, 'OPENING', ${admin.id}, '[test] insights fixture')`;
   }
 
-  // `hot` goes out repeatedly and recently — it must top "frequent".
+  // `hot` goes out repeatedly and *just now* — it must top "frequent".
+  //
+  // Seconds apart, not hours. The window is the last 100 issues by
+  // `created_at`, which is the whole point of it; back-dating these by an hour
+  // each put them behind the burst of issues the earlier suites in CI had
+  // written moments before, and the fixture fell out of its own window. Locally
+  // the demo history was spread over weeks and hid it. The semantics are right —
+  // an item genuinely is not in the last hundred if a hundred others came
+  // after — so the fixture is what had to change.
   for (let i = 0; i < 12; i += 1) {
     await sql`
       insert into stock_ledger (item_id, delta_qty, txn_type, operator_id, machine_id,
                                 note, created_at, client_txn_uuid)
       values (${hot}, -2, 'ISSUE', ${admin.id}, ${machine.id},
-              '[test] insights fixture', now() - make_interval(hours => ${i}), ${randomUUID()})`;
+              '[test] insights fixture', now() - make_interval(secs => ${i}), ${randomUUID()})`;
   }
   // `cold` went out once, long ago — it must top "stale" and appear in neither
   // "frequent" nor "recent".
