@@ -17,6 +17,30 @@ declare global {
   var __toolCribSql: Sql | undefined;
 }
 
+/**
+ * Which Postgres schema this deployment reads and writes.
+ *
+ * Unset in production, where the role's own default search_path is what it has
+ * always been. Preview deployments set it to `preview` — a schema in the same
+ * database carrying the same migrations, because the free tier allows two
+ * active projects and both are spoken for. Without it a preview deployment has
+ * no database at all, so every database-backed route 500s there and a preview
+ * proves only that the UI renders.
+ *
+ * The name is interpolated into a startup parameter, so it is checked against
+ * the shape of an unquoted identifier rather than trusted.
+ */
+function schemaFromEnv(): string | undefined {
+  const schema = process.env.DATABASE_SCHEMA?.trim();
+  if (!schema) return undefined;
+  if (!/^[a-z_][a-z0-9_]*$/.test(schema)) {
+    throw new Error(
+      `DATABASE_SCHEMA must be a lowercase unquoted identifier, got ${JSON.stringify(schema)}.`,
+    );
+  }
+  return schema;
+}
+
 function connect(): Sql {
   const url = process.env.DATABASE_URL;
   if (!url) {
@@ -24,6 +48,8 @@ function connect(): Sql {
       "DATABASE_URL is not set. Supabase → Settings → Database → Connection string.",
     );
   }
+
+  const schema = schemaFromEnv();
 
   return postgres(url, {
     prepare: false,
@@ -62,6 +88,10 @@ function connect(): Sql {
       // The state Supavisor logged. A transaction that opens and then stops
       // being driven holds row locks the rest of the shop queues behind.
       idle_in_transaction_session_timeout: 15_000,
+      // `public` stays on the path so a preview still reaches anything shared,
+      // and `extensions` because Supabase installs pg_trgm there and the
+      // catalog's trigram indexes are built on its operator class.
+      ...(schema ? { search_path: `${schema}, public, extensions` } : {}),
     },
     // Numerics come back as strings on purpose. Quantities are numeric(12,3)
     // and money is numeric(12,2); routing either through a float would put
