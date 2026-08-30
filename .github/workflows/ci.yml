@@ -145,6 +145,17 @@ jobs:
         run: npm run test:session
         working-directory: cloud
 
+      # What the terminal says when the server never answered. Three faults —
+      # a device with no network, our own deadline, a dropped connection —
+      # used to render as one sentence, which is why the 2026-08-29 screenshot
+      # could not be diagnosed from the picture. Also pins the policy that a
+      # write is attempted exactly once (§7): a POST that threw may already
+      # have committed, and a retry is how one issue becomes two ledger rows.
+      # No database and no browser — `fetch` and `navigator` are stubbed.
+      - name: offline classification
+        run: npm run test:offline
+        working-directory: cloud
+
       # From here down the job has a database. Everything above deliberately
       # does not, and the `build` step in particular must stay that way.
 
