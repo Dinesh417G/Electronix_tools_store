@@ -17,7 +17,6 @@ import {
   formatQty,
   type AlertRow,
   type Item,
-  type LedgerRow,
 } from "../lib/api";
 import { adminApi, type Category, type ItemInput } from "../lib/admin";
 import { useRefreshOnReturn } from "../lib/refresh";
@@ -27,6 +26,7 @@ import { Serials } from "./Serials";
 import { People } from "./People";
 import { Machines, ReasonCodes } from "./Pickers";
 import { Door } from "./Door";
+import { Loaded, useLoadable } from "./Loadable";
 import { Passkeys } from "./Passkeys";
 import { Reports } from "./Reports";
 
@@ -781,14 +781,22 @@ const inputClass =
 // ── Stock, alerts, ledger ───────────────────────────────────────────────
 
 function StockTab() {
-  const [rows, setRows] = useState<Item[] | null>(null);
   const [filter, setFilter] = useState<"all" | "low" | "empty">("all");
 
-  useEffect(() => {
-    const params =
-      filter === "low" ? "low=true&limit=200" : filter === "empty" ? "empty=true&limit=200" : "limit=200";
-    void api.stock(params).then(setRows).catch(() => setRows([]));
-  }, [filter]);
+  // This used to be `.catch(() => setRows([]))`: a failed request drew "Nothing
+  // here" with no banner at all, which in a stock console reads as "the crib is
+  // empty" rather than "I could not ask".
+  const stockState = useLoadable(
+    () =>
+      api.stock(
+        filter === "low"
+          ? "low=true&limit=200"
+          : filter === "empty"
+            ? "empty=true&limit=200"
+            : "limit=200",
+      ),
+    [filter],
+  );
 
   return (
     <div className="space-y-3">
@@ -807,8 +815,12 @@ function StockTab() {
         ))}
       </div>
 
-      {!rows && <Spinner label="Loading stock…" />}
-      {rows?.map((item) => (
+      <Loaded
+        state={stockState}
+        label="Loading stock…"
+        empty={<p className="py-10 text-center text-slate-500">Nothing here.</p>}
+      >
+        {(loaded) => loaded.map((item) => (
         <div key={item.id} className="flex items-center gap-3 rounded-xl bg-slate-900 px-4 py-3">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
@@ -825,7 +837,7 @@ function StockTab() {
           </div>
         </div>
       ))}
-      {rows?.length === 0 && <p className="py-10 text-center text-slate-500">Nothing here.</p>}
+      </Loaded>
     </div>
   );
 }
@@ -837,26 +849,22 @@ function AlertsTab({
   client: ReturnType<typeof adminApi>;
   onError: (m: string) => void;
 }) {
-  const [rows, setRows] = useState<AlertRow[] | null>(null);
-
   const [editing, setEditing] = useState<string | null>(null);
 
-  const load = useCallback(() => {
-    void api.alerts().then(setRows).catch(() => setRows([]));
-  }, []);
+  const state = useLoadable(() => api.alerts(), []);
+  const rows = state.data;
+  const load = state.reload;
 
-  useEffect(load, [load]);
   useRefreshOnReturn(load);
 
   return (
     <div className="space-y-2">
-      {!rows && <Spinner label="Loading alerts…" />}
-      {rows?.length === 0 && (
-        <p className="py-10 text-center text-slate-500">
-          Nothing is low or empty.
-        </p>
-      )}
-      {rows?.map((alert) => (
+      <Loaded
+        state={state}
+        label="Loading alerts…"
+        empty={<p className="py-10 text-center text-slate-500">Nothing is low or empty.</p>}
+      >
+        {(loaded) => loaded.map((alert) => (
         <div
           key={alert.id}
           className={`rounded-xl border-l-4 bg-slate-900 px-4 py-3 ${
@@ -920,7 +928,8 @@ function AlertsTab({
             </button>
           )}
         </div>
-      ))}
+        ))}
+      </Loaded>
       {rows && rows.length > 0 && (
         <p className="pt-2 text-xs text-slate-500">
           Acknowledging records that you have seen it. The alert stays open until
@@ -940,18 +949,17 @@ function ActivityTab({
   onError: (m: string) => void;
   onNotice: (m: string) => void;
 }) {
-  const [rows, setRows] = useState<LedgerRow[] | null>(null);
-
-  const load = useCallback(() => {
-    void api.ledger("limit=60").then(setRows).catch(() => setRows([]));
-  }, []);
-
-  useEffect(load, [load]);
+  const state = useLoadable(() => api.ledger("limit=60"), []);
+  const load = state.reload;
 
   return (
     <div className="space-y-2">
-      {!rows && <Spinner label="Loading the ledger…" />}
-      {rows?.map((row) => {
+      <Loaded
+        state={state}
+        label="Loading the ledger…"
+        empty={<p className="py-10 text-center text-slate-500">No movements yet.</p>}
+      >
+        {(loaded) => loaded.map((row) => {
         const out = row.delta_qty.startsWith("-");
         const reversed = row.reverses_id !== null;
         return (
@@ -1000,7 +1008,8 @@ function ActivityTab({
             )}
           </div>
         );
-      })}
+        })}
+      </Loaded>
     </div>
   );
 }

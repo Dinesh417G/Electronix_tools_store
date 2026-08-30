@@ -10,6 +10,23 @@ import { ApiError } from "./api";
 import { fetchOrThrow } from "./offline";
 
 export const ADMIN_TOKEN_KEY = "electronix.store.admin_token";
+
+/** Broadcast when a stored admin token turns out to be dead. */
+export const ADMIN_SIGNED_OUT_EVENT = "electronix:admin-signed-out";
+
+/**
+ * Forget the stored admin session and tell the shell.
+ *
+ * An event rather than a callback because `send` is a long way down the call
+ * stack from the component holding the token, and every path out of it — a
+ * tab, a form, a background refresh — needs the same answer.
+ */
+export function forgetAdminSession(): void {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(ADMIN_TOKEN_KEY);
+  localStorage.removeItem(ADMIN_NAME_KEY);
+  window.dispatchEvent(new CustomEvent(ADMIN_SIGNED_OUT_EVENT));
+}
 export const ADMIN_NAME_KEY = "electronix.store.admin_name";
 
 export interface Category {
@@ -219,6 +236,22 @@ async function send(
     } catch {
       /* not JSON — keep the generic message */
     }
+
+    // An operator token lasts 12 hours (§11), and until now nothing noticed it
+    // expiring. The console kept the dead token in localStorage, kept drawing
+    // the admin screens, and answered every tap with the server's own words —
+    // *"token is not valid"* — in a red banner, with no way back to the sign-in
+    // form except a Sign out button nobody reads as the fix. Observed on
+    // 2026-08-30 against a token issued two days earlier: every tab failed,
+    // and Reports drew "Nothing went out in this period" underneath it.
+    //
+    // A token the server refuses is not a token. Drop it and let the shell show
+    // the login form, which is the only thing that can actually help.
+    if (response.status === 401) {
+      forgetAdminSession();
+      throw new ApiError(401, code, "Your admin session has expired. Sign in again.");
+    }
+
     throw new ApiError(response.status, code, message);
   }
 

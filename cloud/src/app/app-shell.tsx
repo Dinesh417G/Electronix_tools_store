@@ -13,7 +13,7 @@ import {
   type UnclaimedSession,
 } from "@/lib/api";
 import { subscribeToEvents, type ConnectionState, type ServerEvent } from "@/lib/events";
-import { ADMIN_NAME_KEY, ADMIN_TOKEN_KEY } from "@/lib/admin";
+import { ADMIN_NAME_KEY, ADMIN_SIGNED_OUT_EVENT, ADMIN_TOKEN_KEY } from "@/lib/admin";
 import { count as outboxCount, flush, type QueuedTxn } from "@/lib/outbox";
 import { Admin } from "@/screens/Admin";
 import { AdminLogin } from "@/screens/AdminLogin";
@@ -43,6 +43,20 @@ export function AppShell() {
     setAdminToken(localStorage.getItem(ADMIN_TOKEN_KEY));
     setAdminName(localStorage.getItem(ADMIN_NAME_KEY) ?? "");
     setHydrated(true);
+  }, []);
+
+  // A stored admin token the server refuses is worse than no token: the console
+  // keeps drawing admin screens and answers every tap with an error, and the
+  // one control that fixes it — Sign out — reads like giving up rather than
+  // like the remedy. `admin.ts` clears the token on any 401 and fires this, so
+  // the console falls back to the sign-in form on its own.
+  useEffect(() => {
+    const onSignedOut = () => {
+      setAdminToken(null);
+      setAdminName("");
+    };
+    window.addEventListener(ADMIN_SIGNED_OUT_EVENT, onSignedOut);
+    return () => window.removeEventListener(ADMIN_SIGNED_OUT_EVENT, onSignedOut);
   }, []);
 
   const [connection, setConnection] = useState<ConnectionState>("connecting");

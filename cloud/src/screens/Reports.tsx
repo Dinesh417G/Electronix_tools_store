@@ -15,10 +15,10 @@
 // booked, never today's price — valuing last year's consumption at this year's
 // price would quietly rewrite last year.
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { ApiError } from "../lib/api";
-import type { ConsumptionRow, GroupBy, adminApi } from "../lib/admin";
-import { Spinner } from "../components/ui";
+import type { GroupBy, adminApi } from "../lib/admin";
+import { Loaded, useLoadable } from "./Loadable";
 
 const GROUPS: { value: GroupBy; label: string }[] = [
   { value: "machine", label: "Machine" },
@@ -62,20 +62,19 @@ export function Reports({
 }) {
   const [groupBy, setGroupBy] = useState<GroupBy>("machine");
   const [preset, setPreset] = useState<Preset>("30d");
-  const [rows, setRows] = useState<ConsumptionRow[] | null>(null);
   const [downloading, setDownloading] = useState(false);
 
-  const load = useCallback(() => {
-    client
-      .consumption(groupBy, rangeFor(preset))
-      .then(setRows)
-      .catch((err) => {
-        onError(describe(err));
-        setRows([]);
-      });
-  }, [client, groupBy, preset, onError]);
-
-  useEffect(load, [load]);
+  // A failed report is not an empty report. Until 2026-08-30 this `catch` did
+  // `setRows([])`, so a request that timed out drew *"Nothing went out in this
+  // period"* — a confident statement about the crib, made by a screen that had
+  // just failed to ask. `useLoadable` keeps failure, emptiness and loading
+  // apart, and `<Loaded>` draws each differently.
+  const state = useLoadable(
+    () => client.consumption(groupBy, rangeFor(preset)),
+    [client, groupBy, preset],
+    onError,
+  );
+  const rows = state.data;
 
   const totalQty = (rows ?? []).reduce((sum, r) => sum + Number(r.qty), 0);
   const totalValue = (rows ?? []).reduce((sum, r) => sum + Number(r.value), 0);
@@ -110,11 +109,9 @@ export function Reports({
             key={group.value}
             type="button"
             onClick={() => {
-              // Blank the figures on the tap that changes their meaning, not
-              // inside the effect that reloads them: numbers from the previous
-              // grouping sitting under a new heading is the one thing a report
-              // must never do.
-              setRows(null);
+              // `useLoadable` blanks the rows whenever its deps change, so
+              // numbers from the previous grouping can never sit under a new
+              // heading — the one thing a report must never do.
               setGroupBy(group.value);
             }}
             className={`tap rounded-lg px-2 text-sm font-semibold ${
@@ -132,7 +129,6 @@ export function Reports({
             key={option.value}
             type="button"
             onClick={() => {
-              setRows(null);
               setPreset(option.value);
             }}
             className={`tap rounded-lg px-1 text-xs ${
@@ -144,20 +140,21 @@ export function Reports({
         ))}
       </div>
 
-      {!rows && <Spinner label="Adding it up…" />}
-
-      {rows && rows.length === 0 && (
-        <p className="py-10 text-center text-slate-500">
-          Nothing went out in this period. Only ISSUE and SCRAP count as
-          consumption — stock arriving is not.
-        </p>
-      )}
-
-      {rows && rows.length > 0 && (
+      <Loaded
+        state={state}
+        label="Adding it up…"
+        empty={
+          <p className="py-10 text-center text-slate-500">
+            Nothing went out in this period. Only ISSUE and SCRAP count as
+            consumption — stock arriving is not.
+          </p>
+        }
+      >
+        {(loaded) => loaded.length > 0 && (
         <>
           <div className="rounded-xl bg-slate-900 px-4 py-3">
             <div className="text-xs text-slate-500">
-              Total consumed · {rows.length} {groupBy === "month" ? "months" : "buckets"}
+              Total consumed · {loaded.length} {groupBy === "month" ? "months" : "buckets"}
             </div>
             <div className="flex items-baseline gap-3">
               <span className="text-2xl font-bold tabular-nums">
@@ -169,7 +166,7 @@ export function Reports({
             </div>
           </div>
 
-          {rows.map((row) => (
+          {loaded.map((row) => (
             <div key={row.bucket_key} className="rounded-xl bg-slate-900 px-4 py-3">
               <div className="flex items-baseline gap-3">
                 <span className="min-w-0 flex-1 truncate font-semibold">
@@ -201,7 +198,8 @@ export function Reports({
             {downloading ? "Preparing…" : "Download CSV"}
           </button>
         </>
-      )}
+        )}
+      </Loaded>
 
       <p className="pb-4 text-xs text-slate-500">
         Priced at the unit cost recorded when each movement was booked, not
@@ -216,3 +214,4 @@ function describe(error: unknown): string {
   if (error instanceof ApiError) return error.message;
   return error instanceof Error ? error.message : String(error);
 }
+

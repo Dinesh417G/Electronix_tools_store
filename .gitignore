@@ -24,3 +24,6 @@
 !/screenshots/*/
 !/screenshots/**/.gitkeep
 !/screenshots/README.md
+
+# Personal login cheat-sheet — holds a live PIN, never commit it.
+HOW-TO-LOGIN.md
