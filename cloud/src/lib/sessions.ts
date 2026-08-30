@@ -6,6 +6,7 @@ import { ApiError } from "./api-error.ts";
 import { verifyPin, DUMMY_PIN_HASH, type Auth } from "./auth.ts";
 import {
   effectiveState,
+  IDLE_TIMEOUT_MS,
   statusFor,
   transition,
   type CloseReason,
@@ -143,13 +144,26 @@ export async function closeSession(sessionId: string, reason: CloseReason) {
 
 /**
  * §10: the terminal posts this as the operator moves between steps, so the
- * idle timeout measures idleness rather than elapsed time. Guarded on ACTIVE so
- * a late keepalive cannot resurrect a closed session.
+ * idle timeout measures idleness rather than elapsed time.
+ *
+ * The window is in the WHERE clause, and that is the whole point. `state` is
+ * the *stored* column, and §10's reapers do not exist here — a session idle for
+ * an hour is still stored ACTIVE, because nothing sweeps it and nothing will.
+ * Guarding on `state = 'ACTIVE'` alone therefore matched exactly the rows this
+ * was written to protect, and pushed `last_activity_at` to now(): one keepalive
+ * revived a session the API had already refused an issue against, and the next
+ * issue wrote a ledger row. The terminal fires this every 60 s and on every
+ * step, so the 180 s idle close could not close anything.
+ *
+ * `IDLE_TIMEOUT_MS` is the same constant `effectiveState` reads, so the two
+ * cannot drift.
  */
 export async function touchSession(sessionId: string): Promise<void> {
   await sql`
     update sessions set last_activity_at = now()
-     where id = ${sessionId} and state = 'ACTIVE'
+     where id = ${sessionId}
+       and state = 'ACTIVE'
+       and last_activity_at > now() - make_interval(secs => ${IDLE_TIMEOUT_MS / 1000})
   `;
 }
 

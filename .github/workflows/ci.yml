@@ -262,6 +262,33 @@ jobs:
       # `db.ts` sets actually reach the session, and drives a write while reads
       # are in flight, which no other test here does: `e2e.mjs` never has two
       # requests in the air at once.
+      # The five below closed the gaps a coverage sweep found, in the order
+      # they were written:
+      #
+      #   test:splits   §11's split issue — one item, several machines, one
+      #                 confirm. The path had no test at all, and its claim is a
+      #                 §7 claim: the guard applies to the *total*, so a batch
+      #                 that overdraws writes nothing rather than serving the
+      #                 first two machines.
+      #   test:receipt  M6 and M8's cloud half. `POST /txn/receipt` had never
+      #                 been exercised against a database, and the OK → LOW →
+      #                 EMPTY → OK ladder was only ever checked as report
+      #                 arithmetic.
+      #   test:expiry   §10's derive-on-read rule through the *routes*.
+      #                 `session-transitions.mjs` proves `effectiveState`;
+      #                 nothing proved the routes ask it. It found one:
+      #                 `touchSession` filtered on the stored `state`, which is
+      #                 still ACTIVE for a session that aged out, so a keepalive
+      #                 revived a session the API had just refused an issue
+      #                 against — exactly the failure §10 names.
+      #   test:adms     §9's rules 3 and 4: an unknown user's punch is kept and
+      #                 raises a notice, and a device clock six months out (or
+      #                 5½ hours ahead) does not age a session, because §10
+      #                 measures from the server.
+      #   test:admin    §11's two console rules: deactivate never delete, and
+      #                 the last active ADMIN cannot leave by either verb. A
+      #                 crib whose console nobody can open needs a Rust
+      #                 toolchain and the database password to escape.
       - name: end-to-end
         run: |
           npm run start &
@@ -273,6 +300,11 @@ jobs:
           npm run test:write-path
           npm run test:webauthn
           npm run test:terminal
+          npm run test:splits
+          npm run test:receipt
+          npm run test:expiry
+          npm run test:adms
+          npm run test:admin
         working-directory: cloud
         env:
           DATABASE_URL: postgresql://postgres:throwaway@localhost:5432/store
