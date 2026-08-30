@@ -83,9 +83,18 @@ async function offer(operator, index) {
     headers: { "Content-Type": "text/plain" },
     body: operator.zk_user_id + "\t" + fmt(ts) + "\t0\t1\t\t\n",
   });
+  // Scoped to this file's own device. §9.1's dedup key is
+  // (device_id, zk_user_id, device_ts), so two test files using the same
+  // operator and the same 97 s spacing produce *different* punches on
+  // different devices — and a lookup that leaves the device out can match the
+  // other file's punch, whose session is already CLOSED. CI runs these back to
+  // back; locally they were a second apart and it never showed.
   const [row] = await sql`
-    select s.id from sessions s join punches p on p.id = s.punch_id
-     where p.zk_user_id = ${operator.zk_user_id}
+    select s.id from sessions s
+      join punches p on p.id = s.punch_id
+      join devices d on d.id = p.device_id
+     where d.serial_no = ${SN}
+       and p.zk_user_id = ${operator.zk_user_id}
        and p.device_ts = ${new Date(fmt(ts) + "Z")}`;
   if (row?.id && offered.has(row.id)) {
     bad("offer(" + index + ") handed back a session an earlier step already used");
