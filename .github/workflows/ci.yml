@@ -285,6 +285,13 @@ jobs:
       #                 raises a notice, and a device clock six months out (or
       #                 5½ hours ahead) does not age a session, because §10
       #                 measures from the server.
+      #   test:insights the six catalog views, the machine drill-down and the
+      #                 operator stats. All reads of the ledger rather than
+      #                 columns somebody maintains, so the assertions are about
+      #                 ordering and membership: a view that ranks wrongly is
+      #                 invisible and sends somebody to the wrong bin. It also
+      #                 asserts that §7 refuses to let the test delete its own
+      #                 fixture rows, which is the trigger doing its job.
       #   test:session-ui  what the console does when it cannot get an answer.
       #                 A 12 h operator token expiring was never noticed: the
       #                 console kept the dead token, kept drawing admin screens,
@@ -315,6 +322,7 @@ jobs:
           npm run test:adms
           npm run test:admin
           npm run test:session-ui
+          npm run test:insights
         working-directory: cloud
         env:
           DATABASE_URL: postgresql://postgres:throwaway@localhost:5432/store

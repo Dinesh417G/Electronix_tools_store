@@ -20,6 +20,7 @@
     "test:splits": "node tests/split-issue.mjs",
     "test:admin": "node tests/admin-guards.mjs",
     "test:session-ui": "node tests/admin-session.mjs",
+    "test:insights": "node tests/insights.mjs",
     "test:adms": "node tests/adms-edges.mjs",
     "test:expiry": "node tests/session-expiry.mjs",
     "test:receipt": "node tests/receipt-and-alerts.mjs",

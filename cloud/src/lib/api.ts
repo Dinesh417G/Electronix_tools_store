@@ -273,6 +273,18 @@ export interface ReceiptBody {
 
 // ── Endpoints ───────────────────────────────────────────────────────────
 
+/** Mirrors `InsightView` in src/lib/insights.ts. */
+export type InsightView = "newest" | "high" | "low" | "stale" | "frequent" | "recent";
+
+export interface InsightItem extends Item {
+  /** Times this item appears in the last 100 issues. */
+  recent_issues: number;
+  recent_qty: string;
+  last_issued_at: string | null;
+  days_since_issue: number | null;
+  created_at: string;
+}
+
 export const api = {
   version: () => request<VersionInfo>("/api/v1/version", {}, { auth: false }),
 
@@ -354,6 +366,17 @@ export const api = {
     ),
 
   /** §12.4's Browse all, paged — 90 items is already too many to scroll blind. */
+  /**
+   * The catalog asked a question rather than listed alphabetically (§12.4).
+   *
+   * The terminal and the console call the same endpoint, so "frequently taken"
+   * ranks the same on the shop floor as it does in the office. Two screens
+   * disagreeing about which tools move most would be worse than neither
+   * offering the filter.
+   */
+  insights: (view: InsightView, limit = 40) =>
+    request<InsightItem[]>(`/api/v1/items/insights?view=${view}&limit=${limit}`),
+
   browse: (offset = 0, limit = 25) =>
     request<Item[]>(`/api/v1/items/browse?offset=${offset}&limit=${limit}`),
 

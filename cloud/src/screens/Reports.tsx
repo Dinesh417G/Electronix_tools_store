@@ -51,17 +51,75 @@ function rangeFor(preset: Preset): { from?: string; to?: string } {
   }
 }
 
-export function Reports({
-  client,
-  onError,
-  onNotice,
-}: {
+type Panel = "consumption" | "machines" | "people";
+
+const PANELS: { value: Panel; label: string }[] = [
+  { value: "consumption", label: "Consumption" },
+  { value: "machines", label: "By machine" },
+  { value: "people", label: "By person" },
+];
+
+export function Reports(props: {
   client: ReturnType<typeof adminApi>;
   onError: (m: string) => void;
   onNotice: (m: string) => void;
 }) {
-  const [groupBy, setGroupBy] = useState<GroupBy>("machine");
+  const [panel, setPanel] = useState<Panel>("consumption");
   const [preset, setPreset] = useState<Preset>("30d");
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-3 gap-1">
+        {PANELS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => setPanel(option.value)}
+            className={`tap rounded-lg px-2 text-sm font-semibold ${
+              panel === option.value
+                ? "bg-slate-700 text-white"
+                : "bg-slate-900 text-slate-400"
+            }`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-4 gap-1">
+        {PRESETS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => setPreset(option.value)}
+            className={`tap rounded-lg px-1 text-xs ${
+              preset === option.value ? "bg-slate-700 text-white" : "bg-slate-900 text-slate-400"
+            }`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
+      {panel === "consumption" && <Consumption {...props} preset={preset} />}
+      {panel === "machines" && <MachinePanel {...props} preset={preset} />}
+      {panel === "people" && <PeoplePanel {...props} preset={preset} />}
+    </div>
+  );
+}
+
+function Consumption({
+  client,
+  onError,
+  onNotice,
+  preset,
+}: {
+  client: ReturnType<typeof adminApi>;
+  onError: (m: string) => void;
+  onNotice: (m: string) => void;
+  preset: Preset;
+}) {
+  const [groupBy, setGroupBy] = useState<GroupBy>("machine");
   const [downloading, setDownloading] = useState(false);
 
   // A failed report is not an empty report. Until 2026-08-30 this `catch` did
@@ -119,23 +177,6 @@ export function Reports({
             }`}
           >
             {group.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-4 gap-1">
-        {PRESETS.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => {
-              setPreset(option.value);
-            }}
-            className={`tap rounded-lg px-1 text-xs ${
-              preset === option.value ? "bg-slate-700 text-white" : "bg-slate-900 text-slate-400"
-            }`}
-          >
-            {option.label}
           </button>
         ))}
       </div>
@@ -215,3 +256,201 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+
+// ── By machine ──────────────────────────────────────────────────────────
+//
+// `group_by=machine` already gave the totals. The question that follows is the
+// one that leads somewhere — *which* tools is CNC-L1 getting through — so each
+// machine opens to show exactly that. A machine eating one insert grade and
+// nothing else is a setup problem, not a stock problem, and no total can say so.
+
+function MachinePanel({
+  client,
+  onError,
+  preset,
+}: {
+  client: ReturnType<typeof adminApi>;
+  onError: (m: string) => void;
+  preset: Preset;
+}) {
+  const [open, setOpen] = useState<string | null>(null);
+  const state = useLoadable(() => client.machineUsage(rangeFor(preset)), [client, preset], onError);
+
+  return (
+    <Loaded
+      state={state}
+      label="Adding up each machine…"
+      empty={
+        <p className="py-10 text-center text-slate-500">
+          Nothing was issued to any machine in this period.
+        </p>
+      }
+    >
+      {(rows) => {
+        const biggest = Math.max(1, ...rows.map((r) => Number(r.qty)));
+        return (
+          <div className="space-y-2">
+            {rows.map((row) => {
+              const key = row.machine_id ?? "none";
+              return (
+                <div key={key} className="rounded-xl bg-slate-900 px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => setOpen(open === key ? null : key)}
+                    className="w-full text-left"
+                  >
+                    <div className="flex items-baseline gap-3">
+                      <span className="min-w-0 flex-1 truncate font-semibold">
+                        {row.machine_code}
+                        {row.machine_name && (
+                          <span className="pl-2 text-sm font-normal text-slate-400">
+                            {row.machine_name}
+                          </span>
+                        )}
+                      </span>
+                      <span className="tabular-nums font-bold">
+                        {Number(row.qty).toLocaleString(undefined, { maximumFractionDigits: 3 })}
+                      </span>
+                    </div>
+                    <div className="mt-1 h-1.5 overflow-hidden rounded bg-slate-800">
+                      <div
+                        className="h-full bg-sky-500"
+                        style={{ width: `${(Number(row.qty) / biggest) * 100}%` }}
+                      />
+                    </div>
+                    <div className="pt-1 text-xs text-slate-500">
+                      {row.distinct_tools} different tools · {row.movements} movements · ₹
+                      {Number(row.value).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      <span className="pl-2 text-slate-600">
+                        {open === key ? "tap to close" : "tap for the tools"}
+                      </span>
+                    </div>
+                  </button>
+
+                  {open === key && <MachineTools client={client} machineId={row.machine_id} preset={preset} onError={onError} />}
+                </div>
+              );
+            })}
+            <p className="pb-4 text-xs text-slate-500">
+              Movements booked without a machine are kept and labelled rather than
+              dropped — §12.6 makes the machine optional, so a report that ignored
+              them would not add up to the consumption report beside it.
+            </p>
+          </div>
+        );
+      }}
+    </Loaded>
+  );
+}
+
+function MachineTools({
+  client,
+  machineId,
+  preset,
+  onError,
+}: {
+  client: ReturnType<typeof adminApi>;
+  machineId: string | null;
+  preset: Preset;
+  onError: (m: string) => void;
+}) {
+  const state = useLoadable(
+    () => client.machineTools(machineId, rangeFor(preset)),
+    [client, machineId, preset],
+    onError,
+  );
+
+  return (
+    <div className="mt-3 border-t border-slate-800 pt-2">
+      <Loaded
+        state={state}
+        label="Which tools…"
+        empty={<p className="py-3 text-sm text-slate-500">Nothing recorded.</p>}
+      >
+        {(tools) =>
+          tools.map((tool) => (
+            <div key={tool.item_id} className="flex items-baseline gap-3 py-1">
+              <span className="min-w-0 flex-1 truncate text-sm">
+                {tool.item_code}
+                <span className="pl-2 text-slate-500">{tool.description}</span>
+              </span>
+              <span className="shrink-0 text-sm tabular-nums text-slate-300">
+                {Number(tool.qty).toLocaleString(undefined, { maximumFractionDigits: 3 })}
+              </span>
+            </div>
+          ))
+        }
+      </Loaded>
+    </div>
+  );
+}
+
+// ── By person ───────────────────────────────────────────────────────────
+//
+// Who signed in, how they proved who they were, and what they took.
+//
+// The identity split is the point rather than a detail. §8 says a punch, a
+// passkey and a typed PIN are not equal evidence, and a column that added them
+// up into "sessions" would throw away the distinction the identity design
+// exists to keep.
+
+function PeoplePanel({
+  client,
+  onError,
+  preset,
+}: {
+  client: ReturnType<typeof adminApi>;
+  onError: (m: string) => void;
+  preset: Preset;
+}) {
+  const state = useLoadable(() => client.operatorStats(rangeFor(preset)), [client, preset], onError);
+
+  return (
+    <Loaded
+      state={state}
+      label="Counting sign-ins…"
+      empty={<p className="py-10 text-center text-slate-500">Nobody signed in during this period.</p>}
+    >
+      {(rows) => (
+        <div className="space-y-2">
+          {rows.map((row) => (
+            <div key={row.operator_id} className="rounded-xl bg-slate-900 px-4 py-3">
+              <div className="flex items-baseline gap-3">
+                <span className="min-w-0 flex-1 truncate font-semibold">
+                  {row.full_name}
+                  <span className="pl-2 text-sm font-normal text-slate-500">
+                    {row.emp_code} · {row.role.toLowerCase()}
+                  </span>
+                </span>
+                <span className="tabular-nums font-bold">
+                  {Number(row.qty).toLocaleString(undefined, { maximumFractionDigits: 3 })}
+                </span>
+              </div>
+              <div className="pt-1 text-xs text-slate-500">
+                {row.sessions} sign-in{row.sessions === 1 ? "" : "s"} · {row.movements} movement
+                {row.movements === 1 ? "" : "s"} · ₹
+                {Number(row.value).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              </div>
+              <div className="flex gap-1 pt-2 text-xs">
+                <IdentityChip label="door" n={row.punch_sessions} tone="bg-emerald-900 text-emerald-200" />
+                <IdentityChip label="passkey" n={row.passkey_sessions} tone="bg-sky-900 text-sky-200" />
+                <IdentityChip label="typed PIN" n={row.pin_sessions} tone="bg-amber-900 text-amber-200" />
+              </div>
+            </div>
+          ))}
+          <p className="pb-4 text-xs text-slate-500">
+            A punch is the reader deciding whose finger it was. A passkey is a
+            registered device unlocked by somebody it trusts. A typed PIN is four
+            digits somebody knew. They are not equal evidence (§8), so they are
+            not added together.
+          </p>
+        </div>
+      )}
+    </Loaded>
+  );
+}
+
+function IdentityChip({ label, n, tone }: { label: string; n: number; tone: string }) {
+  if (n === 0) return null;
+  return <span className={`rounded px-2 py-0.5 ${tone}`}>{n} {label}</span>;
+}

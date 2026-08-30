@@ -15,6 +15,7 @@ import {
   ApiError,
   api,
   formatQty,
+  type InsightView,
   type AlertRow,
   type Item,
 } from "../lib/api";
@@ -27,6 +28,7 @@ import { People } from "./People";
 import { Machines, ReasonCodes } from "./Pickers";
 import { Door } from "./Door";
 import { Loaded, useLoadable } from "./Loadable";
+import { FilterChips, hintFor, viewDetail } from "./Filters";
 import { Passkeys } from "./Passkeys";
 import { Reports } from "./Reports";
 
@@ -781,39 +783,21 @@ const inputClass =
 // ── Stock, alerts, ledger ───────────────────────────────────────────────
 
 function StockTab() {
-  const [filter, setFilter] = useState<"all" | "low" | "empty">("all");
+  // Six questions rather than three states. "Low" and "Empty" answered what the
+  // alert engine already knew; they could not answer "what is this crib
+  // actually getting through" or "what has sat in a bin since March", which is
+  // most of what a storekeeper wants a catalog for.
+  const [view, setView] = useState<InsightView>("frequent");
 
   // This used to be `.catch(() => setRows([]))`: a failed request drew "Nothing
   // here" with no banner at all, which in a stock console reads as "the crib is
   // empty" rather than "I could not ask".
-  const stockState = useLoadable(
-    () =>
-      api.stock(
-        filter === "low"
-          ? "low=true&limit=200"
-          : filter === "empty"
-            ? "empty=true&limit=200"
-            : "limit=200",
-      ),
-    [filter],
-  );
+  const stockState = useLoadable(() => api.insights(view, 200), [view]);
 
   return (
     <div className="space-y-3">
-      <div className="flex gap-1">
-        {(["all", "low", "empty"] as const).map((f) => (
-          <button
-            key={f}
-            type="button"
-            onClick={() => setFilter(f)}
-            className={`tap flex-1 rounded-lg px-3 text-sm capitalize ${
-              filter === f ? "bg-slate-700" : "bg-slate-900 text-slate-400"
-            }`}
-          >
-            {f}
-          </button>
-        ))}
-      </div>
+      <FilterChips view={view} onChange={setView} />
+      <p className="px-1 text-xs text-slate-500">{hintFor(view)}</p>
 
       <Loaded
         state={stockState}
@@ -828,6 +812,7 @@ function StockTab() {
               <AlertChip level={item.alert_state} />
             </div>
             <div className="truncate text-sm text-slate-400">{item.description}</div>
+            <div className="truncate text-xs text-slate-500">{viewDetail(view, item)}</div>
           </div>
           <div className="shrink-0 text-right">
             <div className="text-xl font-bold tabular-nums">{formatQty(item.on_hand)}</div>
@@ -949,15 +934,54 @@ function ActivityTab({
   onError: (m: string) => void;
   onNotice: (m: string) => void;
 }) {
-  const state = useLoadable(() => api.ledger("limit=60"), []);
+  // Filter by reason, because the question a storekeeper actually asks is "show
+  // me the breakages" — and until now the only way to answer it was to read 60
+  // rows and squint. Damage carries a note now (§12.6), so this list is where
+  // that note is read.
+  const [reason, setReason] = useState<string | null>(null);
+  const reasons = useLoadable(() => api.reasonCodes(), []);
+  const state = useLoadable(
+    () => api.ledger(reason ? `limit=60&reason=${encodeURIComponent(reason)}` : "limit=60"),
+    [reason],
+  );
   const load = state.reload;
 
   return (
     <div className="space-y-2">
+      <div className="flex flex-wrap gap-1">
+        <button
+          type="button"
+          onClick={() => setReason(null)}
+          className={`tap rounded-lg px-3 text-sm ${
+            reason === null ? "bg-slate-700 text-white" : "bg-slate-900 text-slate-400"
+          }`}
+        >
+          All reasons
+        </button>
+        {(reasons.data ?? []).map((r) => (
+          <button
+            key={r.id}
+            type="button"
+            onClick={() => setReason(reason === r.code ? null : r.code)}
+            className={`tap rounded-lg px-3 text-sm ${
+              reason === r.code ? "bg-slate-700 text-white" : "bg-slate-900 text-slate-400"
+            }`}
+          >
+            {r.label}
+          </button>
+        ))}
+      </div>
+
       <Loaded
         state={state}
         label="Loading the ledger…"
-        empty={<p className="py-10 text-center text-slate-500">No movements yet.</p>}
+        empty={
+          <p className="py-10 text-center text-slate-500">
+            {reason
+              ? "No movements booked under that reason in the last 60."
+              : "No movements yet."}
+          </p>
+        }
       >
         {(loaded) => loaded.map((row) => {
         const out = row.delta_qty.startsWith("-");
@@ -971,6 +995,12 @@ function ActivityTab({
                   {row.txn_type} · {row.operator_name}
                   {row.machine_code ? ` · ${row.machine_code}` : ""}
                 </div>
+                {row.reason_code && (
+                  <div className="truncate text-xs text-slate-500">
+                    {row.reason_code}
+                    {row.note ? ` — ${row.note}` : ""}
+                  </div>
+                )}
                 {reversed && (
                   <div className="text-xs text-amber-400">
                     reverses #{row.reverses_id}
