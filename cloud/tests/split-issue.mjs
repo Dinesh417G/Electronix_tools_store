@@ -68,26 +68,46 @@ const rowsFor = async (sessionId) => sql`
   select id, delta_qty::text as delta_qty, machine_id, client_txn_uuid
     from stock_ledger where session_id = ${sessionId} order by id`;
 
-const stamp = (offsetSeconds) =>
-  new Date(Date.now() - offsetSeconds * 1000).toISOString().slice(0, 19).replace("T", " ");
+const stamp = (date) => date.toISOString().slice(0, 19).replace("T", " ");
 
-async function openSession(operator, tabletToken, offsetSeconds) {
-  const line = operator.zk_user_id + "\t" + stamp(offsetSeconds) + "\t0\t1\t\t\n";
+let index = 0;
+
+/**
+ * Push a punch and claim the session it offers.
+ *
+ * Two details here are not incidental. The offsets are ~97 s apart because
+ * §9.1 deduplicates on (device_id, zk_user_id, device_ts) at one-second
+ * resolution: punches a second or two apart — across steps, or across two runs
+ * of this file — land on the same stamp, and the second push is then correctly
+ * a no-op, leaving this waiting for a card that will never appear. And the
+ * session is found by a lookup scoped to *this file's device* rather than off
+ * the claim screen, because that screen lists every unclaimed session from the
+ * last 90 s, including ones another test file opened for the same operator.
+ */
+async function openSession(operator, tabletToken) {
+  const ts = new Date(Date.now() - ++index * 97_000);
   await call("/iclock/cdata?SN=" + SN + "&table=ATTLOG", {
     method: "POST",
     headers: { "Content-Type": "text/plain" },
-    body: line,
+    body: operator.zk_user_id + "\t" + stamp(ts) + "\t0\t1\t\t\n",
   });
-  const cards = await call("/api/v1/sessions/unclaimed", { headers: bearer(tabletToken) });
-  const list = Array.isArray(cards.body) ? cards.body : (cards.body?.sessions ?? []);
-  const card = list.find((c) => c.operator_id === operator.id) ?? list[0];
-  const id = card?.session_id ?? card?.id;
-  await call("/api/v1/sessions/" + id + "/claim", {
+  const [row] = await sql`
+    select s.id from sessions s
+      join punches p on p.id = s.punch_id
+      join devices d on d.id = p.device_id
+     where d.serial_no = ${SN}
+       and p.zk_user_id = ${operator.zk_user_id}
+       and p.device_ts = ${new Date(stamp(ts) + "Z")}`;
+  if (!row) throw new Error("the punch offered no session");
+  const claimed = await call("/api/v1/sessions/" + row.id + "/claim", {
     method: "POST",
     headers: bearer(tabletToken),
     body: JSON.stringify({ tablet_id: TABLET }),
   });
-  return id;
+  if (claimed.status !== 200) {
+    throw new Error("claim answered " + claimed.status + " " + JSON.stringify(claimed.body));
+  }
+  return row.id;
 }
 
 try {
@@ -116,7 +136,7 @@ try {
 
   step("1. one item, two machines, one confirm");
   const before = await onHand(item.id);
-  const session = await openSession(operator, tabletToken, 1);
+  const session = await openSession(operator, tabletToken);
   const issued = await call("/api/v1/txn/issue", {
     method: "POST",
     headers: bearer(tabletToken),
@@ -154,7 +174,7 @@ try {
 
   step("2. §7's guard applies to the total, not row by row");
   const stock = await onHand(item.id);
-  const session2 = await openSession(operator, tabletToken, 2);
+  const session2 = await openSession(operator, tabletToken);
   const half = Math.floor(stock / 2);
   const past = await call("/api/v1/txn/issue", {
     method: "POST",
@@ -183,7 +203,7 @@ try {
   else bad("on_hand moved to " + stillThere + " on a refused batch");
 
   step("3. §12: the batch whose acknowledgement was lost");
-  const session3 = await openSession(operator, tabletToken, 3);
+  const session3 = await openSession(operator, tabletToken);
   const body3 = {
     session_id: session3,
     item_id: item.id,
@@ -221,7 +241,7 @@ try {
   else bad("on_hand " + beforeReplay + " → " + afterReplay + ", expected " + (beforeReplay - 2));
 
   step("4. shapes the tablet must not get away with");
-  const session4 = await openSession(operator, tabletToken, 4);
+  const session4 = await openSession(operator, tabletToken);
   const zero = await call("/api/v1/txn/issue", {
     method: "POST",
     headers: bearer(tabletToken),

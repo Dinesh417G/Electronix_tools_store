@@ -84,9 +84,15 @@ async function session(operator, tabletToken) {
     headers: { "Content-Type": "text/plain" },
     body: operator.zk_user_id + "\t" + fmt(ts) + "\t0\t1\t\t\n",
   });
+  // Scoped to this file's own device: the dedup key includes device_id, and
+  // another test file using the same operator and spacing would otherwise be
+  // matched here.
   const [row] = await sql`
-    select s.id from sessions s join punches p on p.id = s.punch_id
-     where p.zk_user_id = ${operator.zk_user_id}
+    select s.id from sessions s
+      join punches p on p.id = s.punch_id
+      join devices d on d.id = p.device_id
+     where d.serial_no = ${SN}
+       and p.zk_user_id = ${operator.zk_user_id}
        and p.device_ts = ${new Date(fmt(ts) + "Z")}`;
   await call("/api/v1/sessions/" + row.id + "/claim", {
     method: "POST",
