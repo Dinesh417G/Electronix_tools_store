@@ -88,9 +88,13 @@ function connect(): Sql {
       // The state Supavisor logged. A transaction that opens and then stops
       // being driven holds row locks the rest of the shop queues behind.
       idle_in_transaction_session_timeout: 15_000,
-      // `public` stays on the path so a preview still reaches anything shared,
-      // and `extensions` because Supabase installs pg_trgm there and the
-      // catalog's trigram indexes are built on its operator class.
+      // `public` is not decoration on this list. Migration 0001 runs
+      // `create extension if not exists pg_trgm` with no schema, so the
+      // extension lands in `public` on every database these migrations have
+      // built — checked on Supabase and on the local Docker Postgres, both of
+      // which report `pg_trgm -> public`. Take `public` off this path and
+      // `gin_trgm_ops` stops resolving, which takes §11's typeahead with it.
+      // `extensions` is where Supabase puts the rest (pgcrypto, uuid-ossp).
       ...(schema ? { search_path: `${schema}, public, extensions` } : {}),
     },
     // Numerics come back as strings on purpose. Quantities are numeric(12,3)

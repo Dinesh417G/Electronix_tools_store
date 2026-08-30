@@ -910,6 +910,11 @@ written alongside it are what stop that from being the whole story:
 | `tests/webauthn.mjs` | §8's passkey path | yes, and a headless Chrome |
 | `tests/terminal-flow.mjs` | §12's issue flow, through the screens | yes, and a headless Chrome |
 | `tests/db-schema.mjs` | the preview schema's isolation from `public` | yes |
+| `tests/split-issue.mjs` | §11's split issue, and §7's guard on the total | yes |
+| `tests/receipt-and-alerts.mjs` | M6, and M8's OK → LOW → EMPTY → OK ladder | yes |
+| `tests/session-expiry.mjs` | §10's derive-on-read, through the routes | yes |
+| `tests/adms-edges.mjs` | §9's rules 3 and 4 | yes |
+| `tests/admin-guards.mjs` | §11's console rules | yes |
 
 Two things about them are worth stating, because both were learned the hard
 way rather than designed in:
@@ -936,6 +941,32 @@ way rather than designed in:
   (the writer was never updated, so §10's only fallback — and the only way in
   before a reader is installed — had never worked), and the quantity pad
   appended to its default of 1, so tapping 2 booked 12.
+
+- **§10's derive-on-read is enforced by the routes, not only defined.** The
+  five files above were written after a coverage sweep found that the split
+  issue, `POST /txn/receipt`, the alert ladder, §9's unknown-user and
+  clock-drift rules, and §11's console guards had no test anywhere. Four of the
+  five confirmed the code was right. The fifth found a real defect, since
+  fixed, and it is the exact one §10 predicts in as many words:
+
+  > *"Any new query that filters on `state` directly, rather than through the
+  > helper that applies these two rules, reintroduces the bug — a session that
+  > everyone can see is dead and the database still calls ACTIVE."*
+
+  `touchSession` was `update sessions set last_activity_at = now() where id = $1
+  and state = 'ACTIVE'`, and its own comment claimed this stopped a late
+  keepalive resurrecting a closed session. It did the opposite. There are no
+  reapers here, so a session idle for an hour is *stored* ACTIVE; the guard
+  matched exactly the rows it was meant to exclude and pushed
+  `last_activity_at` to now(). Observed: an issue answered `410`, one `/touch`
+  answered `200`, and the next identical issue answered `200` and wrote a
+  ledger row. The terminal fires that keepalive every 60 s and on every step,
+  so the 180 s idle close could not close anything, and stock could be booked
+  to an operator who had walked away. The same route also authenticated the
+  caller without authorising the *session*, so any tablet could extend a
+  session claimed at another one. Both fixed by putting `/touch` through
+  `authoriseSession` like every other write, and by bounding the UPDATE with
+  the same `IDLE_TIMEOUT_MS` the state machine reads.
 
 What is still not covered: `typecheck` cannot see the database, so a column
 rename passes CI and fails at runtime anywhere these paths do not go. And
