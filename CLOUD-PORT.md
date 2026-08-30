@@ -212,10 +212,60 @@ redeploy, or mint the token directly against the database the way
 `cloud/tests/e2e.mjs` does.
 
 **`DATABASE_URL` is set on Production** (2026-08-27) and the site is live at
-a stable alias, https://electronix-tool-crib.vercel.app. It is **not set on
-Preview**, so preview deployments still answer "DATABASE_URL is not set" for
-every database-backed route — harmless, but it means a preview cannot be used
-to check anything real.
+a stable alias, https://electronix-tool-crib.vercel.app. On **Preview** it is
+still unset, which is the last step of the arrangement below: the schema a
+preview would write to exists and is verified, and the app knows how to reach
+it, but the connection string itself has to be pasted by whoever holds the
+Supabase password.
+
+### Preview runs against a `preview` schema, not its own database
+
+A preview deployment with no database answers "DATABASE_URL is not set" for
+every database-backed route, which means a preview proves only that the UI
+renders. Giving it a database of its own is the obvious fix and is not
+available: the free Supabase tier allows **two active projects** per owner and
+both are spoken for (`electronix-tool-crib`, `electronix-dnc-site`), and a
+Supabase preview *branch* is a real instance billed at $0.01344/hour — about
+$9.68 a month to make previews honest.
+
+So Preview runs against a **`preview` schema inside the production project**,
+built 2026-08-30 by applying `crates/store-db/migrations` verbatim into that
+schema. It carries all 20 tables and all 170 columns of `public`, with zero
+difference in either direction, RLS enabled on every one, and a copy of the
+catalog — 90 items, 9 barcodes, 9 machines, the 8 reason codes, and the 88
+`OPENING` rows, which reconcile to the same 1901.000 on hand as production.
+
+Two things make it isolation rather than a hope:
+
+- **`DATABASE_SCHEMA`** (`cloud/src/lib/db.ts`) becomes a `search_path` startup
+  parameter on the connection. Unset in production, where the role's own
+  default path is what it has always been. The name is checked against the
+  shape of an unquoted identifier before it is interpolated, so it is a
+  parameter and not a splice.
+- **The preview schema's functions pin their own `search_path`.** The §7
+  trigger bodies reference `items` and `item_stock` unqualified, which resolve
+  against whoever is calling; a psql session sitting in `public` that inserted
+  into `preview.stock_ledger` would otherwise have updated **production's**
+  `item_stock`. Pinning them is a deliberate deviation from the migrations, and
+  the only one.
+
+`cloud/tests/db-schema.mjs` gates it, and was written against the unfixed
+`db.ts` first, where it fails six ways — including the one that matters, *"1
+rows landed in public — the isolation does not hold"*. §7 is why that assertion
+earns its place: a movement is never deleted, so a preview that wrote into
+`public` could not be tidied away afterwards. The rows would stay in the audit
+trail the product exists to defend.
+
+What is left is one command, and it needs the Supabase password:
+
+```bash
+# the pooled string, exactly as Production has it (port 6543, user
+# postgres.hhpmwnmubibracnwsmos), percent-encoded password
+printf '%s' 'postgres://postgres.hhpmwnmubibracnwsmos:<pw>@aws-1-ap-south-1.pooler.supabase.com:6543/postgres'   | vercel env add DATABASE_URL preview --cwd cloud
+```
+
+`DATABASE_SCHEMA=preview` is already set on Preview. Nothing needs to change on
+Production, where `DATABASE_SCHEMA` is deliberately absent.
 
 Setting it was the one step a person had to take, and it is worth recording why.
 Claude drove the Supabase dashboard as far as the reset-password dialog and
@@ -257,7 +307,9 @@ next — an argument for a stable domain.
    starts, the pooler and internet latency are all absent, and §9's ~200 ms
    ADMS budget is exactly the thing that only fails in their presence. Pointing
    the same test at the live origin needs a token minted against Supabase.
-2. **Set `DATABASE_URL` on Preview**, or accept that previews are UI-only.
+2. **Paste `DATABASE_URL` into Preview** — the `preview` schema and
+   `DATABASE_SCHEMA` are both in place; the connection string is the one part
+   that needs the Supabase password (see above).
 3. **Decide the offline question** (above). It is parked, not solved, and
    `CLAUDE.md` §2 now says so in as many words.
 

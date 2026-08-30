@@ -197,6 +197,18 @@ jobs:
       # M8's aggregation half, which §13 admitted was verified once by hand and
       # never since. It MUST run before the catalog seed: the report queries
       # aggregate the whole ledger with no item filter, so the seed's opening
+      # Preview deployments have no database of their own — the free Supabase
+      # tier allows two active projects and both are spoken for — so they run
+      # against a `preview` schema inside the production project, selected by
+      # DATABASE_SCHEMA. That one variable is the whole of the isolation
+      # between a throwaway preview and the real ledger, and §7 forbids
+      # deleting a movement that lands in the wrong place.
+      - name: preview schema isolation
+        run: npm run test:schema
+        working-directory: cloud
+        env:
+          DATABASE_URL: postgresql://postgres:throwaway@localhost:5432/store
+
       # balances would land in the buckets it is checking. The test asserts
       # that precondition itself, so reordering these steps fails loudly.
       - name: consumption aggregation (empty ledger)

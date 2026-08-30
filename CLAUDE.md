@@ -849,8 +849,13 @@ What remains beyond those: the live loop verified end to end against **Supabase*
 §9's ~200 ms budget is untested where it actually has to hold. Then the ADMS
 capture against real firmware (§9's warning), printing a label sheet to close
 M7's optical half, and the offline decision in §2. `DATABASE_URL` is set on
-Vercel **Production only**; preview deployments still have no database. See
-`CLOUD-PORT.md` and the README.
+Vercel **Production only**. Preview deployments now have a schema to talk to —
+`preview`, inside the production project, carrying these same migrations and
+selected by `DATABASE_SCHEMA` (`cloud/src/lib/db.ts`), because the free
+Supabase tier allows two active projects and both are spoken for. The
+connection string itself still has to be pasted by whoever holds the Supabase
+password, so until then a preview remains UI-only. See `CLOUD-PORT.md` and the
+README.
 
 | # | Deliverable | Acceptance gate |
 |---|---|---|
@@ -904,6 +909,7 @@ written alongside it are what stop that from being the whole story:
 | `tests/e2e.mjs` | M4 | yes |
 | `tests/webauthn.mjs` | §8's passkey path | yes, and a headless Chrome |
 | `tests/terminal-flow.mjs` | §12's issue flow, through the screens | yes, and a headless Chrome |
+| `tests/db-schema.mjs` | the preview schema's isolation from `public` | yes |
 
 Two things about them are worth stating, because both were learned the hard
 way rather than designed in:
