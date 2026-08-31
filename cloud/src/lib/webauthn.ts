@@ -60,13 +60,22 @@ async function storeChallenge(
   purpose: "REGISTER" | "AUTHENTICATE",
   operatorId: string | null,
 ): Promise<void> {
+  // Opportunistic sweep, in the same statement as the insert. There is no cron
+  // here, and a challenge table that only ever grows is a slow leak nobody
+  // notices until it is large.
+  //
+  // It was a `void sql\`…\`.catch(() => {})` — fired and never awaited, which
+  // on this platform means it can be frozen half-written and strand the
+  // instance's only connection. See the note over `authenticate` in auth.ts:
+  // that is what took the Door screen out on 2026-08-31. One statement cannot
+  // be left in flight.
   await sql`
+    with swept as (
+      delete from webauthn_challenges where expires_at < now()
+    )
     insert into webauthn_challenges (challenge, purpose, operator_id)
     values (${challenge}, ${purpose}, ${operatorId})
   `;
-  // Opportunistic sweep. There is no cron here, and a challenge table that only
-  // ever grows is a slow leak nobody notices until it is large.
-  void sql`delete from webauthn_challenges where expires_at < now()`.catch(() => {});
 }
 
 /**

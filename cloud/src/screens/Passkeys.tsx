@@ -18,11 +18,12 @@
 // trustworthy as the moment it was enrolled, so enrolling one means first
 // proving who you are by the means that already exist.
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { ApiError } from "../lib/api";
 import type { Passkey, adminApi } from "../lib/admin";
 import { isPasskeySupported, registerPasskey } from "../lib/passkey";
-import { Banner, Header, Spinner } from "../components/ui";
+import { Banner, Header } from "../components/ui";
+import { Loaded, useLoadable } from "./Loadable";
 
 export function Passkeys({
   client,
@@ -39,22 +40,17 @@ export function Passkeys({
   onError: (m: string) => void;
   onNotice: (m: string) => void;
 }) {
-  const [credentials, setCredentials] = useState<Passkey[] | null>(null);
   const [supported, setSupported] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState<string | null>(null);
 
-  const load = useCallback(() => {
-    client
-      .passkeys()
-      .then(setCredentials)
-      .catch((err) => {
-        onError(describe(err));
-        setCredentials([]);
-      });
-  }, [client, onError]);
+  // Not `.catch(() => setCredentials([]))`, which is what this was. An empty
+  // list here reads "no passkey is registered" — a statement about the
+  // operator's own devices — and it was drawn from a request that had failed.
+  // The same defect Door.tsx carried, and the reason `useLoadable` exists.
+  const state = useLoadable<Passkey[]>(() => client.passkeys(), [client], onError);
+  const load = state.reload;
 
-  useEffect(load, [load]);
   useEffect(() => {
     void isPasskeySupported().then(setSupported);
   }, []);
@@ -90,8 +86,6 @@ export function Passkeys({
     }
   };
 
-  if (!credentials) return <Spinner label="Reading your devices…" />;
-
   return (
     <div className="space-y-4">
       <Header
@@ -107,14 +101,18 @@ export function Passkeys({
         </Banner>
       )}
 
-      {credentials.length === 0 && (
-        <Banner tone="info">
-          No passkey is registered. Sign-in still works with an employee code and
-          PIN — a passkey is the stronger of the two, and neither is as strong as
-          the door reader (§8).
-        </Banner>
-      )}
-
+      <Loaded
+        state={state}
+        label="Reading your devices…"
+        empty={
+          <Banner tone="info">
+            No passkey is registered. Sign-in still works with an employee code
+            and PIN — a passkey is the stronger of the two, and neither is as
+            strong as the door reader (§8).
+          </Banner>
+        }
+      >
+        {(credentials) => (
       <section className="space-y-2">
         {credentials.map((credential) => (
           <div key={credential.id} className="rounded-xl bg-slate-900 px-4 py-3">
@@ -165,6 +163,8 @@ export function Passkeys({
           </div>
         ))}
       </section>
+        )}
+      </Loaded>
 
       <button
         type="button"

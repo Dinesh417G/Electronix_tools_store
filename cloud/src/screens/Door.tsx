@@ -15,10 +15,21 @@
 // `received_at`; `device_ts` is diagnostic, and a terminal that has drifted off
 // +05:30 shows it here as a gap between the two columns.
 
-import { useCallback, useEffect, useState } from "react";
-import { ApiError } from "../lib/api";
+// One more thing this screen must never do, learned the hard way on
+// 2026-08-31: when the request fails, say so. It used to answer a failed
+// `/admin/devices` with `setStatus({ devices: [], … })` and then render that as
+// fact — *"No terminal has ever handshaked with this server."* The deployment
+// had a device and a punch at the time. That sentence is the worst thing this
+// particular screen can get wrong, because it is the screen somebody opens
+// precisely to find out whether the door is talking, and it turns "I could not
+// ask" into a definite answer that sends them to check the plant's routing.
+//
+// `useLoadable` keeps loading, failed and empty apart. It already existed and
+// nine panels already used it; this one was written before it and never moved.
+
 import type { DoorStatus, PunchRow, adminApi } from "../lib/admin";
-import { Banner, Header, Spinner } from "../components/ui";
+import { Banner, Header } from "../components/ui";
+import { Loaded, useLoadable } from "./Loadable";
 
 const STALE_MINUTES = 30;
 
@@ -31,26 +42,30 @@ export function Door({
   onBack: () => void;
   onError: (m: string) => void;
 }) {
-  const [status, setStatus] = useState<DoorStatus | null>(null);
-
-  const load = useCallback(() => {
-    client
-      .door()
-      .then(setStatus)
-      .catch((err) => {
-        onError(describe(err));
-        setStatus({ devices: [], unknown_users: [], recent_punches: [] });
-      });
-  }, [client, onError]);
-
-  useEffect(load, [load]);
-
-  if (!status) return <Spinner label="Asking the door…" />;
+  const state = useLoadable<DoorStatus>(() => client.door(), [client], onError);
 
   return (
     <div className="space-y-4">
       <Header title="Door" subtitle="The reader, and what it has told us" onBack={onBack} />
 
+      <Loaded state={state} label="Asking the door…" empty={null}>
+        {(status) => (
+          <DoorStatusView status={status} onRefresh={state.reload} />
+        )}
+      </Loaded>
+    </div>
+  );
+}
+
+function DoorStatusView({
+  status,
+  onRefresh,
+}: {
+  status: DoorStatus;
+  onRefresh: () => void;
+}) {
+  return (
+    <div className="space-y-4">
       <section className="space-y-2">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
           Terminals
@@ -158,7 +173,7 @@ export function Door({
 
       <button
         type="button"
-        onClick={load}
+        onClick={onRefresh}
         className="tap w-full rounded-xl bg-slate-800 px-4 text-sm text-slate-300"
       >
         Refresh
@@ -198,9 +213,4 @@ function describeDrift(seconds: number): string {
   const minutes = Math.round(Math.abs(seconds) / 60);
   const unit = minutes < 60 ? `${minutes} min` : `${Math.round(minutes / 60)} hours`;
   return seconds > 0 ? `${unit} ahead` : `${unit} behind`;
-}
-
-function describe(error: unknown): string {
-  if (error instanceof ApiError) return error.message;
-  return error instanceof Error ? error.message : String(error);
 }

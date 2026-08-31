@@ -11,10 +11,75 @@
 // otherwise fail on its second query with "prepared statement already exists".
 
 import postgres, { type Sql } from "postgres";
+import { QueryDeadlineError } from "./api-error.ts";
 
 declare global {
   // eslint-disable-next-line no-var
   var __toolCribSql: Sql | undefined;
+}
+
+/**
+ * How long this process will wait on a query before deciding the connection is
+ * not coming back.
+ *
+ * Deliberately **above** `statement_timeout` (15 s below), because it is not a
+ * second copy of it. Postgres reports what it can see: a query it is executing
+ * dies at 15 s as 57014, and 503 goes back to the terminal. This number exists
+ * for the failure Postgres cannot see at all.
+ *
+ * On 2026-08-31 the console's Door screen showed "did not answer within 25.2s"
+ * and then, worse, an empty terminal list. `pg_stat_activity` on the live
+ * database explained both:
+ *
+ *   state   wait_event   xact_age   query
+ *   active  ClientRead   00:04:55   select t.id, t.kind … from api_tokens t …
+ *
+ * `active` with `ClientRead` means the backend has our statement and is waiting
+ * for *us* to send the rest of the protocol exchange. It is not executing, so
+ * `statement_timeout` never counts; it is not `idle in transaction`, so
+ * `idle_in_transaction_session_timeout` never counts either. Both bounds this
+ * file added after the 2026-08-28 outage are blind to it by construction.
+ *
+ * With `max: 1` that one socket is the instance's only connection, so every
+ * later request queued behind a conversation neither side would ever continue,
+ * until Vercel killed the function at 300 s. The instance stayed poisoned for
+ * its whole life, which is why Refresh never helped: a retry landing on the
+ * same warm instance found the same dead socket.
+ *
+ * So: wait longer than any bound the database owns, then stop waiting and
+ * throw the connection away.
+ */
+export const QUERY_DEADLINE_MS = 20_000;
+
+/**
+ * Drop the shared connection so the next caller builds a fresh one.
+ *
+ * Unconditional, not "if it looks broken": we only get here because a query
+ * outlived every database-side bound, and there is no state in which that
+ * socket is still worth keeping. Closing it also releases the backend parked on
+ * `ClientRead`, which otherwise sits there holding an open transaction until
+ * the platform kills us.
+ */
+function discardConnection(): void {
+  const wedged = globalThis.__toolCribSql;
+  globalThis.__toolCribSql = undefined;
+  // `timeout: 0` destroys rather than draining. Draining is exactly what is
+  // not going to happen here.
+  void wedged?.end({ timeout: 0 }).catch(() => {});
+}
+
+function withDeadline<T>(work: PromiseLike<T>, what: string): Promise<T> {
+  const startedAt = Date.now();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      discardConnection();
+      reject(new QueryDeadlineError(what, Date.now() - startedAt));
+    }, QUERY_DEADLINE_MS);
+  });
+
+  return Promise.race([work, deadline]).finally(() => clearTimeout(timer)) as Promise<T>;
 }
 
 /**
@@ -115,12 +180,26 @@ function client(): Sql {
  * Tagged-template entry point, indistinguishable from postgres.js's own — the
  * proxy forwards the call and every property (`.begin`, `.unsafe`, `.json`…)
  * to a client built on first use.
+ *
+ * Two things go through `QUERY_DEADLINE_MS`: a plain query, and `.begin`. They
+ * are every path a route takes to the database. `.unsafe` is left alone on
+ * purpose — the seed runs a whole migration script through it, and a script is
+ * allowed to take longer than a request.
  */
 export const sql: Sql = new Proxy(function noop() {} as unknown as Sql, {
   apply(_target, _thisArg, args: Parameters<Sql>) {
-    return (client() as unknown as (...a: unknown[]) => unknown)(...args);
+    const query = (client() as unknown as (...a: unknown[]) => PromiseLike<unknown>)(...args);
+    return withDeadline(query, "query");
   },
   get(_target, property, receiver) {
-    return Reflect.get(client() as object, property, receiver);
+    const value = Reflect.get(client() as object, property, receiver);
+    if (property !== "begin" || typeof value !== "function") return value;
+
+    const owner = client();
+    return (...args: unknown[]) =>
+      withDeadline(
+        (value as (...a: unknown[]) => PromiseLike<unknown>).apply(owner, args),
+        "transaction",
+      );
   },
 }) as Sql;

@@ -173,6 +173,70 @@ try {
   } else {
     t.ok("the panel recovered without a reload");
   }
+
+  // Steps 3 and 4 were written for Reports and fixed nine panels. Door was
+  // written before `useLoadable` existed and was never moved onto it, so it
+  // kept the identical defect for another day — the shape of the bug survives
+  // a fix aimed at the screen that reported it, which is the whole reason this
+  // step exists rather than a comment saying "Door does it too".
+  //
+  // What made it worse here than anywhere else: Door's empty state is a
+  // *conclusion*. "No terminal has ever handshaked with this server" tells an
+  // engineer the plant's outbound routing is wrong. On 2026-08-31 it was drawn
+  // from a request that had timed out, against a deployment that had a device
+  // and a punch.
+  t.step("5. a door that could not be asked does not report a door that never spoke");
+  await browser.clickText("Setup");
+  await sleep(1500);
+  await browser.clickText("Door");
+  await sleep(2500);
+  screen = await browser.text();
+  if (/Terminals|Recent punches/i.test(screen)) {
+    t.ok("the Door screen loads when the server answers");
+  } else {
+    t.bad("could not reach the Door screen: " + trim(screen));
+  }
+
+  await browser.evaluate(`(() => {
+    window.__realFetch = window.__realFetch ?? window.fetch;
+    window.fetch = (input, init) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/api/v1/admin/devices")) {
+        return Promise.reject(new DOMException("timed out", "TimeoutError"));
+      }
+      return window.__realFetch(input, init);
+    };
+    return true;
+  })()`);
+
+  await browser.clickText("Refresh");
+  await sleep(3000);
+  screen = await browser.text();
+
+  if (screen.includes("No terminal has ever handshaked")) {
+    t.bad("a failed request still claims no terminal has ever handshaked");
+  } else {
+    t.ok("the never-handshaked sentence is not shown for a request that failed");
+  }
+
+  if (/did not load|could not ask|try again/i.test(screen)) {
+    t.ok("it says the screen could not ask, and offers to try again");
+  } else {
+    t.bad("no failure state on a failed door read: " + trim(screen));
+  }
+
+  t.step("6. and the door screen comes back on retry, rather than staying stuck");
+  await browser.evaluate(`(() => { window.fetch = window.__realFetch; return true; })()`);
+  await browser.clickText("Try again");
+  await sleep(3000);
+  screen = await browser.text();
+  if (/did not load/i.test(screen)) {
+    t.bad("the Door screen stayed in its failure state after a successful retry");
+  } else if (/Terminals|Recent punches/i.test(screen)) {
+    t.ok("it recovered without a reload");
+  } else {
+    t.bad("unexpected screen after retry: " + trim(screen));
+  }
 } catch (err) {
   t.bad("threw: " + (err?.message ?? err));
 } finally {
