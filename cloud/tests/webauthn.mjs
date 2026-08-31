@@ -19,156 +19,31 @@
 // is no graceful skip: a gate that quietly does nothing is how §13 ended up
 // with five routes nobody had ever run.
 
-import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { launchChrome, sleep, tally, trim } from "./cdp.mjs";
 
 const BASE = process.env.STORE_BASE ?? "http://localhost:3100";
 const SECRET = process.env.STORE_ENROLMENT_SECRET;
 const EMP_CODE = process.env.WEBAUTHN_EMP_CODE ?? "E1001";
 const PIN = process.env.WEBAUTHN_PIN ?? "1111";
-const PORT = Number(process.env.CDP_PORT ?? 9333);
 
 if (!SECRET) {
   console.error("STORE_ENROLMENT_SECRET is required — the browser has to enrol as a terminal first");
   process.exit(1);
 }
 
-const CHROME = (() => {
-  if (process.env.CHROME_PATH) return process.env.CHROME_PATH;
-  const candidates = [
-    "C:/Program Files/Google/Chrome/Application/chrome.exe",
-    "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
-    "/usr/bin/google-chrome",
-    "/usr/bin/google-chrome-stable",
-    "/usr/bin/chromium-browser",
-    "/usr/bin/chromium",
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  ];
-  const found = candidates.find((c) => existsSync(c));
-  if (!found) {
-    console.error("no Chrome found. Set CHROME_PATH.");
-    process.exit(1);
-  }
-  return found;
-})();
 
-const pass = [];
-const fail = [];
-const ok = (m) => { pass.push(m); console.log("  PASS  " + m); };
-const bad = (m) => { fail.push(m); console.log("  FAIL  " + m); };
-const step = (m) => console.log("\n" + m);
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const trim = (s) => (s ?? "").slice(0, 200).replace(/\n/g, " | ");
-
-// ── CDP plumbing ────────────────────────────────────────────────────────
-let ws;
-let nextId = 1;
-const pending = new Map();
-
-function send(method, params = {}, sessionId) {
-  const id = nextId++;
-  ws.send(JSON.stringify({ id, method, params, sessionId }));
-  return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject });
-    setTimeout(() => {
-      if (pending.delete(id)) reject(new Error(`${method} timed out`));
-    }, 30000);
-  });
-}
-
-let session;
-async function evaluate(expression) {
-  const result = await send(
-    "Runtime.evaluate",
-    { expression, awaitPromise: true, returnByValue: true },
-    session,
-  );
-  if (result.exceptionDetails) {
-    throw new Error(result.exceptionDetails.exception?.description ?? "page threw");
-  }
-  return result.result?.value;
-}
-
-// Click by visible text rather than coordinates: the point is the wiring, and a
-// pixel click that misses looks exactly like a screen that does not work.
-const clickText = (text, tag = "button") => evaluate(`(() => {
-  const el = [...document.querySelectorAll(${JSON.stringify(tag)})]
-    .find((e) => (e.textContent || "").trim().toLowerCase().includes(${JSON.stringify(text.toLowerCase())}));
-  if (!el) return false;
-  el.click();
-  return true;
-})()`);
-
-const clickSelector = (selector) => evaluate(`(() => {
-  const el = document.querySelector(${JSON.stringify(selector)});
-  if (!el) return false;
-  el.click();
-  return true;
-})()`);
-
-// React tracks the value on the DOM node, so assigning `.value` is invisible to
-// it. The native setter plus a bubbling input event is what a keystroke looks
-// like from React's side.
-const fill = (pairs) => evaluate(`(() => {
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-  for (const [selector, value] of ${JSON.stringify(pairs)}) {
-    const el = document.querySelector(selector);
-    if (!el) continue;
-    setter.call(el, value);
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-  }
-  return true;
-})()`);
-
-const text = () => evaluate("document.body.innerText");
-const goto = async (url) => { await send("Page.navigate", { url }, session); await sleep(2500); };
+const t = tally();
+const { ok, bad, step } = t;
 
 async function main() {
-  const profile = mkdtempSync(join(tmpdir(), "webauthn-chrome-"));
-  const chrome = spawn(CHROME, [
-    `--remote-debugging-port=${PORT}`,
-    `--user-data-dir=${profile}`,
-    "--headless=new",
-    "--no-first-run",
-    "--no-default-browser-check",
-    "--no-sandbox",
-    "--disable-dev-shm-usage",
-    "about:blank",
-  ], { stdio: "ignore" });
+  // Everything below used to be a second copy of tests/cdp.mjs, launcher and
+  // all — which is how one bug lived in two files and got fixed in neither.
+  const browser = await launchChrome();
+  const { send, evaluate, goto, text, clickText, clickSelector, fill } = browser;
 
   try {
-    let endpoint;
-    for (let i = 0; i < 40 && !endpoint; i++) {
-      try {
-        const res = await fetch(`http://127.0.0.1:${PORT}/json/version`);
-        if (res.ok) endpoint = (await res.json()).webSocketDebuggerUrl;
-      } catch { /* not up yet */ }
-      if (!endpoint) await sleep(250);
-    }
-    if (!endpoint) throw new Error("Chrome did not open a debugging port");
-
-    ws = new WebSocket(endpoint);
-    ws.addEventListener("message", (event) => {
-      const msg = JSON.parse(event.data);
-      const waiter = msg.id && pending.get(msg.id);
-      if (!waiter) return;
-      pending.delete(msg.id);
-      msg.error ? waiter.reject(new Error(msg.error.message)) : waiter.resolve(msg.result);
-    });
-    await new Promise((resolve, reject) => {
-      ws.addEventListener("open", resolve);
-      ws.addEventListener("error", () => reject(new Error("CDP socket failed")));
-    });
-
-    const { targetId } = await send("Target.createTarget", { url: "about:blank" });
-    ({ sessionId: session } = await send("Target.attachToTarget", { targetId, flatten: true }));
-    await send("Page.enable", {}, session);
-    await send("Runtime.enable", {}, session);
-
     step("1. a virtual authenticator, standing in for the operator's phone");
-    await send("WebAuthn.enable", { enableUI: false }, session);
+    await send("WebAuthn.enable", { enableUI: false });
     const { authenticatorId } = await send("WebAuthn.addVirtualAuthenticator", {
       options: {
         protocol: "ctap2",
@@ -178,7 +53,7 @@ async function main() {
         isUserVerified: true,    // the fingerprint "succeeds"
         automaticPresenceSimulation: true,
       },
-    }, session);
+    });
     ok(`virtual platform authenticator attached (${authenticatorId.slice(0, 8)}…)`);
 
     step("2. enrol this browser as a terminal, then sign in as the admin");
@@ -245,7 +120,7 @@ async function main() {
     if (/Registered\./i.test(registered)) ok("the screen reports it registered");
     else bad("no success notice: " + trim(registered));
 
-    const held = await send("WebAuthn.getCredentials", { authenticatorId }, session);
+    const held = await send("WebAuthn.getCredentials", { authenticatorId });
     if (held.credentials?.length === 1) ok("the authenticator holds one credential — create() really ran");
     else bad(`the authenticator holds ${held.credentials?.length ?? 0} credentials`);
 
@@ -297,12 +172,10 @@ async function main() {
       ok("the revoked passkey no longer opens a session");
     }
   } finally {
-    try { ws?.close(); } catch { /* already gone */ }
-    chrome.kill();
+    await browser.close();
   }
 
-  console.log(`\n${pass.length} passed, ${fail.length} failed`);
-  if (fail.length > 0) process.exitCode = 1;
+  t.report();
 }
 
 await main();

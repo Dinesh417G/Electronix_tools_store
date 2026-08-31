@@ -181,7 +181,7 @@ try {
   if (row?.state === "CLOSED") t.ok("the session closed on submit (§10)");
   else t.bad(`session state is ${row?.state}, expected CLOSED`);
 } finally {
-  browser.close();
+  await browser.close();
   await sql.end({ timeout: 5 });
 }
 

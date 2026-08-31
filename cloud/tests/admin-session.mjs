@@ -180,7 +180,7 @@ try {
     update api_tokens set revoked_at = now()
      where kind = 'OPERATOR' and revoked_at is null and expires_at > now()`;
   await sql.end({ timeout: 5 });
-  browser.close();
+  await browser.close();
 }
 
 t.report();
