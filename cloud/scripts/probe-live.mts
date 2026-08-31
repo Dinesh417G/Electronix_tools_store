@@ -36,6 +36,17 @@
 //
 // The connection string is a credential. Pass it in the environment, never as
 // an argument — an argument lands in the process list and in shell history.
+//
+// DATABASE_URL is only ever used for three things: minting a tablet token,
+// picking a real item code, and picking an operator's zk_user_id for --write.
+// Supply those and no database is needed — the probe is measuring HTTP:
+//
+//   PROBE_TOKEN=… npm run probe -- --base https://… --item-code CNMG120408
+//   PROBE_TOKEN=… npm run probe -- --base https://… --item-code … --zk-user-id 1 --write
+//
+// A token is a credential too, so it takes PROBE_TOKEN from the environment
+// for the same reason. Whoever mints one that way owns revoking it — the
+// probe only revokes what it minted itself.
 
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 
@@ -47,18 +58,41 @@ const arg = (name: string): string | undefined => {
 
 const BASE = (arg("base") ?? process.env.STORE_BASE ?? "").replace(/\/$/, "");
 const WRITE = argv.includes("--write");
-const ROUNDS = Number(arg("rounds") ?? 5);
+// Defaults to MIN_SAMPLES_FOR_P95 (below) rather than 5, because a run too
+// short to compute the percentile it prints cannot reach a verdict — and a
+// default that cannot reach a verdict is the wrong default. 20 rounds is
+// about 12 s against a warm deployment.
+const ROUNDS = Number(arg("rounds") ?? 20);
+
+// A tablet token minted elsewhere. DATABASE_URL exists here only to mint one
+// and to pick a real item code, and the connection string is the hardest part
+// of running this at all — it is Sensitive on Vercel and the wrapper has to
+// prompt for the Supabase password. Given both, the read-only probe needs no
+// database: it is measuring HTTP. Whoever supplies the token owns revoking it.
+const GIVEN_TOKEN = arg("token") ?? process.env.PROBE_TOKEN;
+const GIVEN_ITEM = arg("item-code");
+// --write needs a zk_user_id to put in the ATTLOG line. §9.4 says an unknown
+// one is still recorded, so any value would "work" — but it would raise an
+// admin notice and measure the unknown-user path instead of the normal one.
+// Supply an enrolled operator's id, or let the database pick one.
+const GIVEN_ZK = arg("zk-user-id");
+const NEEDS_DB = !GIVEN_TOKEN || !GIVEN_ITEM || (WRITE && !GIVEN_ZK);
 
 if (!BASE) {
   console.error("--base https://… is required (or set STORE_BASE)");
   process.exit(1);
 }
-if (!process.env.DATABASE_URL) {
-  console.error("DATABASE_URL is required — it is how a tablet token is minted.");
+if (NEEDS_DB && !process.env.DATABASE_URL) {
+  console.error(
+    "DATABASE_URL is required — it is how a tablet token is minted.\n" +
+      "Or pass --token <t> AND --item-code <code> to run read-only without it.",
+  );
   process.exit(1);
 }
 
-const { sql } = await import("../src/lib/db.ts");
+// Imported only when it will be used: with a token and an item code supplied,
+// a read-only run should not need a connection string to exist.
+const sql = NEEDS_DB ? (await import("../src/lib/db.ts")).sql : null;
 
 /** §9, §11, §4. A budget of null means "no budget stated, report only". */
 const BUDGETS: Record<string, number | null> = {
@@ -110,17 +144,36 @@ async function timed(label: string, path: string, init: RequestInit = {}) {
   return { status, body, ms };
 }
 
+/**
+ * Nearest-rank percentile: the smallest value at or above which p% of the
+ * samples fall. The previous `floor((p/100) * n)` indexed one place low and,
+ * once clamped, returned the maximum for every n a run of this size produces.
+ */
 const pct = (values: number[], p: number) => {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))];
+  const rank = Math.ceil((p / 100) * sorted.length);
+  return sorted[Math.min(sorted.length - 1, Math.max(0, rank - 1))];
 };
 
+/**
+ * Below this many samples a "p95" is arithmetically the slowest single
+ * request — nearest-rank has nothing above it to point at. Reporting one
+ * outlier as a tail is how a measurement tool earns a reputation for crying
+ * wolf: a 5-round run once printed a lone 137 ms sample as "p95" and called
+ * a 100 ms budget breached, when the p95 over 30 rounds was 89 ms.
+ */
+const MIN_SAMPLES_FOR_P95 = 20;
+
 async function mintTabletToken(tabletId: string) {
+  // Only ever reached when no token was supplied, which is one of the three
+  // conditions that made NEEDS_DB true and the import happen.
+  const db = sql!;
+
   // api_tokens.tablet_id references tablets.tablet_id, so the device has to
   // exist before a token can name it. Marked inactive: this is a probe, not a
   // terminal anybody should be able to use.
-  await sql`
+  await db`
     insert into tablets (tablet_id, name, location, registered_at, active)
     values (${tabletId}, 'latency probe', 'probe-live.mts', now(), false)
     on conflict (tablet_id) do nothing`;
@@ -130,7 +183,7 @@ async function mintTabletToken(tabletId: string) {
   // credential on a public deployment.
   const token = randomBytes(32).toString("base64url");
   const hash = createHash("sha256").update(token).digest("hex");
-  await sql`
+  await db`
     insert into api_tokens (token_hash, kind, tablet_id, expires_at)
     values (${hash}, 'TABLET', ${tabletId}, now() + interval '30 minutes')`;
   return { token, hash };
@@ -138,18 +191,28 @@ async function mintTabletToken(tabletId: string) {
 
 async function main() {
   console.log(`probing ${BASE}`);
-  console.log(`mode: ${WRITE ? "READ + WRITE (this will leave ledger rows)" : "read only"}`);
+  // It leaves a punch and the session that punch offers, and NOTHING else:
+  // it never claims and never issues, so §7's ledger is untouched. The old
+  // wording here promised ledger rows and was wrong in the direction that
+  // matters — it would stop someone running the one check §9's budget needs.
+  console.log(
+    `mode: ${WRITE ? "READ + WRITE (leaves a punch and an unclaimed session; no ledger rows)" : "read only"}`,
+  );
   console.log(`rounds: ${ROUNDS}\n`);
 
   const serial = "PROBE-" + randomUUID().slice(0, 8);
   const tabletId = "probe-" + randomUUID().slice(0, 8);
-  const { token, hash } = await mintTabletToken(tabletId);
+  const { token, hash } = GIVEN_TOKEN
+    ? { token: GIVEN_TOKEN, hash: null }
+    : await mintTabletToken(tabletId);
   const auth = { Authorization: "Bearer " + token, "Content-Type": "application/json" };
 
   // Something to look up. A real item code is better than a synthetic one,
   // because the index behaviour is what is being measured.
-  const [anyItem] = await sql<{ item_code: string }[]>`
-    select item_code from items where active order by item_code limit 1`;
+  const [anyItem] = GIVEN_ITEM
+    ? [{ item_code: GIVEN_ITEM }]
+    : await sql!<{ item_code: string }[]>`
+        select item_code from items where active order by item_code limit 1`;
   if (!anyItem) {
     console.error("no active items — seed the catalog before probing lookup latency");
     process.exit(1);
@@ -183,9 +246,11 @@ async function main() {
 
     // §9: the device is the client. A punch is one tab-separated line, and the
     // response must be exactly `OK: <n>` or the device retries the batch.
-    const [operator] = await sql<{ zk_user_id: string }[]>`
-      select zk_user_id from operators
-       where zk_user_id is not null and active limit 1`;
+    const [operator] = GIVEN_ZK
+      ? [{ zk_user_id: GIVEN_ZK }]
+      : await sql!<{ zk_user_id: string }[]>`
+          select zk_user_id from operators
+           where zk_user_id is not null and active limit 1`;
     if (!operator) {
       console.log("  no operator has a zk_user_id — skipping the punch");
     } else {
@@ -209,21 +274,34 @@ async function main() {
 
   const labels = [...new Set(samples.map((s) => s.label))];
   let breached = 0;
+  const thin: string[] = [];
 
   for (const label of labels) {
     const rows = samples.filter((s) => s.label === label && !s.cold);
     const ms = rows.map((r) => r.ms);
     const budget = BUDGETS[label] ?? null;
-    const p95 = pct(ms, 95);
-    const over = budget !== null && p95 > budget;
+    const max = Math.max(0, ...ms);
+
+    // A tail needs samples to have a tail. With too few, say so in the column
+    // rather than printing the maximum under a percentile's name.
+    const haveTail = ms.length >= MIN_SAMPLES_FOR_P95;
+    const p95 = haveTail ? pct(ms, 95) : null;
+
+    // Only a real p95 can breach a budget. A single slow sample in a short run
+    // is worth mentioning — it is not worth failing the run over, and the
+    // advisory below says which it was.
+    const over = budget !== null && p95 !== null && p95 > budget;
     if (over) breached++;
+    if (!haveTail && budget !== null && max > budget) {
+      thin.push(`${label} — max ${max} ms over a ${budget} ms budget, from ${ms.length} sample(s)`);
+    }
 
     console.log(
       "  " + label.padEnd(36) +
       String(ms.length).padStart(3) +
       String(pct(ms, 50)).padStart(6) +
-      String(p95).padStart(7) +
-      String(Math.max(0, ...ms)).padStart(7) +
+      (p95 === null ? "—" : String(p95)).padStart(7) +
+      String(max).padStart(7) +
       (budget === null ? "        —" : String(budget).padStart(9)) +
       (over ? "   ⚠ OVER" : ""),
     );
@@ -243,6 +321,13 @@ async function main() {
     }
   }
 
+  if (thin.length > 0) {
+    console.log(`\n  too few samples for a p95 (need ${MIN_SAMPLES_FOR_P95}), and the slowest`);
+    console.log("  single request was over budget:");
+    for (const t of thin) console.log("    " + t);
+    console.log(`  Re-run with --rounds ${MIN_SAMPLES_FOR_P95} before believing it.`);
+  }
+
   console.log("\n── verdict ─────────────────────────────────────────────");
   if (breached === 0 && failures.length === 0) {
     console.log("  every stated budget met, every request answered.");
@@ -259,12 +344,16 @@ async function main() {
 
   // The token is revoked rather than left to expire: this ran against a
   // publicly reachable deployment.
-  await sql`update api_tokens set revoked_at = now() where token_hash = ${hash}`;
-  console.log("\n  probe token revoked.");
+  if (hash) {
+    await sql!`update api_tokens set revoked_at = now() where token_hash = ${hash}`;
+    console.log("\n  probe token revoked.");
+  } else {
+    console.log("\n  token was supplied, not minted — revoking it is the caller's job.");
+  }
 }
 
 try {
   await main();
 } finally {
-  await sql.end({ timeout: 5 });
+  await sql?.end({ timeout: 5 });
 }
