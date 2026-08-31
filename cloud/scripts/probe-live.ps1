@@ -13,8 +13,8 @@
   measured and STORE_ENROLMENT_SECRET is stored Sensitive and cannot be read
   back.
 
-    .\scripts\probe-live.ps1                 # read only, 5 rounds
-    .\scripts\probe-live.ps1 -Rounds 10
+    .\scripts\probe-live.ps1                 # read only, 20 rounds
+    .\scripts\probe-live.ps1 -Rounds 40
     .\scripts\probe-live.ps1 -Write          # adds ONE real ATTLOG push (§9's budget)
 
   -Write leaves a punch and an offered session on production. That session
@@ -25,7 +25,7 @@
 [CmdletBinding()]
 param(
   [string]$Base   = "https://electronix-tool-crib.vercel.app",
-  [int]   $Rounds = 5,
+  [int]   $Rounds = 20,
   [switch]$Write
 )
 
