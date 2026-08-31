@@ -1,4 +1,4 @@
-// GET /api/v1/ledger?item=&operator=&machine=&from=&to=&limit=&offset=
+// GET /api/v1/ledger?item=&operator=&machine=&reason=&from=&to=&limit=&offset=
 //
 // The history view. §7 makes this and "current stock" the same object rather
 // than two things that quietly disagree after six months.
@@ -18,6 +18,10 @@ export const GET = handler(async (request: Request) => {
   const item = p.get("item") || null;
   const operator = p.get("operator") || null;
   const machine = p.get("machine") || null;
+  // By code rather than by id: a storekeeper asking "show me the breakages" is
+  // asking about BREAKAGE, and the code is the stable thing — §6 seeds it, and
+  // the label is free to be renamed.
+  const reason = p.get("reason") || null;
   const from = p.get("from") || null;
   const to = p.get("to") || null;
   const limit = Math.min(Math.max(Number.parseInt(p.get("limit") ?? "50", 10) || 50, 1), 500);
@@ -40,6 +44,7 @@ export const GET = handler(async (request: Request) => {
      where (${item}::uuid is null or l.item_id = ${item}::uuid)
        and (${operator}::uuid is null or l.operator_id = ${operator}::uuid)
        and (${machine}::uuid is null or l.machine_id = ${machine}::uuid)
+       and (${reason}::text is null or r.code = ${reason}::text)
        and (${from}::timestamptz is null or l.created_at >= ${from}::timestamptz)
        and (${to}::timestamptz is null or l.created_at < ${to}::timestamptz)
      order by l.id desc

@@ -16,6 +16,8 @@ import {
   api,
   formatQty,
   getTerminalId,
+  type InsightItem,
+  type InsightView,
   type Item,
   type Machine,
   type ReasonCode,
@@ -25,6 +27,7 @@ import {
 import type { ConnectionState } from "../lib/events";
 import { enqueue, newTxnId } from "../lib/outbox";
 import { isScanningSupported, startScanner, type ScannerError } from "../lib/scanner";
+import { VIEW_LABELS, hintFor, viewDetail } from "./Filters";
 import { isPasskeySupported, signInWithPasskey } from "../lib/passkey";
 import { AlertChip, Banner, BigButton, ConnectionPill, Header, Screen, Spinner } from "../components/ui";
 
@@ -67,6 +70,7 @@ type Step =
       qty: string;
       machines: Machine[];
       reasonId: string | null;
+      note: string | null;
     }
   | {
       name: "confirm";
@@ -76,6 +80,8 @@ type Step =
       qty: string;
       machineId: string | null;
       reasonId: string | null;
+      /** What broke, in the operator's words. Required for a damage reason. */
+      note: string | null;
       /** Set only for a multi-machine issue; one ledger row will be written per
        *  entry. `qty` is then the total of these. */
       splits: Split[] | null;
@@ -263,6 +269,7 @@ export function Terminal({
     qty: string,
     machineId: string | null,
     reasonId: string | null,
+    note: string | null,
     splits: Split[] | null,
   ) => {
     setBusy(true);
@@ -282,6 +289,9 @@ export function Terminal({
           item_id: item.id,
           qty,
           reason_id: reasonId,
+          // What broke, when the reason says something did. It rides on every
+          // split row, because the batch describes one event.
+          ...(note ? { note } : {}),
           client_txn_uuid: txnId,
           // One key per row, minted here with the rest of the body. The body is
           // built once and re-sent verbatim on every retry — including out of
@@ -300,6 +310,7 @@ export function Terminal({
           ...(direction === "issue"
             ? { machine_id: machineId, reason_id: reasonId }
             : { reason_id: reasonId }),
+          ...(note ? { note } : {}),
           client_txn_uuid: txnId,
         };
 
@@ -448,7 +459,7 @@ export function Terminal({
       return (
         <OptionalScreen
           direction={step.direction}
-          onNext={(machines, reasonId) =>
+          onNext={(machines, reasonId, note) =>
             // One machine (or none) is the ordinary transaction. Two or more
             // means the operator is stocking several machines from one trip,
             // and each needs its own quantity before anything can be written.
@@ -461,6 +472,7 @@ export function Terminal({
                   qty: step.qty,
                   machines,
                   reasonId,
+                  note,
                 })
               : setStep({
                   name: "confirm",
@@ -470,6 +482,7 @@ export function Terminal({
                   qty: step.qty,
                   machineId: machines[0]?.id ?? null,
                   reasonId,
+                  note,
                   splits: null,
                 })
           }
@@ -494,6 +507,7 @@ export function Terminal({
           onNext={(splits) =>
             setStep({
               name: "confirm",
+              note: step.note,
               session: step.session,
               direction: step.direction,
               item: step.item,
@@ -531,6 +545,7 @@ export function Terminal({
               step.qty,
               step.machineId,
               step.reasonId,
+              step.note,
               step.splits,
             )
           }
@@ -913,6 +928,16 @@ function ItemScreen({
   const [catalog, setCatalog] = useState<Item[]>([]);
   const [catalogDone, setCatalogDone] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+
+  // Browsing starts on "Busiest" rather than alphabetically. An operator who
+  // opens the list is nearly always after something the shop gets through
+  // constantly, and A-to-Z puts a rarely-touched boring bar at the top. "All"
+  // is still one tap away, and the ranking is the same one the console shows,
+  // from the same endpoint (§12.4's argument, applied to a list rather than to
+  // a scan).
+  const [browseView, setBrowseView] = useState<InsightView | "all">("frequent");
+  const [insights, setInsights] = useState<InsightItem[] | null>(null);
+  const [insightError, setInsightError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const busyRef = useRef(false);
 
@@ -982,9 +1007,34 @@ function ItemScreen({
   }, [catalog.length]);
 
   useEffect(() => {
-    if (mode !== "browse" || catalog.length > 0) return;
+    if (mode !== "browse" || browseView !== "all" || catalog.length > 0) return;
     void loadMore();
-  }, [mode, catalog.length, loadMore]);
+  }, [mode, browseView, catalog.length, loadMore]);
+
+  useEffect(() => {
+    if (mode !== "browse" || browseView === "all") return;
+    let cancelled = false;
+    // Blanking has to be synchronous, or the previous view's rows sit under the
+    // new heading while the request is in flight — the same rule the console's
+    // report panel follows.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setInsights(null);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setInsightError(null);
+    api
+      .insights(browseView, 60)
+      .then((rows) => {
+        if (!cancelled) setInsights(rows);
+      })
+      .catch((err) => {
+        // Emptiness and failure are different things, on this screen too: an
+        // operator told "nothing here" walks to the bin and finds it full.
+        if (!cancelled) setInsightError(describe(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, browseView]);
 
   // Typeahead, debounced so a fast typist does not generate a request per key.
   useEffect(() => {
@@ -1033,17 +1083,66 @@ function ItemScreen({
 
         {mode === "browse" ? (
           <div className="space-y-3">
-            {catalog.map((item) => (
-              <ItemRow key={item.id} item={item} onClick={() => onPick(item)} />
-            ))}
-            {catalog.length === 0 && !loadingMore && (
-              <p className="py-6 text-center text-slate-500">The catalog is empty.</p>
-            )}
-            {loadingMore && <Spinner label="Loading the catalog…" />}
-            {!catalogDone && !loadingMore && catalog.length > 0 && (
-              <BigButton onClick={() => void loadMore()} variant="ghost" className="w-full">
-                Show more
-              </BigButton>
+            <div className="grid grid-cols-4 gap-1">
+              <button
+                type="button"
+                onClick={() => setBrowseView("all")}
+                className={`tap rounded-lg px-2 text-sm font-semibold ${
+                  browseView === "all" ? "bg-sky-600 text-white" : "bg-slate-800 text-slate-300"
+                }`}
+              >
+                All
+              </button>
+              {VIEW_LABELS.slice(0, 3).map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setBrowseView(option.value)}
+                  className={`tap rounded-lg px-2 text-sm font-semibold ${
+                    browseView === option.value
+                      ? "bg-sky-600 text-white"
+                      : "bg-slate-800 text-slate-300"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+
+            {browseView === "all" ? (
+              <>
+                {catalog.map((item) => (
+                  <ItemRow key={item.id} item={item} onClick={() => onPick(item)} />
+                ))}
+                {catalog.length === 0 && !loadingMore && (
+                  <p className="py-6 text-center text-slate-500">The catalog is empty.</p>
+                )}
+                {loadingMore && <Spinner label="Loading the catalog…" />}
+                {!catalogDone && !loadingMore && catalog.length > 0 && (
+                  <BigButton onClick={() => void loadMore()} variant="ghost" className="w-full">
+                    Show more
+                  </BigButton>
+                )}
+              </>
+            ) : insightError ? (
+              <Banner tone="warn">
+                This list did not load. {insightError} Tap All, or search instead.
+              </Banner>
+            ) : insights === null ? (
+              <Spinner label="Working out what moves…" />
+            ) : insights.length === 0 ? (
+              <p className="py-6 text-center text-slate-500">
+                Nothing to show under {hintFor(browseView)}.
+              </p>
+            ) : (
+              insights.map((item) => (
+                <div key={item.id}>
+                  <ItemRow item={item} onClick={() => onPick(item)} />
+                  <p className="px-4 pt-1 text-xs text-slate-500">
+                    {viewDetail(browseView, item)}
+                  </p>
+                </div>
+              ))
             )}
           </div>
         ) : mode === "scan" ? (
@@ -1257,6 +1356,16 @@ function QuantityScreen({
 
 // ── 6. Optional: machine and reason (§12.6) ─────────────────────────────
 
+/**
+ * Reason codes that mean a tool was destroyed rather than used up.
+ *
+ * By code, not by label: §6 seeds the codes and an admin can rename the label
+ * to anything, so matching on the display text would silently stop asking the
+ * moment somebody typed "Broken in cut (report!)". A reason added later that
+ * also means damage belongs in this set.
+ */
+const DAMAGE_REASONS = new Set(["BREAKAGE", "SCRAP", "DAMAGE"]);
+
 function OptionalScreen({
   direction,
   onNext,
@@ -1264,7 +1373,7 @@ function OptionalScreen({
   banner,
 }: {
   direction: Direction;
-  onNext: (machines: Machine[], reasonId: string | null) => void;
+  onNext: (machines: Machine[], reasonId: string | null, note: string | null) => void;
   onBack: () => void;
   banner: React.ReactNode;
 }) {
@@ -1274,6 +1383,7 @@ function OptionalScreen({
   // add, tap again to remove; picking exactly one behaves as it always did.
   const [picked, setPicked] = useState<string[]>([]);
   const [reasonId, setReasonId] = useState<string | null>(null);
+  const [note, setNote] = useState("");
 
   useEffect(() => {
     void (async () => {
@@ -1293,6 +1403,17 @@ function OptionalScreen({
       reasons.filter((r) => r.applies_to === (direction === "issue" ? "ISSUE" : "RECEIPT")),
     [reasons, direction],
   );
+
+  // Damage is the one reason worth interrupting somebody for.
+  //
+  // Everything else on this screen is optional by design (§12.6) and skipping
+  // must never be slower than filling. A breakage is different: "BREAKAGE, 2"
+  // tells the storekeeper a tool broke and nothing about whether it was a bad
+  // insert, a crash, or the wrong feed — which is the only part anybody can act
+  // on. The cost is one sentence, and only on the transactions where the shop
+  // has already lost a tool.
+  const damaged = applicable.find((r) => r.id === reasonId && DAMAGE_REASONS.has(r.code));
+  const needsNote = damaged !== undefined && note.trim().length < 3;
 
   return (
     <Screen>
@@ -1338,10 +1459,34 @@ function OptionalScreen({
                   key={r.id}
                   label={r.label}
                   selected={reasonId === r.id}
-                  onClick={() => setReasonId(reasonId === r.id ? null : r.id)}
+                  onClick={() => {
+                    const next = reasonId === r.id ? null : r.id;
+                    setReasonId(next);
+                    if (next === null || !DAMAGE_REASONS.has(r.code)) setNote("");
+                  }}
                 />
               ))}
             </div>
+
+            {damaged && (
+              <div className="pt-3">
+                <label className="block text-sm font-semibold text-slate-400">
+                  WHAT HAPPENED?
+                  <span className="pl-2 font-normal text-amber-400">required</span>
+                </label>
+                <input
+                  autoFocus
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="Crashed into the fixture / bad edge out of the box"
+                  className="tap mt-1 w-full rounded-xl bg-slate-800 px-4 text-base outline-none placeholder:text-slate-500 focus:ring-2 focus:ring-amber-500"
+                />
+                <p className="pt-1 text-xs text-slate-500">
+                  {damaged.label} on its own says a tool broke. This says why, which
+                  is the part somebody can act on.
+                </p>
+              </div>
+            )}
           </section>
         )}
       </div>
@@ -1349,7 +1494,11 @@ function OptionalScreen({
       {/* §12.6: skipping must never be slower than filling. SKIP is the biggest
           control here, and it is reachable without scrolling. */}
       <div className="space-y-2 px-4 pt-3">
-        <BigButton onClick={() => onNext([], null)} variant="ghost" className="w-full">
+        <BigButton
+          onClick={() => onNext([], null, null)}
+          variant="ghost"
+          className="w-full"
+        >
           SKIP
         </BigButton>
         <BigButton
@@ -1361,10 +1510,12 @@ function OptionalScreen({
                 .map((id) => machines.find((m) => m.id === id))
                 .filter((m): m is Machine => m !== undefined),
               reasonId,
+              note.trim() === "" ? null : note.trim(),
             )
           }
           variant="primary"
           className="w-full"
+          disabled={needsNote}
         >
           Next
         </BigButton>
