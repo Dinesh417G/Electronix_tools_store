@@ -36,6 +36,17 @@
 //
 // The connection string is a credential. Pass it in the environment, never as
 // an argument — an argument lands in the process list and in shell history.
+//
+// DATABASE_URL is only ever used for three things: minting a tablet token,
+// picking a real item code, and picking an operator's zk_user_id for --write.
+// Supply those and no database is needed — the probe is measuring HTTP:
+//
+//   PROBE_TOKEN=… npm run probe -- --base https://… --item-code CNMG120408
+//   PROBE_TOKEN=… npm run probe -- --base https://… --item-code … --zk-user-id 1 --write
+//
+// A token is a credential too, so it takes PROBE_TOKEN from the environment
+// for the same reason. Whoever mints one that way owns revoking it — the
+// probe only revokes what it minted itself.
 
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 
@@ -49,16 +60,35 @@ const BASE = (arg("base") ?? process.env.STORE_BASE ?? "").replace(/\/$/, "");
 const WRITE = argv.includes("--write");
 const ROUNDS = Number(arg("rounds") ?? 5);
 
+// A tablet token minted elsewhere. DATABASE_URL exists here only to mint one
+// and to pick a real item code, and the connection string is the hardest part
+// of running this at all — it is Sensitive on Vercel and the wrapper has to
+// prompt for the Supabase password. Given both, the read-only probe needs no
+// database: it is measuring HTTP. Whoever supplies the token owns revoking it.
+const GIVEN_TOKEN = arg("token") ?? process.env.PROBE_TOKEN;
+const GIVEN_ITEM = arg("item-code");
+// --write needs a zk_user_id to put in the ATTLOG line. §9.4 says an unknown
+// one is still recorded, so any value would "work" — but it would raise an
+// admin notice and measure the unknown-user path instead of the normal one.
+// Supply an enrolled operator's id, or let the database pick one.
+const GIVEN_ZK = arg("zk-user-id");
+const NEEDS_DB = !GIVEN_TOKEN || !GIVEN_ITEM || (WRITE && !GIVEN_ZK);
+
 if (!BASE) {
   console.error("--base https://… is required (or set STORE_BASE)");
   process.exit(1);
 }
-if (!process.env.DATABASE_URL) {
-  console.error("DATABASE_URL is required — it is how a tablet token is minted.");
+if (NEEDS_DB && !process.env.DATABASE_URL) {
+  console.error(
+    "DATABASE_URL is required — it is how a tablet token is minted.\n" +
+      "Or pass --token <t> AND --item-code <code> to run read-only without it.",
+  );
   process.exit(1);
 }
 
-const { sql } = await import("../src/lib/db.ts");
+// Imported only when it will be used: with a token and an item code supplied,
+// a read-only run should not need a connection string to exist.
+const sql = NEEDS_DB ? (await import("../src/lib/db.ts")).sql : null;
 
 /** §9, §11, §4. A budget of null means "no budget stated, report only". */
 const BUDGETS: Record<string, number | null> = {
@@ -117,10 +147,14 @@ const pct = (values: number[], p: number) => {
 };
 
 async function mintTabletToken(tabletId: string) {
+  // Only ever reached when no token was supplied, which is one of the three
+  // conditions that made NEEDS_DB true and the import happen.
+  const db = sql!;
+
   // api_tokens.tablet_id references tablets.tablet_id, so the device has to
   // exist before a token can name it. Marked inactive: this is a probe, not a
   // terminal anybody should be able to use.
-  await sql`
+  await db`
     insert into tablets (tablet_id, name, location, registered_at, active)
     values (${tabletId}, 'latency probe', 'probe-live.mts', now(), false)
     on conflict (tablet_id) do nothing`;
@@ -130,7 +164,7 @@ async function mintTabletToken(tabletId: string) {
   // credential on a public deployment.
   const token = randomBytes(32).toString("base64url");
   const hash = createHash("sha256").update(token).digest("hex");
-  await sql`
+  await db`
     insert into api_tokens (token_hash, kind, tablet_id, expires_at)
     values (${hash}, 'TABLET', ${tabletId}, now() + interval '30 minutes')`;
   return { token, hash };
@@ -143,13 +177,17 @@ async function main() {
 
   const serial = "PROBE-" + randomUUID().slice(0, 8);
   const tabletId = "probe-" + randomUUID().slice(0, 8);
-  const { token, hash } = await mintTabletToken(tabletId);
+  const { token, hash } = GIVEN_TOKEN
+    ? { token: GIVEN_TOKEN, hash: null }
+    : await mintTabletToken(tabletId);
   const auth = { Authorization: "Bearer " + token, "Content-Type": "application/json" };
 
   // Something to look up. A real item code is better than a synthetic one,
   // because the index behaviour is what is being measured.
-  const [anyItem] = await sql<{ item_code: string }[]>`
-    select item_code from items where active order by item_code limit 1`;
+  const [anyItem] = GIVEN_ITEM
+    ? [{ item_code: GIVEN_ITEM }]
+    : await sql!<{ item_code: string }[]>`
+        select item_code from items where active order by item_code limit 1`;
   if (!anyItem) {
     console.error("no active items — seed the catalog before probing lookup latency");
     process.exit(1);
@@ -183,9 +221,11 @@ async function main() {
 
     // §9: the device is the client. A punch is one tab-separated line, and the
     // response must be exactly `OK: <n>` or the device retries the batch.
-    const [operator] = await sql<{ zk_user_id: string }[]>`
-      select zk_user_id from operators
-       where zk_user_id is not null and active limit 1`;
+    const [operator] = GIVEN_ZK
+      ? [{ zk_user_id: GIVEN_ZK }]
+      : await sql!<{ zk_user_id: string }[]>`
+          select zk_user_id from operators
+           where zk_user_id is not null and active limit 1`;
     if (!operator) {
       console.log("  no operator has a zk_user_id — skipping the punch");
     } else {
@@ -259,12 +299,16 @@ async function main() {
 
   // The token is revoked rather than left to expire: this ran against a
   // publicly reachable deployment.
-  await sql`update api_tokens set revoked_at = now() where token_hash = ${hash}`;
-  console.log("\n  probe token revoked.");
+  if (hash) {
+    await sql!`update api_tokens set revoked_at = now() where token_hash = ${hash}`;
+    console.log("\n  probe token revoked.");
+  } else {
+    console.log("\n  token was supplied, not minted — revoking it is the caller's job.");
+  }
 }
 
 try {
   await main();
 } finally {
-  await sql.end({ timeout: 5 });
+  await sql?.end({ timeout: 5 });
 }
