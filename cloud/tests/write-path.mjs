@@ -185,6 +185,40 @@ try {
     );
   }
 
+  // The other way a query escapes the shape the pooler expects: several of them
+  // started at once on the one connection `max: 1` allows.
+  //
+  // `/api/v1/admin/devices` ran three in a `Promise.all`, and it was the only
+  // route in the app that did. It was also the only route that hung — 503 at
+  // the deadline, every time, on production `dc08acd`, while every other
+  // authenticated route answered in about 200 ms. postgres.js pipelines them
+  // onto one socket as though it owns the connection; Supavisor in transaction
+  // mode hands out a connection per transaction. The desync leaves the backend
+  // `active` on `ClientRead` holding an open transaction, and the next request
+  // on that instance behind it.
+  //
+  // Step 4 below drives eight concurrent reads and passes, which is exactly why
+  // this is a source check: there is no pooler in front of a local Postgres, so
+  // nothing here can reproduce it. Same blind spot as 2026-08-28.
+  const concurrent = [];
+  for (const file of serverSources) {
+    const text = await readFile(file, "utf8");
+    const lines = text.split("\n");
+    lines.forEach((line, i) => {
+      if (!line.includes("Promise.all")) return;
+      const window = lines.slice(i, i + 12).join("\n");
+      if (/sql`|tx`/.test(window)) concurrent.push(`${file}:${i + 1}`);
+    });
+  }
+  if (concurrent.length === 0) {
+    ok("no route starts two queries at once on the one pooled connection");
+  } else {
+    bad(
+      "queries are started concurrently on a max:1 connection, which desyncs " +
+      "through the transaction pooler: " + concurrent.join(", "),
+    );
+  }
+
   const dbSource = await readFile("src/lib/db.ts", "utf8");
   const deadline = dbSource.match(/DB_DEADLINE_MS\s*=\s*([\d_]+)/);
   const statementMs = millis(limits.statement_timeout);
