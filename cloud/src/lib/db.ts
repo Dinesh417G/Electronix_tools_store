@@ -49,7 +49,7 @@ declare global {
  * So: wait longer than any bound the database owns, then stop waiting and
  * throw the connection away.
  */
-export const QUERY_DEADLINE_MS = 20_000;
+export const DB_DEADLINE_MS = 20_000;
 
 /**
  * Drop the shared connection so the next caller builds a fresh one.
@@ -60,7 +60,7 @@ export const QUERY_DEADLINE_MS = 20_000;
  * `ClientRead`, which otherwise sits there holding an open transaction until
  * the platform kills us.
  */
-function discardConnection(): void {
+export function discardConnection(): void {
   const wedged = globalThis.__toolCribSql;
   globalThis.__toolCribSql = undefined;
   // `timeout: 0` destroys rather than draining. Draining is exactly what is
@@ -68,7 +68,14 @@ function discardConnection(): void {
   void wedged?.end({ timeout: 0 }).catch(() => {});
 }
 
-function withDeadline<T>(work: PromiseLike<T>, what: string): Promise<T> {
+/**
+ * Race `work` against the deadline, throwing the connection away if it wins.
+ *
+ * Used by `handler()` on every route. It is exported from this file rather
+ * than written there because the number and the connection it discards both
+ * belong to the database, and a second copy of either is how they drift apart.
+ */
+export function withDbDeadline<T>(work: PromiseLike<T>, what: string): Promise<T> {
   const startedAt = Date.now();
   let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -76,7 +83,7 @@ function withDeadline<T>(work: PromiseLike<T>, what: string): Promise<T> {
     timer = setTimeout(() => {
       discardConnection();
       reject(new QueryDeadlineError(what, Date.now() - startedAt));
-    }, QUERY_DEADLINE_MS);
+    }, DB_DEADLINE_MS);
   });
 
   return Promise.race([work, deadline]).finally(() => clearTimeout(timer)) as Promise<T>;
@@ -181,25 +188,20 @@ function client(): Sql {
  * proxy forwards the call and every property (`.begin`, `.unsafe`, `.json`…)
  * to a client built on first use.
  *
- * Two things go through `QUERY_DEADLINE_MS`: a plain query, and `.begin`. They
- * are every path a route takes to the database. `.unsafe` is left alone on
- * purpose — the seed runs a whole migration script through it, and a script is
- * allowed to take longer than a request.
+ * Nothing is wrapped here, and that is a correction rather than an omission.
+ * The deadline was tried at this layer first and broke the app immediately:
+ * a query object is not only a promise, it is also postgres.js's **fragment**,
+ * and `items.ts` composes with it — `sql\`${select()} where i.id = ${id}\``.
+ * Returning a real promise from the call turns that fragment into a bound
+ * parameter, and Postgres answers `syntax error at or near "$1"`. So the bound
+ * lives one layer out, in `handler()`, where a request is a request and no
+ * driver protocol runs through it.
  */
 export const sql: Sql = new Proxy(function noop() {} as unknown as Sql, {
   apply(_target, _thisArg, args: Parameters<Sql>) {
-    const query = (client() as unknown as (...a: unknown[]) => PromiseLike<unknown>)(...args);
-    return withDeadline(query, "query");
+    return (client() as unknown as (...a: unknown[]) => unknown)(...args);
   },
   get(_target, property, receiver) {
-    const value = Reflect.get(client() as object, property, receiver);
-    if (property !== "begin" || typeof value !== "function") return value;
-
-    const owner = client();
-    return (...args: unknown[]) =>
-      withDeadline(
-        (value as (...a: unknown[]) => PromiseLike<unknown>).apply(owner, args),
-        "transaction",
-      );
+    return Reflect.get(client() as object, property, receiver);
   },
 }) as Sql;

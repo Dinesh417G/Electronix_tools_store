@@ -186,13 +186,13 @@ try {
   }
 
   const dbSource = await readFile("src/lib/db.ts", "utf8");
-  const deadline = dbSource.match(/QUERY_DEADLINE_MS\s*=\s*([\d_]+)/);
+  const deadline = dbSource.match(/DB_DEADLINE_MS\s*=\s*([\d_]+)/);
   const statementMs = millis(limits.statement_timeout);
   if (!deadline) {
-    bad("db.ts sets no QUERY_DEADLINE_MS — a wedged socket is bounded by nothing");
+    bad("db.ts sets no DB_DEADLINE_MS — a wedged socket is bounded by nothing");
   } else if (Number(deadline[1].replace(/_/g, "")) <= statementMs) {
     bad(
-      "QUERY_DEADLINE_MS is not above statement_timeout, so it fires on queries " +
+      "DB_DEADLINE_MS is not above statement_timeout, so it fires on queries " +
       "the database would have reported on itself",
     );
   } else {

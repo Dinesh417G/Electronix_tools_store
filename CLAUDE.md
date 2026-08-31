@@ -982,7 +982,9 @@ way rather than designed in:
   times out of five, `pg_stat_activity` showing that SELECT parked for 4m55s,
   and the console reading *"did not answer within 25.2s"*. The rule is now
   gated by `tests/write-path.mjs`: **no `void sql` anywhere the server runs**,
-  and `db.ts` bounds every query and transaction at `QUERY_DEADLINE_MS`, set
+  and `db.ts` sets `DB_DEADLINE_MS` above `statement_timeout` — a bound on the
+  whole request, applied in `handler()`, that also throws the connection away
+  when it fires so the instance is not poisoned for the rest of its life. It is
   above `statement_timeout` because it exists for what the database cannot
   report.
 
