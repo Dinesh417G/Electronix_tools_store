@@ -5,6 +5,7 @@
 
 import { NextResponse } from "next/server";
 import { ApiError, toApiError } from "./api-error.ts";
+import { withDbDeadline } from "./db.ts";
 
 export { ApiError, toApiError } from "./api-error.ts";
 
@@ -19,13 +20,29 @@ export function errorResponse(e: unknown) {
   );
 }
 
-/** Wraps a route handler so thrown ApiErrors become responses. */
+/**
+ * Wraps a route handler so thrown ApiErrors become responses — and so no route
+ * can wait on the database forever.
+ *
+ * The deadline is here, on the whole request, rather than on each query. It
+ * was tried on the query first and broke composition: postgres.js's query
+ * object doubles as a SQL fragment, and `items.ts` builds its selects out of
+ * them, so returning a plain promise turned a fragment into a bound parameter
+ * (`syntax error at or near "$1"`). A request is the honest unit anyway — the
+ * failure it exists for is an instance whose only connection has stopped
+ * answering, and that kills the request whichever query notices first.
+ *
+ * `withDbDeadline` discards the connection when it fires, so the next request
+ * on this instance builds a fresh one. Without that the instance stays
+ * poisoned for its whole life, which is what made the Door screen's Refresh
+ * button useless on 2026-08-31.
+ */
 export function handler<T extends unknown[]>(
   fn: (...args: T) => Promise<Response>,
 ) {
   return async (...args: T): Promise<Response> => {
     try {
-      return await fn(...args);
+      return await withDbDeadline(fn(...args), "request");
     } catch (e) {
       return errorResponse(e);
     }

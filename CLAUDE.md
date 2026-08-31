@@ -968,6 +968,26 @@ way rather than designed in:
   `authoriseSession` like every other write, and by bounding the UPDATE with
   the same `IDLE_TIMEOUT_MS` the state machine reads.
 
+- **A query that is not awaited can outlive the request, and on this platform
+  that wedges the connection.** `authenticate` used to touch `last_used_at` and
+  `last_seen_at` with `void sql\`…\`.catch(() => {})`. A serverless instance is
+  frozen the moment its response is delivered, so an unawaited query can be
+  suspended part-way through its protocol exchange; the backend is then left
+  `active` on `ClientRead` holding an open transaction, and with `max: 1`
+  (`db.ts`) that is the instance's only connection. `statement_timeout` cannot
+  see it — nothing is executing — and neither can
+  `idle_in_transaction_session_timeout`, because the session is not idle. Every
+  later request on that instance queued until Vercel killed the function at
+  300 s. Observed on 2026-08-31 as `GET /api/v1/admin/devices` hanging five
+  times out of five, `pg_stat_activity` showing that SELECT parked for 4m55s,
+  and the console reading *"did not answer within 25.2s"*. The rule is now
+  gated by `tests/write-path.mjs`: **no `void sql` anywhere the server runs**,
+  and `db.ts` sets `DB_DEADLINE_MS` above `statement_timeout` — a bound on the
+  whole request, applied in `handler()`, that also throws the connection away
+  when it fires so the instance is not poisoned for the rest of its life. It is
+  above `statement_timeout` because it exists for what the database cannot
+  report.
+
 What is still not covered: `typecheck` cannot see the database, so a column
 rename passes CI and fails at runtime anywhere these paths do not go. And
 nothing asserts that a table added by a later migration enables RLS (§6) —

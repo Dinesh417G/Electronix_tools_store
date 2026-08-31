@@ -92,7 +92,43 @@ function bearer(request: Request): string | null {
   return token.length > 0 ? token : null;
 }
 
-/** Resolves the caller, or throws 401. */
+/**
+ * How coarse "last used" is allowed to be.
+ *
+ * These two columns are diagnostics — *is this token still in use, is that
+ * tablet still on the wall* — and neither is read to the second anywhere. A
+ * minute of granularity turns a write on every single authenticated request
+ * into roughly one a minute per token, which also takes the row-lock
+ * contention with it: the live view polls every 2 s (§4) on the same token the
+ * terminal is using.
+ */
+const TOUCH_INTERVAL = "60 seconds";
+
+/**
+ * Resolves the caller, or throws 401.
+ *
+ * The touch of `api_tokens.last_used_at` and `tablets.last_seen_at` happens
+ * **inside this one statement**, and that is not a micro-optimisation.
+ *
+ * They used to be two `void sql\`…\`.catch(() => {})` calls — fired, never
+ * awaited, on every authenticated request. On a serverless platform there is no
+ * "after the response": the instance is frozen the moment the response is
+ * delivered, so an unawaited query can be suspended part-way through writing
+ * its protocol exchange. The backend is then left `active` on `ClientRead`
+ * holding an open transaction, waiting for the rest of a message from a process
+ * that is not running — and with `max: 1` (db.ts) that is the instance's only
+ * connection. Every later request on it queued behind a conversation neither
+ * side would ever continue.
+ *
+ * That is the 2026-08-31 Door outage: `GET /api/v1/admin/devices` hung five
+ * times out of five for 40 s at the client, `pg_stat_activity` showed this very
+ * SELECT parked on `ClientRead` for 4m55s, and it was reached through
+ * `authenticate` — which is to say through the fire-and-forget that had run on
+ * the request *before* it.
+ *
+ * A statement that is awaited cannot be stranded. db.ts's deadline is the
+ * backstop for the same failure arriving another way; this is the fix.
+ */
 export async function authenticate(request: Request): Promise<Auth> {
   const token = bearer(request);
   if (!token) throw ApiError.unauthorized("missing bearer token");
@@ -108,29 +144,34 @@ export async function authenticate(request: Request): Promise<Auth> {
       active: boolean | null;
     }[]
   >`
-    select t.id, t.kind, t.tablet_id, t.operator_id,
-           o.role, o.emp_code, o.active
-      from api_tokens t
-      left join operators o on o.id = t.operator_id
-     where t.token_hash = ${hashToken(token)}
-       and t.revoked_at is null
-       and (t.expires_at is null or t.expires_at > now())
-     limit 1
+    with hit as (
+      select t.id, t.kind, t.tablet_id, t.operator_id,
+             o.role, o.emp_code, o.active,
+             (t.last_used_at is null
+               or t.last_used_at < now() - ${TOUCH_INTERVAL}::interval) as stale
+        from api_tokens t
+        left join operators o on o.id = t.operator_id
+       where t.token_hash = ${hashToken(token)}
+         and t.revoked_at is null
+         and (t.expires_at is null or t.expires_at > now())
+       limit 1
+    ),
+    touched_token as (
+      update api_tokens set last_used_at = now()
+       where id in (select id from hit where stale)
+    ),
+    touched_tablet as (
+      update tablets set last_seen_at = now()
+       where tablet_id in (select tablet_id from hit where stale and kind = 'TABLET')
+    )
+    select id, kind, tablet_id, operator_id, role, emp_code, active from hit
   `;
 
   const row = rows[0];
   if (!row) throw ApiError.unauthorized("token is not valid");
 
-  // Best-effort; a failed touch must not fail the request it was observing.
-  void sql`update api_tokens set last_used_at = now() where id = ${row.id}`.catch(
-    () => {},
-  );
-
   if (row.kind === "TABLET") {
     if (!row.tablet_id) throw ApiError.unauthorized("tablet token has no tablet");
-    void sql`
-      update tablets set last_seen_at = now() where tablet_id = ${row.tablet_id}
-    `.catch(() => {});
     return { kind: "TABLET", tabletId: row.tablet_id };
   }
 

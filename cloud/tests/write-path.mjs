@@ -37,6 +37,8 @@
 //     node --experimental-strip-types tests/write-path.mjs
 
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
 import postgres from "postgres";
 import { sql as appSql } from "../src/lib/db.ts";
 
@@ -125,6 +127,76 @@ try {
         "function hang for 300 s while the operator watched 'Saving…'.",
       );
     }
+  }
+
+  step("1b. nothing bounded by the database can be left outside it");
+  // The 2026-08-31 sequel to the outage above, and a different shape of the
+  // same lesson.
+  //
+  // `authenticate()` fired two touches per request as
+  // `void sql\`update …\`.catch(() => {})` — issued, never awaited. On this
+  // platform there is no "after the response": the instance is frozen the
+  // moment the response is delivered, so an unawaited query can be suspended
+  // part-way through its protocol exchange. What that leaves behind was
+  // visible in `pg_stat_activity` on the live database:
+  //
+  //   state=active  wait_event=ClientRead  xact_age=00:04:55
+  //   query: select t.id, t.kind … from api_tokens t left join operators o …
+  //
+  // `active` on `ClientRead` is not executing, so `statement_timeout` never
+  // counts it; it is not `idle in transaction`, so
+  // `idle_in_transaction_session_timeout` never counts it either. Step 1's
+  // three bounds are blind to it by construction. With `max: 1` that socket is
+  // the instance's only connection, so every later request queued behind it
+  // until Vercel killed the function at 300 s — the console's Door screen read
+  // "did not answer within 25.2s" and `/api/v1/admin/devices` hung five times
+  // out of five.
+  //
+  // So this is a source check, deliberately: the defect is a query that
+  // *escapes the request*, and no assertion made from inside a request can see
+  // one. Both halves of the fix are checked — no fire-and-forget on the server,
+  // and a deadline above `statement_timeout` for when one arrives another way.
+  const serverSources = [];
+  const walk = async (dir) => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      else if (/\.tsx?$/.test(entry.name)) serverSources.push(full);
+    }
+  };
+  await walk("src/lib");
+  await walk("src/app");
+
+  const stranded = [];
+  for (const file of serverSources) {
+    const text = await readFile(file, "utf8");
+    for (const [i, line] of text.split("\n").entries()) {
+      if (line.includes("void sql`") || line.includes("void tx`")) {
+        stranded.push(file + ":" + (i + 1));
+      }
+    }
+  }
+  if (stranded.length === 0) {
+    ok("no query is fired without being awaited (" + serverSources.length + " files)");
+  } else {
+    bad(
+      "a query is fired and never awaited, which is what wedged the connection " +
+      "on 2026-08-31: " + stranded.join(", "),
+    );
+  }
+
+  const dbSource = await readFile("src/lib/db.ts", "utf8");
+  const deadline = dbSource.match(/DB_DEADLINE_MS\s*=\s*([\d_]+)/);
+  const statementMs = millis(limits.statement_timeout);
+  if (!deadline) {
+    bad("db.ts sets no DB_DEADLINE_MS — a wedged socket is bounded by nothing");
+  } else if (Number(deadline[1].replace(/_/g, "")) <= statementMs) {
+    bad(
+      "DB_DEADLINE_MS is not above statement_timeout, so it fires on queries " +
+      "the database would have reported on itself",
+    );
+  } else {
+    ok("db.ts bounds a query at " + deadline[1] + " ms, above statement_timeout");
   }
 
   step("2. fixtures");

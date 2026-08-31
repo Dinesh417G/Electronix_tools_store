@@ -14,6 +14,28 @@
 //   410  submit after close     → re-open the claim screen, keep the typing
 //   409  second tablet claims   → show which tablet holds it
 
+/**
+ * Our own deadline fired on a query the database never reported on.
+ *
+ * Lives here rather than in db.ts so `toApiError` can recognise it without
+ * importing the database into the error module — the same split, and the same
+ * reason, as everything else in this file.
+ *
+ * It means something narrower than "slow". `statement_timeout` (15 s) covers a
+ * query Postgres is *executing*; a backend parked on `ClientRead` is not
+ * executing anything, so no database-side bound can ever fire on it. That is
+ * the state the 2026-08-31 outage sat in — see db.ts.
+ */
+export class QueryDeadlineError extends Error {
+  readonly waitedMs: number;
+
+  constructor(what: string, waitedMs: number) {
+    super(`the database did not answer a ${what} within ${(waitedMs / 1000).toFixed(1)}s`);
+    this.name = "QueryDeadlineError";
+    this.waitedMs = waitedMs;
+  }
+}
+
 export class ApiError extends Error {
   // Declared and assigned rather than written as constructor parameter
   // properties: strip-only type erasure emits no code, so it cannot synthesise
@@ -96,6 +118,17 @@ const PG_CODES: Record<string, (message: string) => ApiError> = {
 
 export function toApiError(e: unknown): ApiError {
   if (e instanceof ApiError) return e;
+
+  // Same class of answer as 57014 and for the same reason: the statement was
+  // abandoned, so nothing was committed and a retry is safe. The difference is
+  // only who noticed — us, because the database could not.
+  if (e instanceof QueryDeadlineError) {
+    return new ApiError(
+      503,
+      "DB_UNRESPONSIVE",
+      "The database connection stopped answering. Nothing was saved — try again.",
+    );
+  }
 
   const pg = e as { code?: string; message?: string };
   if (pg?.code && PG_CODES[pg.code]) {
