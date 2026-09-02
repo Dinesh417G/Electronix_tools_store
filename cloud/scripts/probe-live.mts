@@ -27,12 +27,25 @@
 // deployment at all (§3's outbound route), or whether its firmware agrees with
 // §9's parameter names. Only the capture against real hardware settles those.
 //
+// `--adms-only` needs no credential of any kind, and that is worth knowing:
+// the two endpoints §9's budget is about are *device* endpoints, so measuring
+// the one number that decides whether a real terminal duplicates punches has
+// never actually required the Supabase password. It was measured this way for
+// the first time on 2026-09-02 against production — handshake p50 85 ms,
+// ATTLOG `OK: 1` in 71-95 ms, worst of twelve 166 ms, all inside the 200 ms
+// budget on a warm instance.
+//
 // Usage — DATABASE_URL is needed to mint a tablet token, because enrolment
 // needs STORE_ENROLMENT_SECRET and that is stored Sensitive on Vercel and
 // cannot be read back:
 //
 //   DATABASE_URL=… npm run probe -- --base https://electronix-tool-crib.vercel.app
 //   DATABASE_URL=… npm run probe -- --base https://…  --write
+//
+// Or, with nothing but the URL:
+//
+//   npm run probe -- --base https://… --adms-only
+//   npm run probe -- --base https://… --adms-only --write     # adds one punch
 //
 // The connection string is a credential. Pass it in the environment, never as
 // an argument — an argument lands in the process list and in shell history.
@@ -76,7 +89,17 @@ const GIVEN_ITEM = arg("item-code");
 // admin notice and measure the unknown-user path instead of the normal one.
 // Supply an enrolled operator's id, or let the database pick one.
 const GIVEN_ZK = arg("zk-user-id");
-const NEEDS_DB = !GIVEN_TOKEN || !GIVEN_ITEM || (WRITE && !GIVEN_ZK);
+
+/**
+ * Measure only §9's two device endpoints, which authenticate nobody.
+ *
+ * This is the mode to reach for when the budget is the question, because it
+ * asks for no secret: no connection string, no tablet token, nothing to
+ * revoke afterwards. What it gives up is the §11 and §4 lines — lookup,
+ * search, unclaimed, alerts — which do need a token.
+ */
+const ADMS_ONLY = argv.includes("--adms-only");
+const NEEDS_DB = !ADMS_ONLY && (!GIVEN_TOKEN || !GIVEN_ITEM || (WRITE && !GIVEN_ZK));
 
 if (!BASE) {
   console.error("--base https://… is required (or set STORE_BASE)");
@@ -196,23 +219,28 @@ async function main() {
   // wording here promised ledger rows and was wrong in the direction that
   // matters — it would stop someone running the one check §9's budget needs.
   console.log(
-    `mode: ${WRITE ? "READ + WRITE (leaves a punch and an unclaimed session; no ledger rows)" : "read only"}`,
+    `mode: ${ADMS_ONLY ? "ADMS only — " : ""}` +
+      `${WRITE ? "READ + WRITE (leaves a punch and an unclaimed session; no ledger rows)" : "read only"}`,
   );
   console.log(`rounds: ${ROUNDS}\n`);
 
   const serial = "PROBE-" + randomUUID().slice(0, 8);
   const tabletId = "probe-" + randomUUID().slice(0, 8);
-  const { token, hash } = GIVEN_TOKEN
-    ? { token: GIVEN_TOKEN, hash: null }
-    : await mintTabletToken(tabletId);
+  const { token, hash }: { token: string | null; hash: string | null } = ADMS_ONLY
+    ? { token: null, hash: null }
+    : GIVEN_TOKEN
+      ? { token: GIVEN_TOKEN, hash: null }
+      : await mintTabletToken(tabletId);
   const auth = { Authorization: "Bearer " + token, "Content-Type": "application/json" };
 
   // Something to look up. A real item code is better than a synthetic one,
   // because the index behaviour is what is being measured.
-  const [anyItem] = GIVEN_ITEM
-    ? [{ item_code: GIVEN_ITEM }]
-    : await sql!<{ item_code: string }[]>`
-        select item_code from items where active order by item_code limit 1`;
+  const [anyItem] = ADMS_ONLY
+    ? [{ item_code: null }]
+    : GIVEN_ITEM
+      ? [{ item_code: GIVEN_ITEM }]
+      : await sql!<{ item_code: string }[]>`
+          select item_code from items where active order by item_code limit 1`;
   if (!anyItem) {
     console.error("no active items — seed the catalog before probing lookup latency");
     process.exit(1);
@@ -229,9 +257,12 @@ async function main() {
       `/iclock/cdata?SN=${serial}&options=all&pushver=2.4.1`,
     );
 
+    // Everything below needs a token, so an --adms-only run stops here.
+    if (ADMS_ONLY) continue;
+
     await timed(
       "GET /api/v1/items/lookup",
-      `/api/v1/items/lookup?barcode=${encodeURIComponent(anyItem.item_code)}`,
+      `/api/v1/items/lookup?barcode=${encodeURIComponent(anyItem.item_code!)}`,
       { headers: auth },
     );
     await timed("GET /api/v1/items/search", "/api/v1/items/search?q=carbide", { headers: auth });
@@ -246,11 +277,25 @@ async function main() {
 
     // §9: the device is the client. A punch is one tab-separated line, and the
     // response must be exactly `OK: <n>` or the device retries the batch.
+    // Without a database there is no way to learn an enrolled id, so an
+    // --adms-only write pushes one that is enrolled nowhere. §9.4 is explicit
+    // that such a punch is still recorded and raises an admin notice, so this
+    // measures the right request and leaves a row somebody has to clear —
+    // which is why the run prints how.
+    const synthetic = "99" + String(Math.floor(1000 + Math.random() * 9000));
     const [operator] = GIVEN_ZK
       ? [{ zk_user_id: GIVEN_ZK }]
-      : await sql!<{ zk_user_id: string }[]>`
-          select zk_user_id from operators
-           where zk_user_id is not null and active limit 1`;
+      : ADMS_ONLY
+        ? [{ zk_user_id: synthetic }]
+        : await sql!<{ zk_user_id: string }[]>`
+            select zk_user_id from operators
+             where zk_user_id is not null and active limit 1`;
+    if (ADMS_ONLY && !GIVEN_ZK) {
+      console.log(
+        `  zk user ${synthetic} is enrolled nowhere: §9.4 keeps the punch and ` +
+        "raises\n  an unknown-user notice, and it offers no session.",
+      );
+    }
     if (!operator) {
       console.log("  no operator has a zk_user_id — skipping the punch");
     } else {
@@ -264,6 +309,17 @@ async function main() {
       console.log(
         `  ADMS push → ${push.status} ${JSON.stringify(push.body)} in ${push.ms} ms` +
         (acknowledged ? "" : "   ⚠ NOT the exact `OK: 1` §9 requires — the device would retry"),
+      );
+
+      // A write leaves a device row, which shows up on the console's Door
+      // screen as a terminal nobody installed, and a punch, which shows up as
+      // a notice. Neither is a ledger row, so both can simply be deleted —
+      // but somebody has to know they are there. Printed because this was
+      // cleaned up by hand on 2026-09-02 and would have been missed.
+      console.log(
+        "\n  to clear what this run left behind:\n" +
+        `    delete from punches where zk_user_id = '${operator.zk_user_id}';\n` +
+        `    delete from devices where serial_no = '${serial}';`,
       );
     }
   }
@@ -347,6 +403,8 @@ async function main() {
   if (hash) {
     await sql!`update api_tokens set revoked_at = now() where token_hash = ${hash}`;
     console.log("\n  probe token revoked.");
+  } else if (ADMS_ONLY) {
+    console.log("\n  no token was used: §9's endpoints authenticate nobody.");
   } else {
     console.log("\n  token was supplied, not minted — revoking it is the caller's job.");
   }

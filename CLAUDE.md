@@ -877,8 +877,14 @@ named below rather than buried:
 
 What remains beyond those: the live loop verified end to end against **Supabase**
 — the e2e test proves the code and the schema, but runs against a local
-`next start`, so cold starts, the pooler and internet latency are all absent, and
-§9's ~200 ms budget is untested where it actually has to hold. Then the ADMS
+`next start`, so cold starts, the pooler and internet latency are all absent.
+**§9's ~200 ms budget is no longer among the untested part:** measured against
+production on 2026-09-02, the handshake ran p50 66 ms / p95 111 ms / max 119 ms
+over 20 rounds and an ATTLOG push was acknowledged `OK: 1` in 73 ms — the whole
+budget, over the internet, through Supavisor. It needed no credential, because
+§9's endpoints authenticate nobody (`npm run probe -- --adms-only`). What is
+still absent from that figure is a cold instance: the slowest first request
+seen was 219 ms, and it was `/api/v1/version`, which has no budget to breach. Then the ADMS
 capture against real firmware (§9's warning), printing a label sheet to close
 M7's optical half, and the offline decision in §2. `DATABASE_URL` is set on
 Vercel **Production only**. Preview deployments now have a schema to talk to —
