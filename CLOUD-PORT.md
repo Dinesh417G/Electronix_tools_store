@@ -303,10 +303,25 @@ next — an argument for a stable domain.
    the whole loop — handshake → punch and its retry → claim → lookup → issue →
    on-hand falls → reversal → reconcile → the §11 status codes — but against a
    local `next start` and a throwaway Postgres, which is what CI runs. That
-   proves the code and the schema. It does not prove the deployment: cold
-   starts, the pooler and internet latency are all absent, and §9's ~200 ms
-   ADMS budget is exactly the thing that only fails in their presence. Pointing
-   the same test at the live origin needs a token minted against Supabase.
+   proves the code and the schema, not the deployment.
+
+   **§9's half of this is now measured, and it passes.** Against production on
+   2026-09-02, 20 rounds through `npm run probe -- --adms-only`: the handshake
+   at p50 66 ms / p95 111 ms / max 119 ms against its 200 ms budget, and an
+   ATTLOG push acknowledged `OK: 1` in 73 ms. A first request of 202-219 ms
+   is the cold-start figure and lands on `/api/v1/version`, which has no
+   budget; nothing suggests a cold ADMS call breaks 200 ms, but a genuinely
+   idle instance was not caught, so that remains unmeasured rather than proven.
+
+   The mode exists because these two endpoints authenticate nobody, so the one
+   number that decides whether a real terminal duplicates punches never needed
+   the Supabase password. What still does: the authenticated half — lookup,
+   search, unclaimed, alerts — and pointing the e2e test itself at the live
+   origin, which needs a token minted against Supabase.
+
+   A `--write` run leaves a device row and a punch behind; the run now prints
+   the two DELETEs that clear them, because on 2026-09-02 that was done by hand
+   and a leftover from 2026-08-31 was still on the Door screen.
 2. **Paste `DATABASE_URL` into Preview** — the `preview` schema and
    `DATABASE_SCHEMA` are both in place; the connection string is the one part
    that needs the Supabase password (see above).
