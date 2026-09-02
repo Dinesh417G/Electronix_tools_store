@@ -171,6 +171,13 @@ try {
   for (const file of serverSources) {
     const text = await readFile(file, "utf8");
     for (const [i, line] of text.split("\n").entries()) {
+      // Code only. A comment that *names* the rule is prose about a query, not
+      // a query — and auth-throttle.ts carries one, because the rule is the
+      // reason it awaits. Real code never begins with // or *.
+      const trimmed = line.trim();
+      if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) {
+        continue;
+      }
       if (line.includes("void sql`") || line.includes("void tx`")) {
         stranded.push(file + ":" + (i + 1));
       }
