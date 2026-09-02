@@ -137,7 +137,8 @@ export async function launchChrome({ port = 0 } = {}) {
     const waiter = msg.id && pending.get(msg.id);
     if (!waiter) return;
     pending.delete(msg.id);
-    msg.error ? waiter.reject(new Error(msg.error.message)) : waiter.resolve(msg.result);
+    if (msg.error) waiter.reject(new Error(msg.error.message));
+    else waiter.resolve(msg.result);
   });
   await new Promise((resolve, reject) => {
     ws.addEventListener("open", resolve);
