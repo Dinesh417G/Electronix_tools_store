@@ -327,6 +327,12 @@ jobs:
       #                 "Nothing went out in this period" from a fetch that had
       #                 timed out. Both reproduced from screenshots on
       #                 2026-08-30; it fails five ways on the build before them.
+      #   test:throttle the brake in front of the PIN check (0010). Both PIN
+      #                 endpoints are public and a PIN is four digits, so the
+      #                 assertion that matters is that a *locked* code refuses
+      #                 the correct PIN too — a throttle that still verifies has
+      #                 slowed nothing down. Moves the clock by backdating rows
+      #                 rather than by shortening the window in test builds.
       #   test:admin    §11's two console rules: deactivate never delete, and
       #                 the last active ADMIN cannot leave by either verb. A
       #                 crib whose console nobody can open needs a Rust
@@ -347,6 +353,7 @@ jobs:
           npm run test:expiry
           npm run test:adms
           npm run test:admin
+          npm run test:throttle
           npm run test:session-ui
           npm run test:insights
         working-directory: cloud

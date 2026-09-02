@@ -35,7 +35,22 @@ export function findChrome() {
   return found;
 }
 
-const LAUNCH_TIMEOUT_MS = 10_000;
+/**
+ * How long Chrome gets to announce its debugging port.
+ *
+ * Was 10 s, and on 2026-09-02 a GitHub runner spent that whole budget losing
+ * an argument with dbus:
+ *
+ *   ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse
+ *   server address: Unknown address type
+ *
+ * printed three times over six seconds, after which the process was still
+ * alive and had said nothing about a port. The three flags below cut that
+ * argument short; this is the belt to their braces, because the failure it
+ * guards against is a slow start on a shared machine, and there is no cost to
+ * waiting longer when the browser does come up in under a second.
+ */
+const LAUNCH_TIMEOUT_MS = 30_000;
 
 /**
  * Launch Chrome and attach to a page.
@@ -64,13 +79,27 @@ export async function launchChrome({ port = 0 } = {}) {
       "--no-default-browser-check",
       "--no-sandbox",
       "--disable-dev-shm-usage",
+      // A headless browser has no session bus to talk to, and on a GitHub
+      // runner it retries the connection for seconds before giving up —
+      // inside the window it is supposed to be starting in. None of these
+      // three change what the tests exercise; they stop Chrome looking for a
+      // desktop that is not there.
+      "--disable-features=MediaRouter",
+      "--disable-component-update",
+      "--disable-sync",
       "about:blank",
     ],
     // Chrome's own account of why it would not start is the only thing that can
     // explain a failed launch, and `stdio: "ignore"` threw it away. Three
     // pull requests failed on "Chrome did not open a debugging port" with no
     // way to find out which reason it was.
-    { stdio: ["ignore", "ignore", "pipe"] },
+    {
+      stdio: ["ignore", "ignore", "pipe"],
+      // Same reason as the flags: an unparseable bus address is what the
+      // runner had, and Chrome retries it. `disabled:` is a well-formed
+      // address that means "there is none", so it stops asking.
+      env: { ...process.env, DBUS_SESSION_BUS_ADDRESS: "disabled:" },
+    },
   );
 
   // Chrome announces the endpoint on stderr the moment it is listening, and
