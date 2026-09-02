@@ -6,11 +6,26 @@
 
 name: CI
 
+# A push to a branch with an open PR used to start a second, identical run:
+# `push` matched every branch and `pull_request` matched the PR, and the two
+# events land in different concurrency groups (refs/heads/<branch> against
+# refs/pull/<n>/merge), so neither cancelled the other. Two runs of the same
+# commit, two uploads of an artifact with the same name, and on 2026-09-02 one
+# of them answered
+#   Failed to FinalizeArtifact: non-retryable (403) Forbidden: Error from
+#   intermediary
+# eighteen seconds before the other succeeded. That error is GitHub-side and
+# does not reproduce on demand, so this is not a proven cure — but the second
+# run was doing nothing the first was not, and paying twice for the chance to
+# collide with yourself is a bad trade either way.
+#
+# The cost of the change: a branch pushed with no PR open gets no CI. Every
+# change in this repo has gone through one.
 on:
   pull_request:
     branches: [main]
   push:
-    branches: ["**"]
+    branches: [main]
 
 permissions:
   contents: read
