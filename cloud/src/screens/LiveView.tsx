@@ -53,6 +53,9 @@ export function LiveView({ connection, revision, lastEvent }: Props) {
   }, []);
 
   useEffect(() => {
+    // `load` awaits three requests before it sets anything, so this cannot
+    // cascade; the rule reports the call because it does not follow it.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load, revision]);
 

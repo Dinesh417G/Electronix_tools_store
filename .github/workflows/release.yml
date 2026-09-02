@@ -117,7 +117,7 @@ jobs:
         working-directory: crates/store-web
       - run: npm run build
         working-directory: crates/store-web
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: store-web-dist
           path: crates/store-web/dist
@@ -150,7 +150,7 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           cache-on-failure: true
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: store-web-dist
           path: crates/store-web/dist
@@ -194,7 +194,7 @@ jobs:
         with:
           key: ${{ matrix.platform }}
           cache-on-failure: true
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: store-web-dist
           path: crates/store-web/dist
@@ -219,7 +219,7 @@ jobs:
           cp "${{ matrix.server }}" "staged/store-server-${VERSION}-${PLATFORM}${ext}"
           cp "${{ matrix.cli }}"    "staged/store-cli-${VERSION}-${PLATFORM}${ext}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: binaries-${{ matrix.platform }}
           path: staged
@@ -236,13 +236,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: binaries-*
           path: incoming
           merge-multiple: true
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: store-web-dist
           path: web-dist

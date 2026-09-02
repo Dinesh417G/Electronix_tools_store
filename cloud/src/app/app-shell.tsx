@@ -37,7 +37,31 @@ export function AppShell() {
   const [enrolled, setEnrolled] = useState(false);
   const [mode, setMode] = useState<Mode>("terminal");
 
+  const [connection, setConnection] = useState<ConnectionState>("connecting");
+  const [cards, setCards] = useState<UnclaimedSession[]>([]);
+  const [alerts, setAlerts] = useState<AlertSummary>({ low: 0, empty: 0 });
+  const [pending, setPending] = useState(0);
+  const [revision, setRevision] = useState(0);
+  const [lastEvent, setLastEvent] = useState<ServerEvent | null>(null);
+  const [dropped, setDropped] = useState<QueuedTxn[]>([]);
+  const [updateReady, setUpdateReady] = useState(false);
+
+  // The admin console authenticates separately: a device token is not an
+  // operator, and §11 keeps the two apart on purpose.
+  const [adminToken, setAdminToken] = useState<string | null>(null);
+  const [adminName, setAdminName] = useState<string>("");
+
+  // The hydration read promised above. It sits below every state it writes,
+  // and the sign-out listener with it: the admin token and name are declared
+  // last, and a lint pass reading top to bottom is right to object to an effect
+  // that reaches back over its own declarations.
+  //
+  // Setting state straight out of an effect is what `set-state-in-effect`
+  // exists to catch, and this is the case it cannot help with: localStorage
+  // does not exist during the server render, so these values can only arrive
+  // after the first paint. One pass, empty dependency list, nothing to cascade.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setEnrolled(getToken() !== null);
     setMode((localStorage.getItem("electronix.store.mode") as Mode) ?? "terminal");
     setAdminToken(localStorage.getItem(ADMIN_TOKEN_KEY));
@@ -58,20 +82,6 @@ export function AppShell() {
     window.addEventListener(ADMIN_SIGNED_OUT_EVENT, onSignedOut);
     return () => window.removeEventListener(ADMIN_SIGNED_OUT_EVENT, onSignedOut);
   }, []);
-
-  const [connection, setConnection] = useState<ConnectionState>("connecting");
-  const [cards, setCards] = useState<UnclaimedSession[]>([]);
-  const [alerts, setAlerts] = useState<AlertSummary>({ low: 0, empty: 0 });
-  const [pending, setPending] = useState(0);
-  const [revision, setRevision] = useState(0);
-  const [lastEvent, setLastEvent] = useState<ServerEvent | null>(null);
-  const [dropped, setDropped] = useState<QueuedTxn[]>([]);
-  const [updateReady, setUpdateReady] = useState(false);
-
-  // The admin console authenticates separately: a device token is not an
-  // operator, and §11 keeps the two apart on purpose.
-  const [adminToken, setAdminToken] = useState<string | null>(null);
-  const [adminName, setAdminName] = useState<string>("");
 
   const applyUpdate = useRef<(reload?: boolean) => Promise<void>>(async () => {});
 
@@ -150,6 +160,10 @@ export function AppShell() {
   useEffect(() => {
     if (!enrolled) return;
 
+    // Both of these set state only after an `await`, which is a render apart
+    // from the effect that started them. `set-state-in-effect` does not follow
+    // the call, so it reports the call site instead.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshCards();
     void refreshAlerts();
 
@@ -264,6 +278,8 @@ export function AppShell() {
 
     // Flush whenever the connection comes back, and on a slow timer as a
     // backstop for the case where the browser never fires an online event.
+    // As above: `drainOutbox` reaches its setState after awaiting the flush.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (connection === "live") void drainOutbox();
 
     const onOnline = () => void drainOutbox();
