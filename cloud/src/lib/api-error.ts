@@ -44,12 +44,21 @@ export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
   readonly detail?: unknown;
+  /** Seconds, for a `Retry-After` header. Only a 429 sets it. */
+  readonly retryAfterSecs?: number;
 
-  constructor(status: number, code: string, message: string, detail?: unknown) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    detail?: unknown,
+    retryAfterSecs?: number,
+  ) {
     super(message);
     this.status = status;
     this.code = code;
     this.detail = detail;
+    this.retryAfterSecs = retryAfterSecs;
     this.name = "ApiError";
   }
 
@@ -70,6 +79,15 @@ export class ApiError extends Error {
   }
   static gone(message: string) {
     return new ApiError(410, "SESSION_GONE", message);
+  }
+  /**
+   * Too many wrong PINs (auth-throttle.ts).
+   *
+   * The message is written for a person standing at a tablet, because that is
+   * where it is read: the screens print `message` as they get it.
+   */
+  static tooManyRequests(message: string, retryAfterSecs: number) {
+    return new ApiError(429, "TOO_MANY_ATTEMPTS", message, undefined, retryAfterSecs);
   }
 }
 

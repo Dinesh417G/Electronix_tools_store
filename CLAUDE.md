@@ -397,6 +397,22 @@ api_tokens(id uuid pk, token_hash text unique not null,
 -- argon2 in operators.pin_hash. Using a slow KDF for the first would cost
 -- latency for nothing; using a fast hash for the second would be a real hole.
 
+auth_attempts(id bigserial pk, emp_code text not null,
+              route text not null,        -- OPERATOR_LOGIN | MANUAL_SESSION
+              client_ip text, succeeded bool not null,
+              at timestamptz not null default now())
+-- Added at 0010, and it is what makes argon2 on a four-digit PIN mean
+-- something. Both PIN endpoints are publicly reachable, and until this table
+-- neither counted its refusals: ten thousand combinations against an endpoint
+-- that answers all of them is an afternoon, and a per-guess argon2 cost that
+-- Vercel will spend concurrently does not change that.
+--
+-- A log, not a counter, for §7's reason — "which codes were tried, from where,
+-- and did any work" is asked after the fact, and the number 11 cannot answer
+-- it. Never the PIN and never a hash of one; a record of near-miss PINs is a
+-- gift to whoever reads it. Successes are recorded because the per-code count
+-- runs from the last one, so getting in clears your own near-misses.
+
 -- ── Alerts ──────────────────────────────────────────────────────────
 stock_alerts(id uuid pk, item_id uuid fk, level text,     -- LOW | EMPTY
              raised_at timestamptz, resolved_at timestamptz,
@@ -747,6 +763,20 @@ Status codes the tablet UX depends on:
 | ISSUE past zero (§7) | `409` | *"Only 3 left in system — count the bin and adjust"* |
 | Submit after close (§10) | `410` | re-opens the claim screen, keeps the typing |
 | Second tablet claims (§10) | `409` | shows which tablet holds it |
+| Too many wrong PINs | `429` | prints the message as sent — *"Too many failed sign-ins. Try again in 12 minutes."* — and carries `Retry-After` |
+
+The 429 is the one guard here that refuses work an operator legitimately asked
+for, so it is deliberately narrow: **10 failures against one employee code, or
+20 from one address, in 15 minutes**, counted from that code's last success
+(`auth_attempts`, §6). While it holds, the *correct* PIN is refused too — a
+throttle that still checks the PIN has slowed nothing down — and the message
+says nothing about whether the code exists.
+
+Its cost, stated rather than discovered: somebody who knows an employee code
+can lock that person out of the console for a quarter of an hour. That is the
+trade for a four-digit PIN on a public origin, and the address limit is what
+keeps one attacker from doing it to everybody at once. §8's passkey path and
+the door reader are unaffected — neither goes through a PIN.
 
 ---
 
@@ -919,6 +949,7 @@ written alongside it are what stop that from being the whole story:
 | `tests/session-expiry.mjs` | §10's derive-on-read, through the routes | yes |
 | `tests/adms-edges.mjs` | §9's rules 3 and 4 | yes |
 | `tests/admin-guards.mjs` | §11's console rules | yes |
+| `tests/auth-throttle.mjs` | §11's 429: the brake in front of the PIN check | yes |
 
 Two things about them are worth stating, because both were learned the hard
 way rather than designed in:

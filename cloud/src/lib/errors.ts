@@ -16,7 +16,15 @@ export function errorResponse(e: unknown) {
   }
   return NextResponse.json(
     { error: api.code, message: api.message, detail: api.detail },
-    { status: api.status },
+    {
+      status: api.status,
+      // A 429 that does not say when to come back makes every client guess,
+      // and the ones that guess wrong retry immediately.
+      headers:
+        api.retryAfterSecs === undefined
+          ? undefined
+          : { "Retry-After": String(api.retryAfterSecs) },
+    },
   );
 }
 

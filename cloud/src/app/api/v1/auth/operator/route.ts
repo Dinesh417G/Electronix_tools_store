@@ -10,6 +10,7 @@ import { z } from "zod";
 import { sql } from "@/lib/db";
 import { ApiError, handler } from "@/lib/errors";
 import { DUMMY_PIN_HASH, issueToken, verifyPin, type Role } from "@/lib/auth";
+import { assertNotLocked, clientIp, recordAttempt } from "@/lib/auth-throttle";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +28,11 @@ export const POST = handler(async (request: Request) => {
     throw ApiError.badRequest("malformed login", parsed.error.issues);
   }
   const { emp_code, pin } = parsed.data;
+
+  // Before the operator row is read and before argon2 runs. A throttle that
+  // still checks the PIN has not slowed anything down.
+  const ip = clientIp(request);
+  await assertNotLocked(emp_code, ip);
 
   const rows = await sql<
     {
@@ -55,12 +61,20 @@ export const POST = handler(async (request: Request) => {
     // Still spend the time an argon2 verify would have taken, so a missing
     // operator is not distinguishable by how fast the answer comes back.
     await verifyPin(pin, DUMMY_PIN_HASH);
+    await recordAttempt("OPERATOR_LOGIN", emp_code, ip, false);
     throw refuse();
   }
 
   if (!(await verifyPin(pin, operator.pin_hash))) {
+    await recordAttempt("OPERATOR_LOGIN", emp_code, ip, false);
     throw refuse();
   }
+
+  // Recorded before the token is issued, and awaited: this is what clears the
+  // code's failure count, so a storekeeper who mistypes four times and then
+  // gets in is not four wrong PINs away from a lockout for the next quarter of
+  // an hour.
+  await recordAttempt("OPERATOR_LOGIN", emp_code, ip, true);
 
   const token = await issueToken({ kind: "OPERATOR", operatorId: operator.id }, TOKEN_HOURS);
 
