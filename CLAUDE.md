@@ -956,6 +956,7 @@ written alongside it are what stop that from being the whole story:
 | `tests/adms-edges.mjs` | §9's rules 3 and 4 | yes |
 | `tests/admin-guards.mjs` | §11's console rules | yes |
 | `tests/auth-throttle.mjs` | §11's 429: the brake in front of the PIN check | yes |
+| `tests/route-smoke.mjs` | every GET route answers, and none is unasked | yes |
 
 Two things about them are worth stating, because both were learned the hard
 way rather than designed in:
@@ -1029,8 +1030,20 @@ way rather than designed in:
   above `statement_timeout` because it exists for what the database cannot
   report.
 
-What is still not covered: `typecheck` cannot see the database, so a column
-rename passes CI and fails at runtime anywhere these paths do not go.
+`typecheck` still cannot see the database, so a column rename is a build that
+passes and a screen that breaks. `tests/route-smoke.mjs` is the cheap answer:
+it asks every GET route once, with parameters real enough to reach SQL, and
+asserts only that none answers 5xx — which is what `42703 column … does not
+exist` looks like from outside. Renaming `item_stock.alert_state` in a scratch
+database fails it twelve ways, one line per route, which is how it was checked.
+It says nothing about whether an answer is *correct*; that is what the tests
+above it are for. The write paths are still covered only where a test drives
+them deliberately.
+
+Its second half is a tripwire rather than a test: every GET route on disk must
+appear in that file, so a route added and wired to nothing fails by name. §11
+calls that "this project's known failure mode", and until now nothing caught
+it.
 
 §6's RLS gap is closed, and by the cheapest possible thing: a step in the CI
 job queries `pg_class` after the migrations are applied and fails on any
