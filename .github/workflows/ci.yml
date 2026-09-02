@@ -331,6 +331,13 @@ jobs:
       #                 "Nothing went out in this period" from a fetch that had
       #                 timed out. Both reproduced from screenshots on
       #                 2026-08-30; it fails five ways on the build before them.
+      #   test:routes   every GET route, asked once, against the database, with
+      #                 the only assertion being that none answers 5xx — which
+      #                 is what a renamed column looks like from outside, and
+      #                 §14's one remaining coverage gap. Second half is a
+      #                 tripwire: a GET route the file does not ask for fails
+      #                 the test by name, which is this project's dead-wiring
+      #                 failure mode caught at the door.
       #   test:throttle the brake in front of the PIN check (0010). Both PIN
       #                 endpoints are public and a PIN is four digits, so the
       #                 assertion that matters is that a *locked* code refuses
@@ -358,6 +365,7 @@ jobs:
           npm run test:adms
           npm run test:admin
           npm run test:throttle
+          npm run test:routes
           npm run test:session-ui
           npm run test:insights
         working-directory: cloud
