@@ -305,13 +305,25 @@ next — an argument for a stable domain.
    local `next start` and a throwaway Postgres, which is what CI runs. That
    proves the code and the schema, not the deployment.
 
-   **§9's half of this is now measured, and it passes.** Against production on
-   2026-09-02, 20 rounds through `npm run probe -- --adms-only`: the handshake
-   at p50 66 ms / p95 111 ms / max 119 ms against its 200 ms budget, and an
-   ATTLOG push acknowledged `OK: 1` in 73 ms. A first request of 202-219 ms
-   is the cold-start figure and lands on `/api/v1/version`, which has no
-   budget; nothing suggests a cold ADMS call breaks 200 ms, but a genuinely
-   idle instance was not caught, so that remains unmeasured rather than proven.
+   **§9's half of this is now measured. Warm it passes; cold it does not.**
+   Against production on 2026-09-02, 20 rounds through
+   `npm run probe -- --adms-only`: handshake p50 66 ms / p95 111 ms / max
+   119 ms against its 200 ms budget, ATTLOG acknowledged `OK: 1` in 73 ms.
+
+   Then the same two endpoints against deployments left idle 26 and 59 minutes:
+   **ATTLOG 848 ms cold** (192 ms warm), **handshake 1037 ms cold** (379 ms
+   warm), and 594 ms for the first call on a fresh deploy. Four to five times
+   over. This is §9.5's own warning, measured: a cold start is a slow
+   acknowledgement, and a slow acknowledgement is how a device retries. It does
+   not prove a duplicate — 848 ms is inside the timeout ZK firmwares use, and
+   200 ms is our margin, not theirs — but it does mean §9.1's dedup index is
+   load-bearing here rather than a safety net. Confirmed live in the same
+   session: the same ATTLOG line pushed twice to production left exactly one
+   punch row.
+
+   If the real firmware turns out to retry faster than that, the answer is a
+   warm path — a cron ping, or an ADMS handler that stays resident — not a
+   faster query. The query was 73 ms.
 
    The mode exists because these two endpoints authenticate nobody, so the one
    number that decides whether a real terminal duplicates punches never needed
