@@ -448,6 +448,19 @@ sessions.identity_source text not null  -- PUNCH | WEBAUTHN | PIN  (§8)
 -- the migration that creates it. CI fails the build if you forget: a step in
 -- the cloud job reads relrowsecurity out of pg_class once the migrations are
 -- applied and names any public table without it.
+
+-- ── Trigger search_path (0011) ──────────────────────────────────────
+-- The eight functions behind §7 — the ledger trigger, the append-only guard,
+-- the alert evaluation, the serial minter, the updated_at stamp — name their
+-- tables without a schema, so before 0011 they resolved against the *caller's*
+-- search_path rather than their own. Two schemas holding the same rows is not
+-- hypothetical here; `preview` and `public` are exactly that, in one database.
+--
+-- Measured on an unpinned copy: a session with `search_path = twin, public`
+-- inserting into `public.stock_ledger` put the ledger row in `public` and the
+-- `item_stock` update in `twin`. No error. §7's read model and the ledger it
+-- summarises, in different schemas, with only `reconcile` able to say so.
+-- Gated by `cloud/tests/db-schema.mjs` steps 5 and 6.
 ```
 
 ---
@@ -973,7 +986,7 @@ written alongside it are what stop that from being the whole story:
 | `tests/e2e.mjs` | M4 | yes |
 | `tests/webauthn.mjs` | §8's passkey path | yes, and a headless Chrome |
 | `tests/terminal-flow.mjs` | §12's issue flow, through the screens | yes, and a headless Chrome |
-| `tests/db-schema.mjs` | the preview schema's isolation from `public` | yes |
+| `tests/db-schema.mjs` | the preview schema's isolation from `public`, and 0011's trigger search_path | yes |
 | `tests/split-issue.mjs` | §11's split issue, and §7's guard on the total | yes |
 | `tests/receipt-and-alerts.mjs` | M6, and M8's OK → LOW → EMPTY → OK ladder | yes |
 | `tests/session-expiry.mjs` | §10's derive-on-read, through the routes | yes |

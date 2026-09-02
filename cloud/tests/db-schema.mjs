@@ -126,11 +126,99 @@ try {
       bad("pg_trgm unreachable with DATABASE_SCHEMA set: " + err?.message);
     }
   });
+  // ── 5 and 6: the other half of the isolation, which is not the app's ──
+  //
+  // `DATABASE_SCHEMA` decides where the *application* writes. It says nothing
+  // about where a trigger writes, and until 0011 the answer was "whichever
+  // schema the caller's search_path happened to name first", because the §7
+  // trigger bodies say `items` and `item_stock` with no schema on them.
+  //
+  // Two schemas holding the same rows is not a hypothetical here — it is
+  // precisely what `preview` and `public` are.
+  step("5. the eight §7 functions have a pinned search_path (0011)");
+  const NAMES = [
+    "set_updated_at",
+    "stock_ledger_after_insert",
+    "stock_ledger_is_append_only",
+    "evaluate_alert_level",
+    "sync_stock_alert",
+    "items_after_insert",
+    "items_after_reorder_level_change",
+    "next_tool_serial",
+  ];
+  const unpinned = await admin`
+    select p.proname
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.proname = any(${NAMES}) and p.proconfig is null
+     order by p.proname`;
+  if (unpinned.length === 0) {
+    ok("all eight resolve their tables in their own schema, whoever calls them");
+  } else {
+    bad("mutable search_path on: " + unpinned.map((r) => r.proname).join(", "));
+  }
+
+  step("6. and a write to public's ledger updates public's read model, not the caller's");
+  const TWIN = "dbschema_twin";
+  await admin.unsafe(`drop schema if exists ${TWIN} cascade`);
+  await admin.unsafe(`create schema ${TWIN}`);
+  for (const t of ["items", "item_stock", "stock_alerts"]) {
+    await admin.unsafe(`create table ${TWIN}.${t} (like public.${t} including all)`);
+  }
+
+  // Rolled back, and it has to be: §7 refuses to delete a ledger row, and the
+  // consumption test that runs after this one asserts an empty ledger.
+  const ROLLBACK = Symbol("rollback");
+  let landed = null;
+  try {
+    await admin.begin(async (tx) => {
+      const code = "TWIN-" + Math.random().toString(36).slice(2, 8).toUpperCase();
+      const [item] = await tx`
+        insert into public.items (item_code, description, uom, reorder_level)
+        values (${code}, 'search_path probe', 'NOS', 5) returning id`;
+      const [op] = await tx`
+        insert into public.operators (emp_code, full_name, role)
+        values (${code}, 'search_path probe', 'ADMIN') returning id`;
+      await tx.unsafe(
+        `insert into ${TWIN}.items select * from public.items where id = '${item.id}'`,
+      );
+      await tx.unsafe(
+        `insert into ${TWIN}.item_stock select * from public.item_stock where item_id = '${item.id}'`,
+      );
+
+      // The mistake the pin defends against: a session — psql, a script, the
+      // Rust CLI — whose path names another schema first.
+      await tx.unsafe(`set local search_path = ${TWIN}, public`);
+      await tx`
+        insert into public.stock_ledger (item_id, delta_qty, txn_type, operator_id)
+        values (${item.id}, 7, 'OPENING', ${op.id})`;
+      await tx.unsafe(`set local search_path = public`);
+
+      const [mine] = await tx`
+        select on_hand::text as on_hand from public.item_stock where item_id = ${item.id}`;
+      const [theirs] = await tx.unsafe(
+        `select on_hand::text as on_hand from ${TWIN}.item_stock where item_id = '${item.id}'`,
+      );
+      landed = { mine: mine?.on_hand, theirs: theirs?.on_hand };
+      throw ROLLBACK;
+    });
+  } catch (err) {
+    if (err !== ROLLBACK) throw err;
+  }
+
+  if (landed?.mine === "7.000" && landed?.theirs === "0.000") {
+    ok("public.item_stock 7.000, the other schema untouched");
+  } else {
+    bad(
+      `the trigger followed the caller: public ${landed?.mine}, ` +
+      `${TWIN} ${landed?.theirs} — a ledger and a read model in different schemas`,
+    );
+  }
 } catch (err) {
   bad("threw: " + (err?.message ?? err));
 } finally {
   try {
     await admin.unsafe(`drop schema if exists ${SCHEMA} cascade`);
+    await admin.unsafe(`drop schema if exists dbschema_twin cascade`);
     await admin.unsafe(`drop table if exists public.schema_probe`);
   } catch { /* nothing to clean */ }
   await admin.end({ timeout: 5 });
