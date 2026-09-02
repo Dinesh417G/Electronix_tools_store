@@ -103,7 +103,6 @@ async function session(operator, tabletToken) {
 }
 
 let item = null;
-let originalReorder = null;
 
 try {
   step("0. fixtures — an item this test owns outright");
@@ -126,7 +125,6 @@ try {
     values (${code}, 'Alert ladder fixture', 'NOS', 5)
     returning id, item_code, reorder_level::text as reorder_level`;
   item = created;
-  originalReorder = created.reorder_level;
   ok("created " + item.item_code + " at reorder level " + item.reorder_level);
 
   const fresh = await stock(item.id);

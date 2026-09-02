@@ -71,7 +71,11 @@ try {
       returning id`;
     created.push(row.id);
   }
-  const [hot, cold, fresh] = created;
+  // Only two of the three ids are used below, and that is the fixture: the
+  // third item is never given a ledger row, because the views have to leave an
+  // item that has not moved out of "busiest" and "just taken" while putting it
+  // top of "stale".
+  const [hot, cold] = created;
 
   // Opening stock for all three, then histories that differ on purpose.
   for (const id of created) {
