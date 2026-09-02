@@ -146,8 +146,14 @@ export function Terminal({
   // §12.2: a punch arriving while we are idle foregrounds the claim screen.
   // Only from idle — pulling an operator mid-transaction to somebody else's
   // card would be worse than making them tap once.
+  //
+  // The set is synchronous on purpose and `step` stays state rather than a
+  // value derived from `cards`: every other screen in this flow writes it, so
+  // deriving the claim arm alone would leave the terminal with two sources of
+  // truth for where it is.
   useEffect(() => {
     if (step.name === "idle" && cards.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setStep({ name: "claim" });
     }
     if (step.name === "claim" && cards.length === 0) {
@@ -635,7 +641,7 @@ function IdleScreen({
           </Banner>
         )}
         <BigButton onClick={onStart} variant="ghost" className="w-full">
-          I'm here — show me
+          I&apos;m here — show me
         </BigButton>
 
         {/* §10's fallback. Deliberately quieter than the button above: the
@@ -725,7 +731,7 @@ function ClaimScreen({
           onClick={onManual}
           className="w-full rounded-xl px-4 py-3 text-sm text-slate-400 active:bg-slate-800"
         >
-          My name isn't here — enter my number
+          My name isn&apos;t here — enter my number
         </button>
 
         <BigButton onClick={onCancel} variant="ghost" className="w-full">
@@ -1008,6 +1014,8 @@ function ItemScreen({
 
   useEffect(() => {
     if (mode !== "browse" || browseView !== "all" || catalog.length > 0) return;
+    // `loadMore` sets state after awaiting the page, not in this pass.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadMore();
   }, [mode, browseView, catalog.length, loadMore]);
 
@@ -1019,7 +1027,6 @@ function ItemScreen({
     // report panel follows.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setInsights(null);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setInsightError(null);
     api
       .insights(browseView, 60)
@@ -1039,6 +1046,10 @@ function ItemScreen({
   // Typeahead, debounced so a fast typist does not generate a request per key.
   useEffect(() => {
     if (mode !== "search" || query.trim().length < 2) {
+      // Blanking synchronously, for the reason the insights effect above gives:
+      // otherwise the previous query's matches stay on screen under a search
+      // box that no longer says what found them.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setResults([]);
       return;
     }
@@ -1427,7 +1438,7 @@ function OptionalScreen({
               MACHINE
               {picked.length > 1 && (
                 <span className="pl-2 font-normal text-sky-400">
-                  {picked.length} selected — you'll set a quantity for each
+                  {picked.length} selected — you&apos;ll set a quantity for each
                 </span>
               )}
             </h2>

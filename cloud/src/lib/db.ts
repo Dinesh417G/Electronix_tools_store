@@ -14,7 +14,6 @@ import postgres, { type Sql } from "postgres";
 import { QueryDeadlineError } from "./api-error.ts";
 
 declare global {
-  // eslint-disable-next-line no-var
   var __toolCribSql: Sql | undefined;
 }
 
