@@ -429,7 +429,9 @@ sessions.identity_source text not null  -- PUNCH | WEBAUTHN | PIN  (§8)
 -- served operators.pin_hash and accepted an INSERT into stock_ledger — which
 -- satisfies the triggers while bypassing every §7 guard the application
 -- enforces. A table added by a later migration is NOT covered; enable it in
--- the migration that creates it.
+-- the migration that creates it. CI fails the build if you forget: a step in
+-- the cloud job reads relrowsecurity out of pg_class once the migrations are
+-- applied and names any public table without it.
 ```
 
 ---
@@ -886,7 +888,9 @@ WhatsApp/email alerts, multi-store, vending-machine integration, mobile app for 
   changes, that fixture is how you find out.
 
 **The cloud app is still the thinner half of this, and pretending otherwise
-would be the expensive mistake.** Its CI job is `typecheck`, `build`, the label
+would be the expensive mistake.** Its CI job is `typecheck`, `lint`
+(`--max-warnings 0`, gated from 2026-09-02 — before that twelve errors had
+accumulated unnoticed in the three screens), `build`, the label
 round-trip, the consumption CSV, the session sweep — and then, against a real
 Postgres with `crates/store-db/migrations` applied verbatim, the report
 aggregation, the ledger property test and `cloud/tests/e2e.mjs`.
@@ -989,10 +993,14 @@ way rather than designed in:
   report.
 
 What is still not covered: `typecheck` cannot see the database, so a column
-rename passes CI and fails at runtime anywhere these paths do not go. And
-nothing asserts that a table added by a later migration enables RLS (§6) —
-0008 covered the twenty that existed, and there is no default that turns it on
-for the twenty-first.
+rename passes CI and fails at runtime anywhere these paths do not go.
+
+§6's RLS gap is closed, and by the cheapest possible thing: a step in the CI
+job queries `pg_class` after the migrations are applied and fails on any
+`public` table with `relrowsecurity` false, naming it. 0008 covered the
+twenty tables that existed and Postgres has no default that turns it on for
+the twenty-first, so the check has to live outside the migrations. What it
+cannot see is the `preview` schema, which exists only on Supabase.
 
 The shared migrations remain what makes the rest survivable: the §7 trigger, the
 negative-stock guard and the append-only constraint are the same objects in both

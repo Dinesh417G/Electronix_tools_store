@@ -116,6 +116,17 @@ jobs:
         run: npm run typecheck
         working-directory: cloud
 
+      # Gated from 2026-09-02. Until then this job ran `typecheck` and not
+      # `lint`, and twelve errors accumulated in the three screens over the
+      # cloud port — including a `react-hooks/immutability` report that was
+      # right, and two `eslint-disable` directives that had stopped
+      # suppressing anything. Warnings count too: the three that existed were
+      # a stale variable and a ternary used as a statement, and both are the
+      # shape that hides a real one.
+      - name: lint
+        run: npm run lint -- --max-warnings 0
+        working-directory: cloud
+
       - name: build
         run: npm run build
         working-directory: cloud
