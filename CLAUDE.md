@@ -878,13 +878,37 @@ named below rather than buried:
 What remains beyond those: the live loop verified end to end against **Supabase**
 — the e2e test proves the code and the schema, but runs against a local
 `next start`, so cold starts, the pooler and internet latency are all absent.
-**§9's ~200 ms budget is no longer among the untested part:** measured against
-production on 2026-09-02, the handshake ran p50 66 ms / p95 111 ms / max 119 ms
-over 20 rounds and an ATTLOG push was acknowledged `OK: 1` in 73 ms — the whole
-budget, over the internet, through Supavisor. It needed no credential, because
-§9's endpoints authenticate nobody (`npm run probe -- --adms-only`). What is
-still absent from that figure is a cold instance: the slowest first request
-seen was 219 ms, and it was `/api/v1/version`, which has no budget to breach. Then the ADMS
+**§9's ~200 ms budget was measured on 2026-09-02, warm and cold, and the cold
+answer is that it does not hold.**
+
+Warm, against production over 20 rounds: handshake p50 66 ms / p95 111 ms /
+max 119 ms, ATTLOG acknowledged `OK: 1` in 73 ms. Comfortable. It needed no
+credential at all, because §9's endpoints authenticate nobody
+(`npm run probe -- --adms-only`).
+
+Cold — measured by pushing to a production deployment whose instances had been
+idle 26 and 59 minutes, and to a fresh deploy before anything else touched it:
+
+| | cold | then warm |
+|---|---|---|
+| `POST /iclock/cdata` (ATTLOG) | **848 ms** | 192 ms |
+| `GET /iclock/cdata` (handshake) | **1037 ms** | 379 ms |
+| handshake, first call on a fresh deploy | **594 ms** | 167 ms |
+
+That is four to five times the budget, and §9.5 predicted it in as many words:
+*"A cold function start is now one more way to be slow enough to cause a
+duplicate batch."* What it does **not** prove is a duplicate: 848 ms is well
+inside the response timeout ZK firmwares actually use, and the 200 ms figure is
+our own margin rather than the device's limit. The honest conclusion is that
+§9.1's dedup index is **load-bearing on this platform, not a belt-and-braces
+measure** — which the same session confirmed live, by pushing one ATTLOG line
+twice to production and finding exactly one punch row.
+
+A crib whose terminal punches a few times an hour will meet a cold instance
+often, because nothing else keeps the function warm. If the retry behaviour of
+the real firmware turns out to be tighter than assumed, the fix is a warm path
+(a cron ping, or moving the ADMS handler somewhere that stays resident), not a
+faster query — the query was 73 ms. Then the ADMS
 capture against real firmware (§9's warning), printing a label sheet to close
 M7's optical half, and the offline decision in §2. `DATABASE_URL` is set on
 Vercel **Production only**. Preview deployments now have a schema to talk to —
