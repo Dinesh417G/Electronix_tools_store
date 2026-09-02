@@ -981,6 +981,7 @@ written alongside it are what stop that from being the whole story:
 | `tests/admin-guards.mjs` | §11's console rules | yes |
 | `tests/auth-throttle.mjs` | §11's 429: the brake in front of the PIN check | yes |
 | `tests/route-smoke.mjs` | every GET route answers, and none is unasked | yes |
+| `tests/endpoint-callers.mjs` | §11's dead-wiring rule: no route without a caller | no — it reads the repo |
 
 Two things about them are worth stating, because both were learned the hard
 way rather than designed in:
@@ -1065,9 +1066,17 @@ above it are for. The write paths are still covered only where a test drives
 them deliberately.
 
 Its second half is a tripwire rather than a test: every GET route on disk must
-appear in that file, so a route added and wired to nothing fails by name. §11
-calls that "this project's known failure mode", and until now nothing caught
-it.
+appear in that file, so a route added and wired to nothing fails by name.
+
+`tests/endpoint-callers.mjs` closes the same hole from the other side, for
+every method rather than only GET, and without a database: it reads the route
+tree, reads every file that is **not** a route, and fails if a route exports a
+method nothing anywhere references, or if a caller names a path nothing serves.
+§11 has called dead wiring "this project's known failure mode" from the
+beginning; this is the first thing that enforces it. It proves reachability,
+not correctness — a path found in `api.ts` says the wiring exists, not that a
+screen calls it — and that is exactly the class both of this project's dead
+features fell into.
 
 §6's RLS gap is closed, and by the cheapest possible thing: a step in the CI
 job queries `pg_class` after the migrations are applied and fails on any

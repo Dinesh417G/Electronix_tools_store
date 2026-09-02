@@ -175,6 +175,17 @@ jobs:
         run: npm run test:session
         working-directory: cloud
 
+      # §11 says an endpoint with no caller is this project's known failure
+      # mode, and until now nothing enforced it — the spec said it and the
+      # repository was checked by hand. This reads the route tree and every
+      # file that is not a route, and fails on either half of a broken wire: a
+      # method exported and referenced nowhere, or a path called and not
+      # served. No database and no server, so it runs with the other cheap
+      # checks.
+      - name: every endpoint has a caller
+        run: npm run test:callers
+        working-directory: cloud
+
       # What the terminal says when the server never answered. Three faults —
       # a device with no network, our own deadline, a dropped connection —
       # used to render as one sentence, which is why the 2026-08-29 screenshot
