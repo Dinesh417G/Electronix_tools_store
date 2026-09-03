@@ -993,6 +993,8 @@ written alongside it are what stop that from being the whole story:
 | `tests/adms-edges.mjs` | §9's rules 3 and 4 | yes |
 | `tests/admin-guards.mjs` | §11's console rules | yes |
 | `tests/auth-throttle.mjs` | §11's 429: the brake in front of the PIN check | yes |
+| `tests/admin-crud.mjs` | M7's first step: the catalog's write paths, and the ack that is not a resolve | yes |
+| `tests/serials.mjs` | §6's reprint rule, the label batch, and both printer modes | yes |
 | `tests/route-smoke.mjs` | every GET route answers, and none is unasked | yes |
 | `tests/endpoint-callers.mjs` | §11's dead-wiring rule: no route without a caller | no — it reads the repo |
 
@@ -1075,8 +1077,34 @@ asserts only that none answers 5xx — which is what `42703 column … does not
 exist` looks like from outside. Renaming `item_stock.alert_state` in a scratch
 database fails it twelve ways, one line per route, which is how it was checked.
 It says nothing about whether an answer is *correct*; that is what the tests
-above it are for. The write paths are still covered only where a test drives
-them deliberately.
+above it are for. The write paths are covered only where a test drives them
+deliberately — which, until `admin-crud.mjs` and `serials.mjs`, left the whole
+catalog console and every path that ends in a sticker with no test at all. That
+is worth restating because it was invisible from the CI log: `route-smoke`
+asked `GET /api/v1/admin/items` and `endpoint-callers` proved POST, PUT, PATCH
+and DELETE were *wired*, and between them the two checks that exist to catch
+dead features reported a green catalog nobody had ever written to.
+
+- **§6's serial rule was the one with real teeth.** "Reprinting is the same
+  number again: print_count increments, no new row, no new number" was a single
+  `update` in `serials.ts` that nothing exercised. A reprint that minted
+  instead would give one physical tool two identities, and the crib would find
+  out when two stickers on two shelves claimed to be the same drill.
+- **Two claims in those routes are about triggers, not code**, and both are the
+  kind that fail silently: `items_create_stock_row` gives a new item a stock
+  row and deliberately raises **no** alert (a catalog import that hands the
+  storekeeper 500 EMPTY alerts is a banner nobody reads again), and
+  `items_reevaluate_alert_on_reorder_change` raises one *immediately* on a
+  policy change — a stock alert with no ledger row behind it, which is the only
+  case where §7 sees nothing and the dashboard changes anyway.
+- **The only defect these two found was in one of themselves.** All 108
+  assertions passed on the first run, so the headline ones were checked by
+  mutating the code under them — four mutations, and three failed exactly where
+  they should. The fourth did not: `serials.mjs` compared `first_printed_at`
+  with `String(date)`, and a JS Date stringifies to *second* resolution, so two
+  prints a few hundred milliseconds apart compared equal and a timestamp that
+  moved looked like one that held. Fixed to milliseconds, it fails as it
+  should. A regression test that has never failed is not known to work.
 
 Its second half is a tripwire rather than a test: every GET route on disk must
 appear in that file, so a route added and wired to nothing fails by name.
