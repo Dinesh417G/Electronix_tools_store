@@ -18,11 +18,22 @@ import {
   type InsightView,
   type AlertRow,
   type Item,
+  type LedgerRow,
 } from "../lib/api";
 import { adminApi, type Category, type ItemInput } from "../lib/admin";
 import { useRefreshOnReturn } from "../lib/refresh";
-import { AlertChip, Banner, BigButton, Chip, Field, Header, Spinner, TabStrip } from "../components/ui";
-import { Row, RowHeader, RowList } from "../components/row";
+import {
+  AlertChip,
+  BandGauge,
+  Banner,
+  BigButton,
+  Chip,
+  Field,
+  Header,
+  Spinner,
+  TabStrip,
+} from "../components/ui";
+import { DetailGrid, DetailGroup, Row, RowHeader, RowList } from "../components/row";
 import { PrinterSettings } from "./PrinterSettings";
 import { Serials } from "./Serials";
 import { People } from "./People";
@@ -299,6 +310,9 @@ function Catalog({
   // rather than from the tab bar: "which tools of this kind exist" is a
   // question you ask about a specific line in the catalog.
   const [serialsFor, setSerialsFor] = useState<Item | null>(null);
+  /** Which row is showing its detail. One at a time: two open panels in a
+   *  list of ninety is a scroll position nobody can hold in their head. */
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -463,7 +477,13 @@ function Catalog({
               meta={item.bin_location ? `Bin ${item.bin_location}` : undefined}
               value={formatQty(item.on_hand)}
               valueNote={item.uom}
-              onClick={() => setEditing(item)}
+              /* Tapping a row opens it here rather than navigating to the
+                 edit form. Every tooling field lived behind that form, so
+                 comparing two inserts was in, out, in, out. Editing is now a
+                 deliberate button inside the detail. */
+              onClick={() => setExpanded(expanded === item.id ? null : item.id)}
+              open={expanded === item.id}
+              detail={<ItemDetail item={item} onEdit={() => setEditing(item)} />}
               leading={
                 <button
                   type="button"
@@ -495,6 +515,97 @@ function Catalog({
 
     </div>
   );
+}
+
+/**
+ * One item, opened in place — §6's catalog columns, grouped the way somebody
+ * standing at a bin asks about them.
+ *
+ * Every field here already existed on the row we were handed; none of it was
+ * reachable without opening the edit form, which is a strange place to *read*
+ * from — it invites changing what you came to check.
+ */
+function ItemDetail({ item, onEdit }: { item: Item; onEdit: () => void }) {
+  const cost = item.unit_cost === null ? null : Number(item.unit_cost);
+  const onHand = Number(item.on_hand);
+
+  return (
+    <div className="space-y-3">
+      <DetailGrid>
+        <DetailGroup
+          title="Tool"
+          facts={[
+            { label: "ISO code", value: item.iso_code },
+            { label: "Grade", value: item.grade },
+            { label: "Maker", value: item.manufacturer },
+            { label: "Their part no", value: item.mfr_part_no },
+            { label: "Category", value: item.category_name },
+          ]}
+        />
+
+        <DetailGroup
+          title="Stock"
+          facts={[
+            {
+              label: "On hand",
+              value: `${formatQty(item.on_hand)} ${item.uom}`,
+              tone:
+                item.alert_state === "EMPTY"
+                  ? "empty"
+                  : item.alert_state === "LOW"
+                    ? "low"
+                    : "plain",
+            },
+            { label: "Reorder at", value: formatQty(item.reorder_level) },
+            { label: "Full at", value: item.max_level ? formatQty(item.max_level) : null },
+            {
+              label: "Order qty",
+              value: item.reorder_qty ? formatQty(item.reorder_qty) : null,
+            },
+            { label: "Bin", value: item.bin_location },
+          ]}
+        />
+
+        <DetailGroup
+          title="Money"
+          facts={[
+            { label: "Unit cost", value: cost === null ? null : money(cost) },
+            {
+              label: "Value on hand",
+              value: cost === null ? null : money(cost * onHand),
+            },
+          ]}
+        />
+
+        <DetailGroup
+          title="Rules"
+          facts={[
+            { label: "Unit", value: item.uom },
+            {
+              label: "Below zero",
+              value: item.allow_negative ? "allowed" : "refused",
+              tone: item.allow_negative ? "low" : undefined,
+            },
+            { label: "In the pickers", value: item.active ? "yes" : "retired" },
+          ]}
+        />
+      </DetailGrid>
+
+      <button
+        type="button"
+        onClick={onEdit}
+        className="tap rounded-lg bg-surface-2 px-4 text-sm font-semibold text-ink-2"
+      >
+        Edit item
+      </button>
+    </div>
+  );
+}
+
+/** Rupees, grouped, two places — the format every other total on this console
+ *  already uses. */
+function money(n: number): string {
+  return `₹${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 /**
@@ -898,11 +1009,21 @@ function AlertsTab({
                     badge={<AlertChip level={alert.level} />}
                     subtitle={alert.description}
                     meta={
-                      `band ${formatQty(alert.reorder_level)}${
-                        alert.max_level ? `–${formatQty(alert.max_level)}` : "–—"
-                      }` +
-                      (short !== null ? ` · short ${formatQty(String(short))}` : "") +
-                      (alert.acknowledged_at ? " · acknowledged" : "")
+                      <BandGauge
+                        onHand={Number(alert.on_hand)}
+                        reorder={Number(alert.reorder_level)}
+                        max={alert.max_level === null ? null : Number(alert.max_level)}
+                        /* Was `band 10–—` when no maximum was set: an en dash
+                           into an em dash, which reads as a typo rather than
+                           as "nobody has set one". */
+                        caption={
+                          (alert.max_level
+                            ? `${formatQty(alert.reorder_level)}–${formatQty(alert.max_level)}`
+                            : `reorder at ${formatQty(alert.reorder_level)}`) +
+                          (short !== null ? ` · short ${formatQty(String(short))}` : "") +
+                          (alert.acknowledged_at ? " · acknowledged" : "")
+                        }
+                      />
                     }
                     value={formatQty(alert.on_hand)}
                     valueNote="on hand"
@@ -981,6 +1102,7 @@ function ActivityTab({
   // rows and squint. Damage carries a note now (§12.6), so this list is where
   // that note is read.
   const [reason, setReason] = useState<string | null>(null);
+  const [openRow, setOpenRow] = useState<number | null>(null);
   const reasons = useLoadable(() => api.reasonCodes(), []);
   const state = useLoadable(
     () => api.ledger(reason ? `limit=60&reason=${encodeURIComponent(reason)}` : "limit=60"),
@@ -1062,6 +1184,9 @@ function ActivityTab({
                   }
                   value={formatQty(row.delta_qty)}
                   tone={out ? "out" : "in"}
+                  onClick={() => setOpenRow(openRow === row.id ? null : row.id)}
+                  open={openRow === row.id}
+                  detail={<LedgerDetail row={row} />}
                   /* §7: a mistake is corrected by appending the mirror image.
                      There is deliberately no edit and no delete here — the
                      database would refuse anyway. */
@@ -1091,6 +1216,70 @@ function ActivityTab({
         )}
       </Loaded>
     </div>
+  );
+}
+
+/**
+ * One movement, opened in place.
+ *
+ * The list can only afford `ISSUE · R. Kumar · HMC-01` and a reason code, so
+ * the note — which §12.6 added precisely so damage could be explained — was
+ * written by an operator and read by nobody. The full stamp matters for the
+ * same reason the ledger exists: "15:07" answers today's question, and
+ * "3 Sept 2026, 15:07:42" answers the one asked in March.
+ */
+function LedgerDetail({ row }: { row: LedgerRow }) {
+  const cost = row.unit_cost === null ? null : Number(row.unit_cost);
+  const qty = Math.abs(Number(row.delta_qty));
+
+  return (
+    <DetailGrid>
+      <DetailGroup
+        title="Movement"
+        facts={[
+          { label: "Row", value: `#${row.id}` },
+          { label: "Type", value: row.txn_type },
+          {
+            label: "Quantity",
+            value: formatQty(row.delta_qty),
+            tone: row.delta_qty.startsWith("-") ? "out" : "in",
+          },
+          { label: "Booked", value: new Date(row.created_at).toLocaleString() },
+        ]}
+      />
+
+      <DetailGroup
+        title="Who"
+        facts={[
+          { label: "Operator", value: row.operator_name },
+          { label: "Machine", value: row.machine_code },
+          { label: "Session", value: row.session_id ? "at the terminal" : "admin side" },
+        ]}
+      />
+
+      <DetailGroup
+        title="Why"
+        facts={[
+          { label: "Reason", value: row.reason_code },
+          { label: "Note", value: row.note },
+          {
+            label: "Corrects",
+            value: row.reverses_id === null ? null : `#${row.reverses_id}`,
+            tone: row.reverses_id === null ? undefined : "low",
+          },
+        ]}
+      />
+
+      {/* §11: priced at the snapshot taken when the movement was booked,
+          never today's cost. */}
+      <DetailGroup
+        title="Money"
+        facts={[
+          { label: "Unit cost then", value: cost === null ? null : money(cost) },
+          { label: "Line value", value: cost === null ? null : money(cost * qty) },
+        ]}
+      />
+    </DetailGrid>
   );
 }
 

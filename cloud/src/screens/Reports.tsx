@@ -126,6 +126,11 @@ function Consumption({
 
   const totalQty = (rows ?? []).reduce((sum, r) => sum + Number(r.qty), 0);
   const totalValue = (rows ?? []).reduce((sum, r) => sum + Number(r.value), 0);
+  /* §6 leaves `unit_cost` nullable, and plenty of a crib's catalog never gets
+     one. Printing ₹0.00 on every row and every total then says "this cost
+     nothing", which is not what the ledger knows — it knows nobody priced it.
+     Where nothing is priced, the money is left off rather than invented. */
+  const priced = totalValue > 0;
   // The widest bar is the one to compare the others against; an absolute scale
   // would make a quiet month look like an empty one.
   const biggest = Math.max(1, ...(rows ?? []).map((r) => Number(r.qty)));
@@ -188,9 +193,11 @@ function Consumption({
               <span className="text-2xl font-bold tabular-nums">
                 {totalQty.toLocaleString(undefined, { maximumFractionDigits: 3 })}
               </span>
-              <span className="text-sm text-muted tabular-nums">
-                ₹{totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-              </span>
+              {priced && (
+                <span className="text-sm text-muted tabular-nums">
+                  ₹{totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </span>
+              )}
             </div>
           </div>
 
@@ -211,7 +218,9 @@ function Consumption({
                 />
               </div>
               <div className="pt-1 text-xs text-faint tabular-nums">
-                ₹{Number(row.value).toLocaleString(undefined, { minimumFractionDigits: 2 })} ·{" "}
+                {priced
+                  ? `₹${Number(row.value).toLocaleString(undefined, { minimumFractionDigits: 2 })} · `
+                  : ""}
                 {row.txn_count} transaction{row.txn_count === 1 ? "" : "s"}
               </div>
             </div>
@@ -275,6 +284,7 @@ function MachinePanel({
     >
       {(rows) => {
         const biggest = Math.max(1, ...rows.map((r) => Number(r.qty)));
+        const priced = rows.some((r) => Number(r.value) > 0);
         return (
           <div className="space-y-2">
             {rows.map((row) => {
@@ -306,8 +316,10 @@ function MachinePanel({
                       />
                     </div>
                     <div className="pt-1 text-xs text-faint">
-                      {row.distinct_tools} different tools · {row.movements} movements · ₹
-                      {Number(row.value).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      {row.distinct_tools} different tools · {row.movements} movements
+                      {priced
+                        ? ` · ₹${Number(row.value).toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+                        : ""}
                       <span className="pl-2 text-faint">
                         {open === key ? "tap to close" : "tap for the tools"}
                       </span>
@@ -398,7 +410,9 @@ function PeoplePanel({
       label="Counting sign-ins…"
       empty={<p className="py-10 text-center text-faint">Nobody signed in during this period.</p>}
     >
-      {(rows) => (
+      {(rows) => {
+        const priced = rows.some((r) => Number(r.value) > 0);
+        return (
         <div className="space-y-2">
           {rows.map((row) => (
             <div key={row.operator_id} className="rounded-xl bg-surface px-4 py-3">
@@ -415,8 +429,10 @@ function PeoplePanel({
               </div>
               <div className="pt-1 text-xs text-faint">
                 {row.sessions} sign-in{row.sessions === 1 ? "" : "s"} · {row.movements} movement
-                {row.movements === 1 ? "" : "s"} · ₹
-                {Number(row.value).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                {row.movements === 1 ? "" : "s"}
+                {priced
+                  ? ` · ₹${Number(row.value).toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+                  : ""}
               </div>
               <div className="flex gap-1 pt-2 text-xs">
                 <IdentityChip label="door" n={row.punch_sessions} tone="bg-success-soft text-success" />
@@ -432,7 +448,8 @@ function PeoplePanel({
             not added together.
           </p>
         </div>
-      )}
+        );
+      }}
     </Loaded>
   );
 }
