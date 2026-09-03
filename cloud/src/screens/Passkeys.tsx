@@ -30,6 +30,7 @@ import { ApiError } from "../lib/api";
 import type { Passkey, adminApi } from "../lib/admin";
 import { isPasskeySupported, registerPasskey } from "../lib/passkey";
 import { Banner, Header } from "../components/ui";
+import { Row, RowList } from "../components/row";
 import { Loaded, useLoadable } from "./Loadable";
 
 export function Passkeys({
@@ -124,56 +125,56 @@ export function Passkeys({
         }
       >
         {(credentials) => (
-      <section className="space-y-2">
+      <RowList>
         {credentials.map((credential) => (
-          <div key={credential.id} className="rounded-xl bg-surface px-4 py-3">
-            <div className="flex items-center gap-2">
-              <span className="truncate font-semibold">
-                {credential.device_label ?? "Unnamed device"}
-              </span>
-              {credential.backed_up && (
+          <Row
+            key={credential.id}
+            title={credential.device_label ?? "Unnamed device"}
+            badge={
+              credential.backed_up && (
                 <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-muted">
                   backed up
                 </span>
-              )}
-            </div>
-            <div className="mt-1 text-sm text-muted">
-              Registered {shortDate(credential.created_at)} ·{" "}
-              {credential.last_used_at
+              )
+            }
+            subtitle={
+              `Registered ${shortDate(credential.created_at)} · ` +
+              (credential.last_used_at
                 ? `last used ${shortDate(credential.last_used_at)}`
-                : "never used"}
-            </div>
-
-            {confirming === credential.id ? (
-              <div className="mt-3 flex gap-2">
+                : "never used")
+            }
+            actions={
+              confirming === credential.id ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void revoke(credential.id)}
+                    className="tap rounded-lg bg-red-600 px-3 text-sm font-semibold text-white disabled:opacity-50"
+                  >
+                    Yes, revoke it
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirming(null)}
+                    className="tap rounded-lg bg-surface-2 px-3 text-sm"
+                  >
+                    Keep it
+                  </button>
+                </>
+              ) : (
                 <button
                   type="button"
-                  disabled={busy}
-                  onClick={() => void revoke(credential.id)}
-                  className="tap rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                  onClick={() => setConfirming(credential.id)}
+                  className="tap rounded-lg bg-surface-2 px-3 text-sm text-danger"
                 >
-                  Yes, revoke it
+                  Revoke
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirming(null)}
-                  className="tap rounded-lg bg-surface-2 px-3 py-2 text-sm"
-                >
-                  Keep it
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setConfirming(credential.id)}
-                className="tap mt-3 rounded-lg bg-surface-2 px-3 py-2 text-sm text-danger"
-              >
-                Revoke
-              </button>
-            )}
-          </div>
+              )
+            }
+          />
         ))}
-      </section>
+      </RowList>
         )}
       </Loaded>
 
