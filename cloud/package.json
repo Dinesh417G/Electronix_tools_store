@@ -19,6 +19,8 @@
     "test:schema": "node --experimental-strip-types tests/db-schema.mjs",
     "test:splits": "node tests/split-issue.mjs",
     "test:admin": "node tests/admin-guards.mjs",
+    "test:catalog": "node tests/admin-crud.mjs",
+    "test:serials": "node tests/serials.mjs",
     "test:session-ui": "node tests/admin-session.mjs",
     "test:insights": "node tests/insights.mjs",
     "test:adms": "node tests/adms-edges.mjs",

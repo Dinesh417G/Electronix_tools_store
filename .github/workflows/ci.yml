@@ -359,6 +359,25 @@ jobs:
       #                 the last active ADMIN cannot leave by either verb. A
       #                 crib whose console nobody can open needs a Rust
       #                 toolchain and the database password to escape.
+      #   test:catalog  the catalog's write paths — M7's first step, which had
+      #                 no test at all: `route-smoke` asks the GET and
+      #                 `endpoint-callers` proves the other four verbs are
+      #                 wired, which is not the same as working. It also pins
+      #                 the three triggers the route comments claim and nothing
+      #                 checked: a new item gets a stock row but *no* alert
+      #                 (a catalog import must not raise 500 of them), moving a
+      #                 reorder level raises one immediately with no ledger row
+      #                 behind it, and an inverted band comes back as a
+      #                 sentence. Plus the ack that is not a resolve.
+      #   test:serials  everything that ends in a sticker. §6's rule —
+      #                 "reprinting is the same number again: print_count
+      #                 increments, no new row, no new number" — was one
+      #                 `update` nothing exercised, and a reprint that mints
+      #                 gives one tool two identities. Also the only test of
+      #                 `PUT /admin/printer`, which it uses to check both
+      #                 printer modes: BROWSER_PDF records the job DONE with a
+      #                 sheet, LAN_AGENT leaves it QUEUED because nothing in
+      #                 Vercel's cloud can reach a printer on a private LAN.
       - name: end-to-end
         run: |
           npm run start &
@@ -375,6 +394,8 @@ jobs:
           npm run test:expiry
           npm run test:adms
           npm run test:admin
+          npm run test:catalog
+          npm run test:serials
           npm run test:throttle
           npm run test:routes
           npm run test:session-ui
