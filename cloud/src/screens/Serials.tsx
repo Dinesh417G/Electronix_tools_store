@@ -17,6 +17,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiError, OfflineError } from "../lib/api";
 import type { adminApi, ToolSerial } from "../lib/admin";
 import { Banner, BigButton, Spinner } from "../components/ui";
+import { RowList } from "../components/row";
 
 interface Props {
   client: ReturnType<typeof adminApi>;
@@ -158,13 +159,11 @@ export function Serials({ client, itemId, itemCode, onBack, onNotice, onError }:
         </Banner>
       )}
 
-      <ul className="space-y-2">
+      <RowList>
         {serials.map((serial) => (
-          <li
+          <div
             key={serial.id}
-            className={`rounded-2xl bg-surface-2 p-3 ${
-              serial.status === "RETIRED" ? "opacity-60" : ""
-            }`}
+            className={`px-4 py-3 ${serial.status === "RETIRED" ? "opacity-60" : ""}`}
           >
             <div className="flex items-center gap-2">
               {editing === serial.id ? (
@@ -177,7 +176,7 @@ export function Serials({ client, itemId, itemCode, onBack, onNotice, onError }:
                     if (e.key === "Enter") saveEdit(serial);
                     if (e.key === "Escape") setEditing(null);
                   }}
-                  className="tap flex-1 rounded-lg bg-surface px-3 font-mono text-base"
+                  className="tap flex-1 rounded-lg border border-accent bg-surface-2 px-3 font-mono text-base outline-none"
                 />
               ) : (
                 <button
@@ -193,12 +192,12 @@ export function Serials({ client, itemId, itemCode, onBack, onNotice, onError }:
               )}
 
               {!serial.minted && (
-                <span className="rounded-full bg-surface-3 px-2 py-0.5 text-xs text-ink-2">
+                <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs text-ink-2">
                   typed in
                 </span>
               )}
               {serial.status === "RETIRED" && (
-                <span className="rounded-full bg-surface-3 px-2 py-0.5 text-xs">retired</span>
+                <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs">retired</span>
               )}
             </div>
 
@@ -217,21 +216,21 @@ export function Serials({ client, itemId, itemCode, onBack, onNotice, onError }:
                 type="button"
                 disabled={busy}
                 onClick={() => print(serial, 1)}
-                className="tap flex-1 rounded-lg bg-surface-3 text-sm font-semibold"
+                className="tap rounded-lg bg-accent px-4 text-sm font-semibold text-white disabled:opacity-50"
               >
                 {serial.print_count === 0 ? "Print" : "Reprint"}
               </button>
               <button
                 type="button"
                 onClick={() => retire(serial)}
-                className="tap rounded-lg bg-surface px-4 text-sm text-muted"
+                className="tap rounded-lg bg-surface-2 px-4 text-sm text-muted"
               >
                 {serial.status === "ACTIVE" ? "Retire" : "Restore"}
               </button>
             </div>
-          </li>
+          </div>
         ))}
-      </ul>
+      </RowList>
 
       <p className="text-xs text-faint">
         Tap a number to edit it. The same number can never be on two tools — the database
