@@ -13,10 +13,16 @@ import {
   type UnclaimedSession,
 } from "@/lib/api";
 import { subscribeToEvents, type ConnectionState, type ServerEvent } from "@/lib/events";
-import { ADMIN_NAME_KEY, ADMIN_SIGNED_OUT_EVENT, ADMIN_TOKEN_KEY } from "@/lib/admin";
+import {
+  ADMIN_NAME_KEY,
+  ADMIN_ROLE_KEY,
+  ADMIN_SIGNED_OUT_EVENT,
+  ADMIN_TOKEN_KEY,
+} from "@/lib/admin";
 import { count as outboxCount, flush, type QueuedTxn } from "@/lib/outbox";
 import { Admin } from "@/screens/Admin";
 import { AdminLogin } from "@/screens/AdminLogin";
+import { MySignIn } from "@/screens/MySignIn";
 import { Enrol } from "@/screens/Enrol";
 import { LiveView } from "@/screens/LiveView";
 import { Terminal } from "@/screens/Terminal";
@@ -50,6 +56,9 @@ export function AppShell() {
   // operator, and §11 keeps the two apart on purpose.
   const [adminToken, setAdminToken] = useState<string | null>(null);
   const [adminName, setAdminName] = useState<string>("");
+  // Which screen the token is worth drawing, not what it may do — every route
+  // re-checks the role for itself.
+  const [adminRole, setAdminRole] = useState<string>("");
 
   // The hydration read promised above. It sits below every state it writes,
   // and the sign-out listener with it: the admin token and name are declared
@@ -66,6 +75,7 @@ export function AppShell() {
     setMode((localStorage.getItem("electronix.store.mode") as Mode) ?? "terminal");
     setAdminToken(localStorage.getItem(ADMIN_TOKEN_KEY));
     setAdminName(localStorage.getItem(ADMIN_NAME_KEY) ?? "");
+    setAdminRole(localStorage.getItem(ADMIN_ROLE_KEY) ?? "");
     setHydrated(true);
   }, []);
 
@@ -78,6 +88,7 @@ export function AppShell() {
     const onSignedOut = () => {
       setAdminToken(null);
       setAdminName("");
+      setAdminRole("");
     };
     window.addEventListener(ADMIN_SIGNED_OUT_EVENT, onSignedOut);
     return () => window.removeEventListener(ADMIN_SIGNED_OUT_EVENT, onSignedOut);
@@ -297,6 +308,20 @@ export function AppShell() {
     localStorage.setItem("electronix.store.mode", next);
   };
 
+  /* One sign-out for both signed-in screens. Forgetting the role matters as
+   * much as forgetting the token: left behind, the next person to sign in on
+   * this device is drawn the previous person's screen until their own role
+   * lands. */
+  const signOutOfConsole = () => {
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
+    localStorage.removeItem(ADMIN_NAME_KEY);
+    localStorage.removeItem(ADMIN_ROLE_KEY);
+    setAdminToken(null);
+    setAdminName("");
+    setAdminRole("");
+    switchMode("terminal");
+  };
+
   // Until the effect above has read localStorage, we genuinely do not know
   // whether this device is enrolled. Rendering Enrol in the meantime would
   // flash a setup form at every operator on every load.
@@ -359,25 +384,34 @@ export function AppShell() {
 
       {mode === "admin" &&
         (adminToken ? (
-          <Admin
-            token={adminToken}
-            operatorName={adminName}
-            onSignOut={() => {
-              localStorage.removeItem(ADMIN_TOKEN_KEY);
-              localStorage.removeItem(ADMIN_NAME_KEY);
-              setAdminToken(null);
-              switchMode("terminal");
-            }}
-          />
+          // An OPERATOR signs in for exactly one reason — to register or revoke
+          // the device that signs in as them — so they get that page and not a
+          // console whose every tab would answer 403. Storekeepers and admins
+          // get the console, as before.
+          adminRole === "OPERATOR" ? (
+            <MySignIn
+              token={adminToken}
+              operatorName={adminName}
+              onSignOut={signOutOfConsole}
+            />
+          ) : (
+            <Admin
+              token={adminToken}
+              operatorName={adminName}
+              onSignOut={signOutOfConsole}
+            />
+          )
         ) : (
           <AdminLogin
-            onSignedIn={(token, name) => {
+            onSignedIn={(token, name, role) => {
               // Session-scoped to this device; the token expires in 12 hours
               // regardless, so a forgotten admin screen stops working on its own.
               localStorage.setItem(ADMIN_TOKEN_KEY, token);
               localStorage.setItem(ADMIN_NAME_KEY, name);
+              localStorage.setItem(ADMIN_ROLE_KEY, role);
               setAdminToken(token);
               setAdminName(name);
+              setAdminRole(role);
             }}
             onCancel={() => switchMode("terminal")}
           />

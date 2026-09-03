@@ -25,6 +25,11 @@ const BASE = process.env.STORE_BASE ?? "http://localhost:3100";
 const SECRET = process.env.STORE_ENROLMENT_SECRET;
 const EMP_CODE = process.env.WEBAUTHN_EMP_CODE ?? "E1001";
 const PIN = process.env.WEBAUTHN_PIN ?? "1111";
+// A plain OPERATOR, from `npm run seed -- --demo-operators`. Step 8 is entirely
+// about the role: everything above runs as an admin, which is the one role the
+// old gate let through.
+const OPERATOR_EMP_CODE = process.env.WEBAUTHN_OPERATOR_EMP_CODE ?? "E1042";
+const OPERATOR_PIN = process.env.WEBAUTHN_OPERATOR_PIN ?? "3333";
 
 if (!SECRET) {
   console.error("STORE_ENROLMENT_SECRET is required — the browser has to enrol as a terminal first");
@@ -97,8 +102,8 @@ async function main() {
     const openPasskeys = async () => {
       await clickText("Setup");
       await sleep(900);
-      const listed = /Passkeys/.test(await text());
-      await clickText("Passkeys");
+      const listed = /Fingerprint sign-in/.test(await text());
+      await clickText("Fingerprint sign-in");
       await sleep(1500);
       return listed;
     };
@@ -106,15 +111,17 @@ async function main() {
     if (await openAdmin()) ok("signed in with employee code and PIN");
     else bad("admin console did not open");
 
-    step("3. Setup → Passkeys — the screen that had no way in until today");
-    if (await openPasskeys()) ok("Setup lists a Passkeys section");
-    else bad("no Passkeys section in Setup");
+    step("3. Setup → Fingerprint sign-in — the screen that had no way in until today");
+    if (await openPasskeys()) ok("Setup lists a Fingerprint sign-in section");
+    else bad("no Fingerprint sign-in section in Setup");
     const empty = await text();
-    if (/No passkey is registered/i.test(empty)) ok("empty state renders before anything exists");
+    if (/No device is registered yet/i.test(empty)) ok("empty state renders before anything exists");
     else bad("unexpected first render: " + trim(empty));
 
     step("4. register — a real create() ceremony");
-    if (!(await clickText("Register this device"))) bad("no 'Register this device' button");
+    if (!(await clickText("Use this device's fingerprint"))) {
+      bad("no 'Use this device's fingerprint' button");
+    }
     await sleep(4000);
     const registered = await text();
     if (/Registered\./i.test(registered)) ok("the screen reports it registered");
@@ -158,7 +165,7 @@ async function main() {
       if (!(await clickText("Yes, revoke it"))) bad("no confirmation after Revoke");
       await sleep(2000);
       const after = await text();
-      if (/No passkey is registered/i.test(after)) ok("the device is gone from the list");
+      if (/No device is registered yet/i.test(after)) ok("the device is gone from the list");
       else bad("still listed after revoke: " + trim(after));
     } else {
       bad("could not get back into the console to revoke");
@@ -170,6 +177,98 @@ async function main() {
       bad("a REVOKED passkey still opened a session");
     } else {
       ok("the revoked passkey no longer opens a session");
+    }
+
+    // Everything above signs in as an ADMIN, which is exactly why the gap it
+    // covers survived: `register/options`, `register/verify`, `credentials` and
+    // its DELETE all name OPERATOR explicitly, and the only screen that called
+    // them lived inside a console `AdminLogin` refused to open for one. An
+    // operator could sign in with a fingerprint and had no way to enrol one.
+    //
+    // `endpoint-callers.mjs` passes on that, and cannot not: it proves a route
+    // has a caller somewhere in the file graph. It cannot see that the caller
+    // sits behind a role gate the intended user fails. Reachable in the code,
+    // unreachable in the product — which is why this step is a browser step and
+    // not an assertion that an OPERATOR token gets a 200.
+    step("8. an OPERATOR can reach it at all — the gap this run was written for");
+    // Counted rather than assumed to be zero. Revoking in step 6 deleted our
+    // row, not the credential on the device — a revoked passkey still lives on
+    // the phone and the server simply refuses it, which is exactly what step 7
+    // proves. So the authenticator still holds the admin's, and what this step
+    // can claim is that the operator's registration added one more.
+    const heldBefore = (await send("WebAuthn.getCredentials", { authenticatorId }))
+      .credentials?.length ?? 0;
+    await goto(BASE);
+    if (/Sign out/.test(await text())) {
+      await clickText("Sign out");
+      await sleep(1500);
+    }
+    if (!(await clickSelector('button[aria-label="Settings"], button[title="Settings"]'))) {
+      await clickText("⚙");
+    }
+    await sleep(800);
+    await clickText("admin");
+    await sleep(1200);
+    await fill([
+      ['input:not([type="password"])', OPERATOR_EMP_CODE],
+      ['input[type="password"]', OPERATOR_PIN],
+    ]);
+    await clickText("Sign in");
+    await sleep(2500);
+
+    const operatorView = await text();
+    if (/needs a storekeeper or administrator/i.test(operatorView)) {
+      bad("the operator was refused at sign-in — the old gate is back");
+    } else {
+      ok("an OPERATOR is no longer refused at sign-in");
+    }
+    // Not /Fingerprint sign-in/: the sign-in *form* says those words too, in
+    // the hint under the passkey button, so that pattern passes on the screen
+    // that refused them. Caught by putting the old gate back — the step failed
+    // six ways and these two still passed. Match the page's own subtitle and
+    // its way out, neither of which the login form has.
+    if (/Devices that can sign in as/i.test(operatorView) && /Sign out/.test(operatorView)) {
+      ok("and lands on their own fingerprint page");
+    } else {
+      bad("no fingerprint page after an operator signed in: " + trim(operatorView));
+    }
+    // The console is catalog and policy and none of it is theirs; a tab that
+    // answers 403 is worse than no tab.
+    if (/Catalog|Ledger|Reports/.test(operatorView)) {
+      bad("an OPERATOR was shown console tabs they cannot use");
+    } else {
+      ok("and no console tabs, which would all answer 403");
+    }
+
+    if (!(await clickText("Use this device's fingerprint"))) {
+      bad("no register button on the operator's page");
+    }
+    await sleep(4000);
+    const operatorRegistered = await text();
+    if (/Registered\./i.test(operatorRegistered)) ok("an OPERATOR registered a fingerprint");
+    else bad("the operator could not register: " + trim(operatorRegistered));
+
+    const heldNow = (await send("WebAuthn.getCredentials", { authenticatorId }))
+      .credentials?.length ?? 0;
+    if (heldNow === heldBefore + 1) {
+      ok(`the authenticator gained one credential (${heldBefore} → ${heldNow}) — create() really ran for an operator`);
+    } else {
+      bad(`the authenticator went ${heldBefore} → ${heldNow}, expected one more`);
+    }
+
+    // Revoking is the half that matters most to an operator: a lost phone is
+    // their problem to report and, until this page existed, only SQL could fix
+    // it. It also leaves the database as this test found it — every other test
+    // here cleans up after itself, and a stray credential would show up on the
+    // People list as "fingerprint on 1 device" forever.
+    await clickText("Revoke");
+    await sleep(600);
+    if (!(await clickText("Yes, revoke it"))) bad("no confirmation after Revoke");
+    await sleep(2000);
+    if (/No device is registered yet/i.test(await text())) {
+      ok("and can remove it again, which is what a lost phone needs");
+    } else {
+      bad("the operator could not revoke their own device");
     }
   } finally {
     await browser.close();

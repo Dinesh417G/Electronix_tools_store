@@ -534,6 +534,22 @@ reading. A passkey is stronger than a typed PIN and still weaker than the
 reader — flattening those three into one flag would be the lie that makes the
 audit trail undefensible.
 
+**Who may enrol which, and where.** These are not interchangeable and the
+console cannot offer them in one place:
+
+| | enrolled by | enrolled where | held by |
+|---|---|---|---|
+| `PUNCH` | a storekeeper, at the door | the ZK terminal's own keypad | the terminal — never our database |
+| `WEBAUTHN` | the person themselves | their own phone, after signing in | that phone's secure hardware |
+| `PIN` | an admin, in Setup → People | the console | `operators.pin_hash` (argon2) |
+
+A fingerprint therefore cannot be a field on the "add person" form, which is
+the first thing every user asks for. The door's template belongs to the reader
+(§2: the terminal owns the lock, never our software) and all we store is the
+mapping in `operators.zk_user_id`; a phone's fingerprint unlocks a key bound to
+that phone, so nobody can register it on somebody else's behalf. What the
+console *can* do is say so, and it does — on the People form, next to the PIN.
+
 Every integration test runs against `MockIdentitySource`. **No test may require a physical
 door terminal.**
 
@@ -1118,6 +1134,32 @@ beginning; this is the first thing that enforces it. It proves reachability,
 not correctness — a path found in `api.ts` says the wiring exists, not that a
 screen calls it — and that is exactly the class both of this project's dead
 features fell into.
+
+**What it cannot see is a caller behind a role gate the intended user fails**,
+and §8's passkey path spent the whole cloud port in exactly that state. All
+four WebAuthn routes name `OPERATOR` explicitly — `register/options`,
+`register/verify`, `credentials` and its DELETE — and the only screen that
+called them lived inside the admin console, which `AdminLogin` opened for
+ADMIN and STOREKEEPER alone. So an operator could *sign in* with a fingerprint
+and had no way anywhere to enrol one. `endpoint-callers.mjs` passed throughout,
+correctly: the caller exists. Reachable in the file graph, unreachable in the
+product.
+
+Found by the first user asking why adding a person offered no fingerprint
+option. It cannot: a passkey is bound to the device that created it, so it has
+to be registered by that person on their own phone — and the door reader's
+fingerprint is not ours at all, since the terminal captures and matches it and
+all we keep is `operators.zk_user_id` (§2, §9). The fix is a personal sign-in
+page: any role may now sign in, and an OPERATOR gets their own devices and
+nothing else, because a console of tabs that all answer 403 is worse than no
+console. Gated by `tests/webauthn.mjs` step 8, which signs in as a seeded
+OPERATOR through the browser, registers against the virtual authenticator and
+revokes again — six assertions fail with the old gate restored, which is how it
+was checked. An API test asserting an OPERATOR token gets a 200 would have
+passed on the broken build, because it always did.
+
+The UI calls it **fingerprint sign-in** now; the code keeps `passkey`, because
+on an iPhone or a laptop the same credential may be a face or a device PIN.
 
 §6's RLS gap is closed, and by the cheapest possible thing: a step in the CI
 job queries `pg_class` after the migrations are applied and fails on any
