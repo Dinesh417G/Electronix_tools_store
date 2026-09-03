@@ -221,6 +221,68 @@ export function Field({
 }
 
 /**
+ * Where the bin sits in its band: reorder level ← on hand → full.
+ *
+ * The owner's reference shows a 52-week low/high strip with the price marked
+ * on it, and the crib has exactly that shape of fact — §6's `reorder_level`
+ * and `max_level` bracket a quantity that means nothing on its own. "2 on
+ * hand" is a number; "2, and the reorder mark is at 5" is a decision.
+ *
+ * The tick is the reorder level, so the eye can see which side of it the fill
+ * stops on without reading either figure.
+ */
+export function BandGauge({
+  onHand,
+  reorder,
+  max,
+  caption,
+}: {
+  onHand: number;
+  reorder: number;
+  /** §6 leaves this null on plenty of a 90-line catalog. */
+  max: number | null;
+  caption: string;
+}) {
+  /* Something has to set the scale. With no maximum, twice the reorder level
+     is the honest guess — it puts the mark in the middle and leaves room to
+     show stock above it. A bin above its own scale pushes the scale, so the
+     fill never runs off the end. */
+  const ceiling = Math.max(max ?? reorder * 2, onHand, 1);
+  const fill = Math.max(0, Math.min(1, onHand / ceiling));
+  const tick = Math.max(0, Math.min(1, reorder / ceiling));
+
+  /* Literal mid shades, not the `warning`/`danger` tokens. Those are tuned to
+     be *read* — on a light page they resolve to amber-700 and red-600, deep
+     enough for text — and a 4px bar drawn in amber-700 reads as mud. A fill
+     needs to be seen against its track, not read against a page, which is the
+     same reason TAKE OUT and PUT IN keep their literal colors. */
+  const tone =
+    onHand <= 0 ? "bg-red-500" : onHand <= reorder ? "bg-amber-500" : "bg-emerald-500";
+
+  return (
+    /* `mt-1`: stacked on a phone this sits directly under the description, and
+       with no gap a 4px bar hard against a line of text reads as an underline
+       of that text rather than as a gauge of its own. */
+    <span className="mt-1 block">
+      <span className="relative block h-1 w-full overflow-hidden rounded-full bg-surface-3">
+        <span
+          className={`absolute inset-y-0 left-0 rounded-full ${tone}`}
+          style={{ width: `${fill * 100}%` }}
+        />
+        {reorder > 0 && (
+          <span
+            className="absolute inset-y-0 w-px bg-ink-2"
+            style={{ left: `${tick * 100}%` }}
+            aria-hidden="true"
+          />
+        )}
+      </span>
+      <span className="block pt-0.5 tabular-nums">{caption}</span>
+    </span>
+  );
+}
+
+/**
  * A section nav, underlined rather than filled.
  *
  * Six admin tabs at equal visual weight to "Confirm" or "+ Item" is what made
