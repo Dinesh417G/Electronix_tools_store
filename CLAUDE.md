@@ -853,7 +853,20 @@ Design for a shop-floor operator with oily gloves and no patience.
      has (§3).
 
    The space this freed goes to a **TODAY** strip — movement count, in and out,
-   and the last eight rows with times. It earns its place by answering what the
+   and the last twenty rows with times, in fixed columns so the quantities stack
+   and the item codes start at one edge.
+
+   Two things it got wrong first, both caught by looking at a screenshot:
+
+   - **It contradicted its own header.** The counts were scoped to the window;
+     the row list was not, so a quiet morning read "7 movements" above eight
+     rows, the last from the previous evening. A panel that disagrees with
+     itself teaches the reader to distrust every number on the screen —
+     including the stock figures, which are the product.
+   - **It added litres to pieces.** "13 out, 14 in" summed `delta_qty` across
+     items whose `uom` differs (§6), which is a number with no unit. It counts
+     movements each way now: how many times somebody came to the crib, and
+     which direction they went. It earns its place by answering what the
    green "Live" pill only gestures at: whether anything is reaching the server.
    The day boundary is the **tablet's** local midnight, sent as a parameter,
    because the server runs in UTC and a day counted there rolls at 05:30 in an

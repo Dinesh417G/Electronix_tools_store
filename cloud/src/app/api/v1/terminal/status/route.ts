@@ -60,25 +60,38 @@ export const GET = handler(async (request: Request) => {
 
   // §9.3: business logic reads `created_at`, never the device clock. A day's
   // count is business logic.
+  // Counts, not summed quantities.
+  //
+  // The first version totalled `delta_qty` each way and showed "13 out, 14 in",
+  // which adds twenty-litre drums of coolant to carbide inserts: §6 gives every
+  // item a `uom`, and NOS + LTR + KG is a number with no unit and no meaning.
+  // How many times somebody came to the crib and which direction they went is
+  // a real quantity, and it is the one this strip is for.
   const [today] = await sql<
-    { movements: number; issued: string; received: string; last_at: Date | null }[]
+    { movements: number; out_count: number; in_count: number; last_at: Date | null }[]
   >`
     select count(*)::int as movements,
-           coalesce(sum(-delta_qty) filter (where delta_qty < 0), 0)::text as issued,
-           coalesce(sum(delta_qty) filter (where delta_qty > 0), 0)::text as received,
+           count(*) filter (where delta_qty < 0)::int as out_count,
+           count(*) filter (where delta_qty > 0)::int as in_count,
            max(created_at) as last_at
       from stock_ledger
      where created_at >= ${since}
   `;
 
+  // Scoped to the same window as the counts above, which it was not: the card
+  // is headed TODAY and listed the last eight movements whatever day they fell
+  // on, so a quiet morning showed "7 movements" over eight rows, the last of
+  // them from the previous evening. A panel that disagrees with its own header
+  // teaches the reader to distrust every number on the screen.
   const recent = await sql`
     select l.id, l.delta_qty::text as delta_qty, l.txn_type,
-           i.item_code, o.full_name as operator_name, l.created_at
+           i.item_code, i.uom, o.full_name as operator_name, l.created_at
       from stock_ledger l
       join items i on i.id = l.item_id
       join operators o on o.id = l.operator_id
+     where l.created_at >= ${since}
      order by l.created_at desc, l.id desc
-     limit 8
+     limit 20
   `;
 
   const lastSeen = reader.last_seen_at;

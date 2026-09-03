@@ -684,7 +684,11 @@ function IdleScreen({
           what the sm: breakpoint is for. */}
       <div className="flex items-baseline justify-center gap-3 px-4 pt-2">
         <span className="text-4xl font-bold tabular-nums sm:text-6xl">
-          {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          {now.toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+          })}
         </span>
         <span className="text-sm text-slate-400 sm:text-lg">
           {now.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })}
@@ -808,6 +812,7 @@ function TodayStrip({ status }: { status: TerminalStatus }) {
             {new Date(today.last_at).toLocaleTimeString([], {
               hour: "2-digit",
               minute: "2-digit",
+              hour12: false,
             })}
           </span>
         )}
@@ -817,51 +822,70 @@ function TodayStrip({ status }: { status: TerminalStatus }) {
         <p className="pt-2 text-sm text-slate-400">Nothing has moved yet today.</p>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex gap-4 pt-1 text-sm">
+          {/* Trips to the crib, each way. The quantities these replaced were
+              summed across units — twenty-litre drums added to carbide
+              inserts — which is a number with no unit and no meaning (§6). */}
+          <div className="flex shrink-0 items-baseline gap-3 pt-1 text-sm">
             <span>
               <strong className="tabular-nums">{today.movements}</strong>{" "}
               <span className="text-slate-400">
                 movement{today.movements === 1 ? "" : "s"}
               </span>
             </span>
+            <span className="text-slate-600">·</span>
             <span className="text-slate-400">
-              <strong className="tabular-nums text-red-300">{formatQty(today.issued)}</strong> out
+              <span className="text-red-400">↓</span>{" "}
+              <strong className="tabular-nums text-slate-300">{today.out_count}</strong> out
             </span>
             <span className="text-slate-400">
-              <strong className="tabular-nums text-emerald-300">
-                {formatQty(today.received)}
-              </strong>{" "}
-              in
+              <span className="text-emerald-400">↑</span>{" "}
+              <strong className="tabular-nums text-slate-300">{today.in_count}</strong> in
             </span>
           </div>
 
-          {/* Scrolls rather than pushing the card past the fold: eight rows on
-              a tall tablet, as many as fit on a short phone. */}
+          {/* Scrolls rather than pushing the card past the fold. Twenty rows
+              rather than eight: the card grows into the space left below the
+              chips, and eight never filled a tall phone. A short screen shows
+              what fits and scrolls for the rest. */}
           <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto pt-2">
             {recent.map((row) => {
               const out = row.delta_qty.startsWith("-");
               return (
+                /* Fixed columns, not a row of inline spans.
+                 *
+                 * Every field was `shrink-0` in source order, so a quantity of
+                 * 11 pushed its item code two characters further right than a
+                 * quantity of 1 and the codes never lined up. Time and quantity
+                 * are numeric and get fixed widths — the quantity right-aligned
+                 * against the arrow, so the digits stack — and the item code
+                 * takes the rest. `tabular-nums` is what makes 1 and 11 occupy
+                 * the same width per digit. */
                 <li key={row.id} className="flex items-baseline gap-2 text-sm">
                   {/* The time is what tells two otherwise identical lines
-                      apart. Three rows reading "2 COOL-SYN-20L R." look like a
-                      rendering fault; three rows with three times are three
-                      trips to the crib, which is what they were. */}
-                  <span className="shrink-0 tabular-nums text-xs text-slate-500">
+                      apart. Three rows reading "2 COOL-SYN-20L R. Kumar" look
+                      like a rendering fault; three times are three trips to the
+                      crib, which is what they were. */}
+                  <span className="w-11 shrink-0 tabular-nums text-xs text-slate-500">
                     {new Date(row.created_at).toLocaleTimeString([], {
                       hour: "2-digit",
                       minute: "2-digit",
+                      hour12: false,
                     })}
                   </span>
-                  <span className={out ? "text-red-400" : "text-emerald-400"}>
+                  <span
+                    className={`w-3 shrink-0 text-center ${
+                      out ? "text-red-400" : "text-emerald-400"
+                    }`}
+                  >
                     {out ? "↓" : "↑"}
                   </span>
-                  <span className="tabular-nums text-slate-300">
+                  <span className="w-10 shrink-0 text-right tabular-nums text-slate-200">
                     {formatQty(row.delta_qty.replace("-", ""))}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-slate-400">{row.item_code}</span>
                   {/* Not `split(" ")[0]`: "R. Kumar" becomes "R.", which names
-                      nobody. Truncation by CSS keeps whatever fits. */}
-                  <span className="max-w-[6rem] shrink-0 truncate text-xs text-slate-500">
+                      nobody. CSS truncation keeps whatever fits. */}
+                  <span className="max-w-[5.5rem] shrink-0 truncate text-xs text-slate-500">
                     {row.operator_name}
                   </span>
                 </li>

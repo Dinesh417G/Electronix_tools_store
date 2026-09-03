@@ -203,15 +203,18 @@ export interface TerminalStatus {
   };
   today: {
     movements: number;
-    issued: string;
-    received: string;
+    /** Counts, not quantities: NOS + LTR + KG is a number with no unit (§6). */
+    out_count: number;
+    in_count: number;
     last_at: string | null;
   };
+  /** Scoped to the same window as `today`, or the card contradicts its header. */
   recent: {
     id: number;
     delta_qty: string;
     txn_type: string;
     item_code: string;
+    uom: string;
     operator_name: string;
     created_at: string;
   }[];
