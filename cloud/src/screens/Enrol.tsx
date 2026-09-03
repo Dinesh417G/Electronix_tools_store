@@ -48,7 +48,7 @@ export function Enrol({ onEnrolled }: { onEnrolled: () => void }) {
       <div className="flex flex-1 flex-col justify-center gap-5 px-5">
         <div>
           <h1 className="text-2xl font-bold">Set up this device</h1>
-          <p className="pt-1 text-slate-400">
+          <p className="pt-1 text-muted">
             One time only. Ask the storekeeper for the enrolment secret.
           </p>
         </div>
@@ -56,35 +56,35 @@ export function Enrol({ onEnrolled }: { onEnrolled: () => void }) {
         {error && <Banner tone="error">{error}</Banner>}
 
         <label className="block">
-          <span className="text-sm font-semibold text-slate-400">TERMINAL ID</span>
+          <span className="text-sm font-semibold text-muted">TERMINAL ID</span>
           <input
             value={terminalId}
             onChange={(e) => setTerminalId(e.target.value.toUpperCase())}
-            className="tap mt-1 w-full rounded-xl bg-slate-800 px-4 text-lg outline-none focus:ring-2 focus:ring-sky-500"
+            className="tap mt-1 w-full rounded-xl border border-line bg-surface px-4 text-lg outline-none focus:border-accent focus:ring-1 focus:ring-accent/30"
           />
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-faint">
             Shown on ledger rows and on the admin device list.
           </span>
         </label>
 
         <label className="block">
-          <span className="text-sm font-semibold text-slate-400">NAME (OPTIONAL)</span>
+          <span className="text-sm font-semibold text-muted">NAME (OPTIONAL)</span>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Store door tablet"
-            className="tap mt-1 w-full rounded-xl bg-slate-800 px-4 text-lg outline-none placeholder:text-slate-500 focus:ring-2 focus:ring-sky-500"
+            className="tap mt-1 w-full rounded-xl border border-line bg-surface px-4 text-lg outline-none placeholder:text-faint focus:border-accent focus:ring-1 focus:ring-accent/30"
           />
         </label>
 
         <label className="block">
-          <span className="text-sm font-semibold text-slate-400">ENROLMENT SECRET</span>
+          <span className="text-sm font-semibold text-muted">ENROLMENT SECRET</span>
           <input
             type="password"
             value={secret}
             onChange={(e) => setSecret(e.target.value)}
             autoComplete="off"
-            className="tap mt-1 w-full rounded-xl bg-slate-800 px-4 text-lg outline-none focus:ring-2 focus:ring-sky-500"
+            className="tap mt-1 w-full rounded-xl border border-line bg-surface px-4 text-lg outline-none focus:border-accent focus:ring-1 focus:ring-accent/30"
           />
         </label>
 

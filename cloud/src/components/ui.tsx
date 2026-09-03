@@ -4,8 +4,9 @@
 // screen mounted on a wall or held in one hand.
 
 import { useRegisterBack } from "./chrome";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { ConnectionState } from "../lib/events";
+import { getEffectiveTheme, setTheme, type Theme } from "../lib/theme";
 
 export function Screen({
   children,
@@ -40,11 +41,11 @@ export function BigButton({
   className?: string;
 }) {
   const styles: Record<string, string> = {
-    neutral: "bg-slate-800 active:bg-slate-700 text-slate-100",
+    neutral: "bg-surface-2 active:bg-surface-3 text-ink",
     "take-out": "bg-red-700 active:bg-red-800 text-white",
     "put-in": "bg-emerald-700 active:bg-emerald-800 text-white",
-    primary: "bg-sky-600 active:bg-sky-700 text-white",
-    ghost: "bg-transparent border-2 border-slate-700 active:bg-slate-800 text-slate-300",
+    primary: "bg-accent active:bg-sky-700 text-white",
+    ghost: "bg-transparent border-2 border-line-strong active:bg-surface-2 text-ink-2",
   };
 
   return (
@@ -78,17 +79,17 @@ export function ConnectionPill({
     offline: "Offline",
   };
   const dot: Record<ConnectionState, string> = {
-    live: "bg-emerald-400",
-    connecting: "bg-amber-400 animate-pulse",
-    offline: "bg-red-500",
+    live: "bg-success",
+    connecting: "bg-warning animate-pulse",
+    offline: "bg-danger",
   };
 
   return (
     <div className="flex items-center gap-2 text-sm">
       <span className={`h-2.5 w-2.5 rounded-full ${dot[state]}`} />
-      <span className="text-slate-400">{label[state]}</span>
+      <span className="text-muted">{label[state]}</span>
       {pending > 0 && (
-        <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-xs font-semibold text-amber-300">
+        <span className="rounded-full bg-warning-soft px-2 py-0.5 text-xs font-semibold text-warning">
           {pending} queued
         </span>
       )}
@@ -107,10 +108,10 @@ export function Banner({
   onDismiss?: () => void;
 }) {
   const tones = {
-    error: "bg-red-950 border-red-700 text-red-100",
-    warn: "bg-amber-950 border-amber-600 text-amber-100",
-    info: "bg-sky-950 border-sky-700 text-sky-100",
-    success: "bg-emerald-950 border-emerald-700 text-emerald-100",
+    error: "bg-danger-soft border-danger-line text-danger",
+    warn: "bg-warning-soft border-warning-line text-warning",
+    info: "bg-accent-soft border-accent-line text-accent",
+    success: "bg-success-soft border-success-line text-success",
   };
 
   return (
@@ -136,8 +137,8 @@ export function AlertChip({ level }: { level: string }) {
   if (level === "OK") return null;
   const styles =
     level === "EMPTY"
-      ? "bg-red-500/20 text-red-300 border-red-600"
-      : "bg-amber-500/20 text-amber-300 border-amber-600";
+      ? "bg-danger-soft text-danger border-danger-line"
+      : "bg-warning-soft text-warning border-warning-line";
   return (
     <span className={`rounded-full border px-2 py-0.5 text-xs font-bold ${styles}`}>
       {level}
@@ -147,8 +148,8 @@ export function AlertChip({ level }: { level: string }) {
 
 export function Spinner({ label }: { label: string }) {
   return (
-    <div className="flex flex-col items-center gap-3 py-10 text-slate-400">
-      <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-700 border-t-sky-500" />
+    <div className="flex flex-col items-center gap-3 py-10 text-muted">
+      <div className="h-8 w-8 animate-spin rounded-full border-4 border-line-strong border-t-accent" />
       <span>{label}</span>
     </div>
   );
@@ -194,7 +195,7 @@ export function Header({
     <header className="flex shrink-0 items-center gap-3 px-4 pb-3">
       <div className="min-w-0 flex-1">
         <h1 className="truncate text-xl font-bold">{title}</h1>
-        {subtitle && <p className="truncate text-sm text-slate-400">{subtitle}</p>}
+        {subtitle && <p className="truncate text-sm text-muted">{subtitle}</p>}
       </div>
       {right}
     </header>
@@ -212,9 +213,146 @@ export function Field({
 }) {
   return (
     <label className="block">
-      <span className="text-xs font-semibold text-slate-400">{label}</span>
+      <span className="text-xs font-semibold text-muted">{label}</span>
       <div className="mt-1">{children}</div>
-      {hint && <span className="text-xs text-slate-500">{hint}</span>}
+      {hint && <span className="text-xs text-faint">{hint}</span>}
     </label>
+  );
+}
+
+/**
+ * A section nav, underlined rather than filled.
+ *
+ * Six admin tabs at equal visual weight to "Confirm" or "+ Item" is what made
+ * the console read as a stack of identical blue blocks — a reader cannot tell
+ * "where I am in the app" from "the button I am about to press" when both are
+ * drawn the same way. An underline costs one border and no fill, so the tab a
+ * reader is standing on is legible without competing with the controls inside
+ * it.
+ *
+ * Admin-only (`tap-sm` is hardcoded, not the ambient `.tap`), and a single
+ * scrolling row rather than the two-row grid it replaces: six labels do not
+ * fit a 390 px phone at a readable size either way, and a horizontal strip is
+ * the shape every reader already knows from a browser's own tab bar.
+ */
+export function TabStrip<T extends string>({
+  value,
+  onChange,
+  options,
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  options: readonly { value: T; label: string }[];
+}) {
+  return (
+    <nav
+      className="flex gap-1 overflow-x-auto border-b border-line px-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      aria-label="Section"
+    >
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => onChange(opt.value)}
+          aria-current={value === opt.value ? "page" : undefined}
+          className={`tap-sm shrink-0 border-b-2 px-3 text-sm font-semibold whitespace-nowrap ${
+            value === opt.value
+              ? "border-accent text-accent"
+              : "border-transparent text-muted active:bg-surface-2"
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+/**
+ * A filter pill: outlined, not filled — the weight one step below `TabStrip`.
+ *
+ * These select a view of the same list (Busiest / Low / Just taken, a report
+ * grouping, a ledger reason) rather than a different screen, and were drawn
+ * exactly like `TabStrip`'s tabs and `BigButton`'s primary action: the same
+ * solid fill at every level of the hierarchy is what made the console read as
+ * one undifferentiated stack of blocks. An unselected chip is a border on the
+ * page background; a selected one tints rather than fills, so it reads as
+ * "chosen" without shouting louder than the section nav above it.
+ */
+export function Chip({
+  active,
+  onClick,
+  children,
+  title,
+  size = "md",
+  className = "",
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+  title?: string;
+  /** `sm` for a row of four or more, where `md`'s padding would wrap text. */
+  size?: "sm" | "md";
+  className?: string;
+}) {
+  const sizing = size === "sm" ? "px-1.5 text-xs" : "px-3 text-sm";
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      className={`tap rounded-lg border font-semibold whitespace-nowrap transition-colors ${sizing} ${
+        active
+          ? "border-accent-line bg-accent-soft text-accent"
+          : "border-line bg-transparent text-muted active:bg-surface-2"
+      } ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * Light or dark, remembered per device (`lib/theme.ts`).
+ *
+ * Lives in the settings panel rather than floating in the bottom bar: that
+ * bar has exactly two controls, one in each corner a thumb owns on a 6.7"
+ * phone, and a third one in the middle is the tap a gloved hand makes by
+ * accident reaching for either end (`chrome.tsx`). The gear is already
+ * labelled Settings; this is a row inside it, not a new corner.
+ *
+ * Rendered only while its parent panel is open, which is always after
+ * hydration — so reading `document` in the initial state is safe here and
+ * would not be above the fold.
+ */
+export function ThemeToggle({ className = "" }: { className?: string }) {
+  // A lazy initializer, not an effect: this only ever mounts after the panel
+  // it lives in is opened by a tap, which is always well after hydration — so
+  // reading the current theme during render is safe here.
+  const [theme, setThemeState] = useState<Theme>(() => getEffectiveTheme());
+
+  const next: Theme = theme === "dark" ? "light" : "dark";
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        setTheme(next);
+        setThemeState(next);
+      }}
+      className={`tap-sm flex items-center gap-2 rounded-xl px-3 text-sm font-semibold text-ink-2 active:bg-surface-2 ${className}`}
+    >
+      {theme === "dark" ? (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+        </svg>
+      ) : (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
+          <path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z" />
+        </svg>
+      )}
+      <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>
+    </button>
   );
 }

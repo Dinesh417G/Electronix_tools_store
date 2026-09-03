@@ -18,7 +18,8 @@ import {
   type LedgerRow,
 } from "../lib/api";
 import type { ConnectionState, ServerEvent } from "../lib/events";
-import { AlertChip, ConnectionPill, Spinner } from "../components/ui";
+import { AlertChip, Chip, ConnectionPill, Spinner } from "../components/ui";
+import { Row, RowList } from "../components/row";
 
 interface Props {
   connection: ConnectionState;
@@ -72,7 +73,7 @@ export function LiveView({ connection, revision, lastEvent }: Props) {
       <header className="flex items-center justify-between px-4 pb-3">
         <div>
           <h1 className="text-xl font-bold">Live view</h1>
-          <p className="text-sm text-slate-400">ElectronIx Tool Store</p>
+          <p className="text-sm text-muted">ElectronIx Tool Store</p>
         </div>
         <ConnectionPill state={connection} pending={0} />
       </header>
@@ -84,10 +85,10 @@ export function LiveView({ connection, revision, lastEvent }: Props) {
       )}
 
       {error && (
-        <div className="px-4 pb-2 text-sm text-red-400">{error}</div>
+        <div className="px-4 pb-2 text-sm text-danger">{error}</div>
       )}
 
-      <nav className="flex gap-1 px-4 pb-3">
+      <nav className="flex gap-1.5 px-4 pb-3">
         {(
           [
             ["activity", "Activity"],
@@ -95,16 +96,9 @@ export function LiveView({ connection, revision, lastEvent }: Props) {
             ["alerts", `Alerts${alerts?.length ? ` (${alerts.length})` : ""}`],
           ] as const
         ).map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setTab(key)}
-            className={`flex-1 rounded-xl px-3 py-2.5 text-sm font-semibold ${
-              tab === key ? "bg-sky-600 text-white" : "bg-slate-800 text-slate-300"
-            }`}
-          >
+          <Chip key={key} active={tab === key} onClick={() => setTab(key)} className="flex-1">
             {label}
-          </button>
+          </Chip>
         ))}
       </nav>
 
@@ -141,8 +135,8 @@ function EventTicker({ event }: { event: ServerEvent }) {
 
   const tone =
     event.type === "punch.unknown_user" || event.type === "alert.raised"
-      ? "bg-amber-500/15 text-amber-200"
-      : "bg-sky-500/15 text-sky-200";
+      ? "bg-warning-soft text-warning"
+      : "bg-accent-soft text-accent";
 
   return <div className={`rounded-xl px-3 py-2 text-sm ${tone}`}>{text}</div>;
 }
@@ -154,46 +148,37 @@ function Activity({ rows }: { rows: LedgerRow[] | null }) {
   }
 
   return (
-    <ol className="space-y-2">
+    <RowList>
       {rows.map((row) => {
         const out = row.delta_qty.startsWith("-");
         return (
-          <li
+          <Row
             key={row.id}
-            className="flex items-center gap-3 rounded-xl bg-slate-900 px-4 py-3"
-          >
-            <div
-              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-lg font-bold ${
-                out ? "bg-red-900 text-red-300" : "bg-emerald-900 text-emerald-300"
-              }`}
-            >
-              {out ? "↑" : "↓"}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="truncate font-semibold">{row.item_code}</div>
-              <div className="truncate text-sm text-slate-400">
-                {row.operator_name}
-                {row.machine_code ? ` · ${row.machine_code}` : ""}
-                {row.reason_code ? ` · ${row.reason_code}` : ""}
-                {/* §7: a reversal is a real row with the opposite sign, and it
-                    says so rather than quietly cancelling the original out. */}
-                {row.reverses_id ? ` · reverses #${row.reverses_id}` : ""}
-              </div>
-            </div>
-            <div className="shrink-0 text-right">
+            title={row.item_code}
+            subtitle={
+              row.operator_name +
+              (row.machine_code ? ` · ${row.machine_code}` : "") +
+              (row.reason_code ? ` · ${row.reason_code}` : "") +
+              // §7: a reversal is a real row with the opposite sign, and it
+              // says so rather than quietly cancelling the original out.
+              (row.reverses_id ? ` · reverses #${row.reverses_id}` : "")
+            }
+            value={formatQty(row.delta_qty)}
+            valueNote={clock(row.created_at)}
+            tone={out ? "out" : "in"}
+            leading={
               <div
-                className={`text-lg font-bold tabular-nums ${
-                  out ? "text-red-400" : "text-emerald-400"
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-lg font-bold ${
+                  out ? "bg-danger-soft text-danger" : "bg-success-soft text-success"
                 }`}
               >
-                {formatQty(row.delta_qty)}
+                {out ? "↑" : "↓"}
               </div>
-              <div className="text-xs text-slate-500">{clock(row.created_at)}</div>
-            </div>
-          </li>
+            }
+          />
         );
       })}
-    </ol>
+    </RowList>
   );
 }
 
@@ -202,26 +187,19 @@ function Stock({ rows }: { rows: Item[] | null }) {
   if (rows.length === 0) return <Empty>No items in the catalog yet.</Empty>;
 
   return (
-    <ol className="space-y-2">
+    <RowList>
       {rows.map((item) => (
-        <li key={item.id} className="flex items-center gap-3 rounded-xl bg-slate-900 px-4 py-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="truncate font-semibold">{item.item_code}</span>
-              <AlertChip level={item.alert_state} />
-            </div>
-            <div className="truncate text-sm text-slate-400">{item.description}</div>
-            {item.bin_location && (
-              <div className="text-xs text-slate-500">Bin {item.bin_location}</div>
-            )}
-          </div>
-          <div className="shrink-0 text-right">
-            <div className="text-xl font-bold tabular-nums">{formatQty(item.on_hand)}</div>
-            <div className="text-xs text-slate-500">{item.uom}</div>
-          </div>
-        </li>
+        <Row
+          key={item.id}
+          title={item.item_code}
+          badge={<AlertChip level={item.alert_state} />}
+          subtitle={item.description}
+          meta={item.bin_location ? `Bin ${item.bin_location}` : undefined}
+          value={formatQty(item.on_hand)}
+          valueNote={item.uom}
+        />
       ))}
-    </ol>
+    </RowList>
   );
 }
 
@@ -236,27 +214,27 @@ function Alerts({ rows }: { rows: AlertRow[] | null }) {
       {rows.map((alert) => (
         <li
           key={alert.id}
-          className={`rounded-xl border-l-4 bg-slate-900 px-4 py-3 ${
-            alert.level === "EMPTY" ? "border-red-500" : "border-amber-500"
+          className={`rounded-xl border-l-4 bg-surface px-4 py-3 ${
+            alert.level === "EMPTY" ? "border-danger" : "border-warning"
           }`}
         >
           <div className="flex items-center gap-2">
             <span className="font-semibold">{alert.item_code}</span>
             <AlertChip level={alert.level} />
           </div>
-          <div className="text-sm text-slate-400">{alert.description}</div>
+          <div className="text-sm text-muted">{alert.description}</div>
           <div className="pt-1 text-sm">
-            <span className="tabular-nums text-slate-300">
+            <span className="tabular-nums text-ink-2">
               {formatQty(alert.on_hand)} on hand
             </span>
-            <span className="text-slate-500">
+            <span className="text-faint">
               {" "}
               · reorder at {formatQty(alert.reorder_level)}
               {alert.reorder_qty ? ` · order ${formatQty(alert.reorder_qty)}` : ""}
             </span>
           </div>
           {alert.bin_location && (
-            <div className="text-xs text-slate-500">Bin {alert.bin_location}</div>
+            <div className="text-xs text-faint">Bin {alert.bin_location}</div>
           )}
         </li>
       ))}
@@ -265,7 +243,7 @@ function Alerts({ rows }: { rows: AlertRow[] | null }) {
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="py-12 text-center text-slate-500">{children}</p>;
+  return <p className="py-12 text-center text-faint">{children}</p>;
 }
 
 function clock(iso: string): string {

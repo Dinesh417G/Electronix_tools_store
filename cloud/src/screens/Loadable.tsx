@@ -128,10 +128,10 @@ export function Loaded<T>({
 
   if (state.error && state.data === null) {
     return (
-      <div className="space-y-3 rounded-xl border border-amber-900 bg-amber-950/40 px-4 py-6 text-center">
-        <p className="font-semibold text-amber-200">This did not load.</p>
-        <p className="text-sm text-amber-100/80">{state.error}</p>
-        <p className="text-xs text-amber-100/60">
+      <div className="space-y-3 rounded-xl border border-warning-line bg-warning-soft px-4 py-6 text-center">
+        <p className="font-semibold text-warning">This did not load.</p>
+        <p className="text-sm text-ink-2">{state.error}</p>
+        <p className="text-xs text-faint">
           Nothing is wrong with the stock — this screen simply could not ask.
         </p>
         <button
@@ -148,7 +148,7 @@ export function Loaded<T>({
   return (
     <>
       {state.error && state.data !== null && (
-        <p className="rounded-lg bg-amber-950/50 px-3 py-2 text-xs text-amber-200">
+        <p className="rounded-lg bg-warning-soft px-3 py-2 text-xs text-warning">
           Showing the last figures that loaded — the newest attempt failed. {state.error}{" "}
           <button type="button" onClick={state.reload} className="underline">
             Try again

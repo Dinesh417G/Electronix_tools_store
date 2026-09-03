@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, OfflineError } from "../lib/api";
 import type { adminApi, PrinterSettings as Settings } from "../lib/admin";
-import { BigButton, Banner, Field, Spinner } from "../components/ui";
+import { BigButton, Banner, Chip, Field, Spinner } from "../components/ui";
 
 interface Props {
   client: ReturnType<typeof adminApi>;
@@ -67,7 +67,7 @@ export function PrinterSettings({ client, onNotice, onError }: Props) {
   return (
     <div className="space-y-4">
       <section className="space-y-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">
           How labels reach paper
         </h3>
 
@@ -104,7 +104,7 @@ export function PrinterSettings({ client, onNotice, onError }: Props) {
             value={settings.name ?? ""}
             onChange={(e) => set("name", e.target.value)}
             placeholder="e.g. Zebra by the door"
-            className="tap w-full rounded-xl bg-slate-800 px-4 text-base"
+            className="tap w-full rounded-xl border border-line bg-surface px-4 text-base outline-none focus:border-accent focus:ring-1 focus:ring-accent/30"
           />
         </Field>
 
@@ -117,7 +117,7 @@ export function PrinterSettings({ client, onNotice, onError }: Props) {
                   onChange={(e) => set("host", e.target.value)}
                   placeholder="192.168.0.50"
                   inputMode="decimal"
-                  className="tap w-full rounded-xl bg-slate-800 px-4 text-base"
+                  className="tap w-full rounded-xl border border-line bg-surface px-4 text-base outline-none focus:border-accent focus:ring-1 focus:ring-accent/30"
                 />
               </Field>
             </div>
@@ -126,25 +126,18 @@ export function PrinterSettings({ client, onNotice, onError }: Props) {
                 value={String(settings.port)}
                 onChange={(e) => set("port", Number(e.target.value) || 9100)}
                 inputMode="numeric"
-                className="tap w-full rounded-xl bg-slate-800 px-4 text-base"
+                className="tap w-full rounded-xl border border-line bg-surface px-4 text-base outline-none focus:border-accent focus:ring-1 focus:ring-accent/30"
               />
             </Field>
           </div>
         )}
 
         <Field label="Resolution" hint="203 dpi is the usual thermal label printer.">
-          <div className="flex gap-2">
+          <div className="flex gap-1.5">
             {DPI_OPTIONS.map((dpi) => (
-              <button
-                key={dpi}
-                type="button"
-                onClick={() => set("dpi", dpi)}
-                className={`tap flex-1 rounded-xl text-sm font-semibold ${
-                  settings.dpi === dpi ? "bg-sky-600" : "bg-slate-800 text-slate-300"
-                }`}
-              >
+              <Chip key={dpi} active={settings.dpi === dpi} onClick={() => set("dpi", dpi)} className="flex-1">
                 {dpi}
-              </button>
+              </Chip>
             ))}
           </div>
         </Field>
@@ -155,7 +148,7 @@ export function PrinterSettings({ client, onNotice, onError }: Props) {
               value={settings.label_width_mm}
               onChange={(e) => set("label_width_mm", e.target.value)}
               inputMode="decimal"
-              className="tap w-full rounded-xl bg-slate-800 px-4 text-base"
+              className="tap w-full rounded-xl border border-line bg-surface px-4 text-base outline-none focus:border-accent focus:ring-1 focus:ring-accent/30"
             />
           </Field>
           <Field label="Label height (mm)">
@@ -163,7 +156,7 @@ export function PrinterSettings({ client, onNotice, onError }: Props) {
               value={settings.label_height_mm}
               onChange={(e) => set("label_height_mm", e.target.value)}
               inputMode="decimal"
-              className="tap w-full rounded-xl bg-slate-800 px-4 text-base"
+              className="tap w-full rounded-xl border border-line bg-surface px-4 text-base outline-none focus:border-accent focus:ring-1 focus:ring-accent/30"
             />
           </Field>
         </div>
@@ -180,8 +173,8 @@ export function PrinterSettings({ client, onNotice, onError }: Props) {
                 onClick={() => set("sheet_paper", option.value)}
                 className={`tap rounded-xl px-2 py-3 text-sm font-semibold ${
                   settings.sheet_paper === option.value
-                    ? "bg-sky-600 text-white"
-                    : "bg-slate-800 text-slate-300"
+                    ? "bg-accent text-white"
+                    : "bg-surface-2 text-ink-2"
                 }`}
               >
                 {option.label}
@@ -198,7 +191,7 @@ export function PrinterSettings({ client, onNotice, onError }: Props) {
         {saving ? "Saving…" : "Save settings"}
       </BigButton>
 
-      <p className="pt-1 text-xs text-slate-500">
+      <p className="pt-1 text-xs text-faint">
         Print one label and scan it before printing a roll. Toner spread and printer
         calibration are the two things no amount of testing here can predict.
       </p>
@@ -222,18 +215,18 @@ function ModeCard({
       type="button"
       onClick={onSelect}
       className={`w-full rounded-2xl border p-4 text-left ${
-        selected ? "border-sky-500 bg-slate-800" : "border-slate-700 bg-slate-900"
+        selected ? "border-accent bg-surface-2" : "border-line-strong bg-surface"
       }`}
     >
       <div className="flex items-start gap-3">
         <span
           className={`mt-1 h-4 w-4 shrink-0 rounded-full border-2 ${
-            selected ? "border-sky-400 bg-sky-400" : "border-slate-500"
+            selected ? "border-accent bg-accent" : "border-line-strong"
           }`}
         />
         <span>
           <span className="block text-sm font-semibold">{title}</span>
-          <span className="block pt-1 text-xs leading-relaxed text-slate-400">{detail}</span>
+          <span className="block pt-1 text-xs leading-relaxed text-muted">{detail}</span>
         </span>
       </div>
     </button>

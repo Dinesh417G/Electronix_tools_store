@@ -12,11 +12,112 @@
   --color-take-out-dark: oklch(0.45 0.19 25);
   --color-put-in: oklch(0.6 0.16 150);
   --color-put-in-dark: oklch(0.5 0.15 150);
+
+  /* Semantic surface/text/border tokens. Every screen reads these instead of
+   * a raw slate/sky/red/amber/emerald shade, so the light/dark override below
+   * is the only place a theme is actually defined — a component asking for
+   * `bg-surface` never needs to know which one is active. */
+  --color-app: var(--color-slate-950);
+  --color-surface: var(--color-slate-900);
+  --color-surface-2: var(--color-slate-800);
+  --color-surface-3: var(--color-slate-700);
+  --color-line: var(--color-slate-800);
+  --color-line-strong: var(--color-slate-700);
+  --color-ink: var(--color-slate-100);
+  --color-ink-2: var(--color-slate-300);
+  --color-muted: var(--color-slate-400);
+  --color-faint: var(--color-slate-500);
+
+  --color-accent: var(--color-sky-600);
+  --color-accent-soft: var(--color-sky-950);
+  --color-accent-line: var(--color-sky-700);
+
+  --color-danger: var(--color-red-400);
+  --color-danger-soft: var(--color-red-950);
+  --color-danger-line: var(--color-red-800);
+
+  --color-warning: var(--color-amber-300);
+  --color-warning-soft: var(--color-amber-950);
+  --color-warning-line: var(--color-amber-800);
+
+  --color-success: var(--color-emerald-400);
+  --color-success-soft: var(--color-emerald-950);
+  --color-success-line: var(--color-emerald-800);
 }
 
 :root {
   color-scheme: dark;
   -webkit-text-size-adjust: 100%;
+}
+
+/* Light theme.
+ *
+ * Two ways in: no stored preference follows the OS (`prefers-color-scheme`),
+ * an explicit choice (the toggle in Settings) sets `data-theme` on <html> and
+ * wins outright. `:not([data-theme="dark"])` is what lets a light OS plus an
+ * explicit "dark" choice still render dark — the media query alone cannot see
+ * the override, so it has to be told to back off. Both blocks below beat the
+ * bare `:root` above on specificity (an extra class-level selector each), so
+ * source order here is cosmetic, not load-bearing.
+ */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --color-app: var(--color-slate-50);
+    --color-surface: var(--color-white);
+    --color-surface-2: var(--color-slate-100);
+    --color-surface-3: var(--color-slate-200);
+    --color-line: var(--color-slate-200);
+    --color-line-strong: var(--color-slate-300);
+    --color-ink: var(--color-slate-900);
+    --color-ink-2: var(--color-slate-700);
+    --color-muted: var(--color-slate-500);
+    --color-faint: var(--color-slate-400);
+
+    --color-accent-soft: var(--color-sky-50);
+    --color-accent-line: var(--color-sky-200);
+
+    --color-danger: var(--color-red-600);
+    --color-danger-soft: var(--color-red-50);
+    --color-danger-line: var(--color-red-200);
+
+    --color-warning: var(--color-amber-700);
+    --color-warning-soft: var(--color-amber-50);
+    --color-warning-line: var(--color-amber-200);
+
+    --color-success: var(--color-emerald-600);
+    --color-success-soft: var(--color-emerald-50);
+    --color-success-line: var(--color-emerald-200);
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-app: var(--color-slate-50);
+  --color-surface: var(--color-white);
+  --color-surface-2: var(--color-slate-100);
+  --color-surface-3: var(--color-slate-200);
+  --color-line: var(--color-slate-200);
+  --color-line-strong: var(--color-slate-300);
+  --color-ink: var(--color-slate-900);
+  --color-ink-2: var(--color-slate-700);
+  --color-muted: var(--color-slate-500);
+  --color-faint: var(--color-slate-400);
+
+  --color-accent-soft: var(--color-sky-50);
+  --color-accent-line: var(--color-sky-200);
+
+  --color-danger: var(--color-red-600);
+  --color-danger-soft: var(--color-red-50);
+  --color-danger-line: var(--color-red-200);
+
+  --color-warning: var(--color-amber-700);
+  --color-warning-soft: var(--color-amber-50);
+  --color-warning-line: var(--color-amber-200);
+
+  --color-success: var(--color-emerald-600);
+  --color-success-soft: var(--color-emerald-50);
+  --color-success-line: var(--color-emerald-200);
 }
 
 html,
@@ -26,8 +127,9 @@ body {
 
 body {
   margin: 0;
-  background: var(--color-slate-950);
-  color: var(--color-slate-100);
+  background: var(--color-app);
+  color: var(--color-ink);
+  transition: background-color 0.15s ease, color 0.15s ease;
   font-family:
     system-ui,
     -apple-system,

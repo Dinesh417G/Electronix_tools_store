@@ -8,6 +8,7 @@
 // which tools move most is worse than neither offering the filter.
 
 import { formatQty, type InsightItem, type InsightView } from "@/lib/api";
+import { Chip } from "@/components/ui";
 
 export const VIEW_LABELS: { value: InsightView; label: string; hint: string }[] = [
   { value: "frequent", label: "Busiest", hint: "most taken in the last 100 issues" },
@@ -28,19 +29,16 @@ export function FilterChips({
   className?: string;
 }) {
   return (
-    <div className={`grid grid-cols-3 gap-1 ${className}`}>
+    <div className={`grid grid-cols-3 gap-1.5 ${className}`}>
       {VIEW_LABELS.map((option) => (
-        <button
+        <Chip
           key={option.value}
-          type="button"
+          active={view === option.value}
           title={option.hint}
           onClick={() => onChange(option.value)}
-          className={`tap rounded-lg px-2 text-sm font-semibold ${
-            view === option.value ? "bg-sky-600 text-white" : "bg-slate-800 text-slate-300"
-          }`}
         >
           {option.label}
-        </button>
+        </Chip>
       ))}
     </div>
   );

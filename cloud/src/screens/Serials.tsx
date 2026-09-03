@@ -124,12 +124,12 @@ export function Serials({ client, itemId, itemCode, onBack, onNotice, onError }:
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <button type="button" onClick={onBack} className="tap px-2 text-2xl text-slate-400">
+        <button type="button" onClick={onBack} className="tap px-2 text-2xl text-muted">
           ←
         </button>
         <div>
           <h2 className="text-lg font-bold">Serial numbers</h2>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-muted">
             {itemCode} · {serials.length} tool{serials.length === 1 ? "" : "s"}
             {unprinted > 0 ? ` · ${unprinted} not yet printed` : ""}
           </p>
@@ -138,12 +138,12 @@ export function Serials({ client, itemId, itemCode, onBack, onNotice, onError }:
 
       <div className="flex items-end gap-2">
         <label className="flex-1">
-          <span className="text-xs font-semibold text-slate-400">How many to create</span>
+          <span className="text-xs font-semibold text-muted">How many to create</span>
           <input
             value={String(mintCount)}
             onChange={(e) => setMintCount(Math.max(1, Math.min(500, Number(e.target.value) || 1)))}
             inputMode="numeric"
-            className="tap mt-1 w-full rounded-xl bg-slate-800 px-4 text-base"
+            className="tap mt-1 w-full rounded-xl border border-line bg-surface px-4 text-base outline-none focus:border-accent focus:ring-1 focus:ring-accent/30"
           />
         </label>
         <BigButton onClick={mint} variant="primary" disabled={busy} className="px-6">
@@ -162,7 +162,7 @@ export function Serials({ client, itemId, itemCode, onBack, onNotice, onError }:
         {serials.map((serial) => (
           <li
             key={serial.id}
-            className={`rounded-2xl bg-slate-800 p-3 ${
+            className={`rounded-2xl bg-surface-2 p-3 ${
               serial.status === "RETIRED" ? "opacity-60" : ""
             }`}
           >
@@ -177,7 +177,7 @@ export function Serials({ client, itemId, itemCode, onBack, onNotice, onError }:
                     if (e.key === "Enter") saveEdit(serial);
                     if (e.key === "Escape") setEditing(null);
                   }}
-                  className="tap flex-1 rounded-lg bg-slate-900 px-3 font-mono text-base"
+                  className="tap flex-1 rounded-lg bg-surface px-3 font-mono text-base"
                 />
               ) : (
                 <button
@@ -193,16 +193,16 @@ export function Serials({ client, itemId, itemCode, onBack, onNotice, onError }:
               )}
 
               {!serial.minted && (
-                <span className="rounded-full bg-slate-700 px-2 py-0.5 text-xs text-slate-300">
+                <span className="rounded-full bg-surface-3 px-2 py-0.5 text-xs text-ink-2">
                   typed in
                 </span>
               )}
               {serial.status === "RETIRED" && (
-                <span className="rounded-full bg-slate-700 px-2 py-0.5 text-xs">retired</span>
+                <span className="rounded-full bg-surface-3 px-2 py-0.5 text-xs">retired</span>
               )}
             </div>
 
-            <div className="pt-1 text-xs text-slate-500">
+            <div className="pt-1 text-xs text-faint">
               {serial.print_count === 0
                 ? "never printed"
                 : `printed ${serial.print_count}×${
@@ -217,14 +217,14 @@ export function Serials({ client, itemId, itemCode, onBack, onNotice, onError }:
                 type="button"
                 disabled={busy}
                 onClick={() => print(serial, 1)}
-                className="tap flex-1 rounded-lg bg-slate-700 text-sm font-semibold"
+                className="tap flex-1 rounded-lg bg-surface-3 text-sm font-semibold"
               >
                 {serial.print_count === 0 ? "Print" : "Reprint"}
               </button>
               <button
                 type="button"
                 onClick={() => retire(serial)}
-                className="tap rounded-lg bg-slate-900 px-4 text-sm text-slate-400"
+                className="tap rounded-lg bg-surface px-4 text-sm text-muted"
               >
                 {serial.status === "ACTIVE" ? "Retire" : "Restore"}
               </button>
@@ -233,7 +233,7 @@ export function Serials({ client, itemId, itemCode, onBack, onNotice, onError }:
         ))}
       </ul>
 
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-faint">
         Tap a number to edit it. The same number can never be on two tools — the database
         refuses it, and the message says which tool already has it.
       </p>

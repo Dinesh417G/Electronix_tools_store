@@ -76,7 +76,7 @@ export function AdminLogin({
       <div className="flex flex-1 flex-col justify-center gap-5 px-5">
         <div>
           <h1 className="text-2xl font-bold">Sign in</h1>
-          <p className="pt-1 text-slate-400">
+          <p className="pt-1 text-muted">
             Employee code and PIN. The session lasts 12 hours. Storekeepers and
             admins get the console; everybody else gets their own sign-in
             settings.
@@ -86,17 +86,17 @@ export function AdminLogin({
         {error && <Banner tone="error">{error}</Banner>}
 
         <label className="block">
-          <span className="text-sm font-semibold text-slate-400">EMPLOYEE CODE</span>
+          <span className="text-sm font-semibold text-muted">EMPLOYEE CODE</span>
           <input
             value={empCode}
             onChange={(e) => setEmpCode(e.target.value.toUpperCase())}
             autoComplete="username"
-            className="tap mt-1 w-full rounded-xl bg-slate-800 px-4 text-lg outline-none focus:ring-2 focus:ring-sky-500"
+            className="tap mt-1 w-full rounded-xl border border-line bg-surface px-4 text-lg outline-none focus:border-accent focus:ring-1 focus:ring-accent/30"
           />
         </label>
 
         <label className="block">
-          <span className="text-sm font-semibold text-slate-400">PIN</span>
+          <span className="text-sm font-semibold text-muted">PIN</span>
           <input
             type="password"
             inputMode="numeric"
@@ -106,7 +106,7 @@ export function AdminLogin({
             onKeyDown={(e) => {
               if (e.key === "Enter" && empCode.trim() && pin) void submit();
             }}
-            className="tap mt-1 w-full rounded-xl bg-slate-800 px-4 text-lg outline-none focus:ring-2 focus:ring-sky-500"
+            className="tap mt-1 w-full rounded-xl border border-line bg-surface px-4 text-lg outline-none focus:border-accent focus:ring-1 focus:ring-accent/30"
           />
         </label>
 
@@ -122,9 +122,9 @@ export function AdminLogin({
         {passkeyReady && (
           <>
             <div className="flex items-center gap-3 pt-1">
-              <span className="h-px flex-1 bg-slate-800" />
-              <span className="text-xs text-slate-500">or</span>
-              <span className="h-px flex-1 bg-slate-800" />
+              <span className="h-px flex-1 bg-surface-2" />
+              <span className="text-xs text-faint">or</span>
+              <span className="h-px flex-1 bg-surface-2" />
             </div>
 
             <BigButton onClick={passkeySignIn} className="w-full" disabled={busy}>
@@ -134,7 +134,7 @@ export function AdminLogin({
             {/* Said plainly, because a button that silently does nothing is
                 worse than no button: a device has to be registered before it
                 can sign in with a fingerprint. */}
-            <p className="-mt-2 text-center text-xs text-slate-500">
+            <p className="-mt-2 text-center text-xs text-faint">
               Only works once you have registered this device. Sign in with your
               PIN first, then add it under Fingerprint sign-in.
             </p>
@@ -144,7 +144,7 @@ export function AdminLogin({
         <button
           type="button"
           onClick={onCancel}
-          className="w-full rounded-xl px-4 py-3 text-sm text-slate-400 active:bg-slate-800"
+          className="w-full rounded-xl px-4 py-3 text-sm text-muted active:bg-surface-2"
         >
           Back to the terminal
         </button>

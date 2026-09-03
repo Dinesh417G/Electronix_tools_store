@@ -126,18 +126,18 @@ export function Passkeys({
         {(credentials) => (
       <section className="space-y-2">
         {credentials.map((credential) => (
-          <div key={credential.id} className="rounded-xl bg-slate-900 px-4 py-3">
+          <div key={credential.id} className="rounded-xl bg-surface px-4 py-3">
             <div className="flex items-center gap-2">
               <span className="truncate font-semibold">
                 {credential.device_label ?? "Unnamed device"}
               </span>
               {credential.backed_up && (
-                <span className="rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-400">
+                <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-muted">
                   backed up
                 </span>
               )}
             </div>
-            <div className="mt-1 text-sm text-slate-400">
+            <div className="mt-1 text-sm text-muted">
               Registered {shortDate(credential.created_at)} ·{" "}
               {credential.last_used_at
                 ? `last used ${shortDate(credential.last_used_at)}`
@@ -150,14 +150,14 @@ export function Passkeys({
                   type="button"
                   disabled={busy}
                   onClick={() => void revoke(credential.id)}
-                  className="tap rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold disabled:opacity-50"
+                  className="tap rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
                 >
                   Yes, revoke it
                 </button>
                 <button
                   type="button"
                   onClick={() => setConfirming(null)}
-                  className="tap rounded-lg bg-slate-800 px-3 py-2 text-sm"
+                  className="tap rounded-lg bg-surface-2 px-3 py-2 text-sm"
                 >
                   Keep it
                 </button>
@@ -166,7 +166,7 @@ export function Passkeys({
               <button
                 type="button"
                 onClick={() => setConfirming(credential.id)}
-                className="tap mt-3 rounded-lg bg-slate-800 px-3 py-2 text-sm text-red-300"
+                className="tap mt-3 rounded-lg bg-surface-2 px-3 py-2 text-sm text-danger"
               >
                 Revoke
               </button>
@@ -181,12 +181,12 @@ export function Passkeys({
         type="button"
         disabled={busy || supported !== true}
         onClick={() => void register()}
-        className="tap w-full rounded-xl bg-sky-600 px-4 py-3 font-semibold disabled:opacity-50"
+        className="tap w-full rounded-xl bg-accent px-4 py-3 font-semibold text-white disabled:opacity-50"
       >
         {busy ? "Working…" : "Use this device's fingerprint"}
       </button>
 
-      <p className="text-sm text-slate-500">
+      <p className="text-sm text-faint">
         This proves that <em>this device</em> was unlocked by someone it trusts
         — not whose finger it was. That is why a session opened with it is still
         marked as not having come from the door, and why registering on a shared
