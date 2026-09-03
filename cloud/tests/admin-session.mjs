@@ -199,44 +199,102 @@ try {
    * geometry is the whole signal: a stacked pair has the title's bottom at or
    * above the description's top, a collapsed pair overlaps them vertically.
    */
-  t.step("4b. console rows stack their lines rather than running them together");
+  t.step("4b. a console row stacks on a phone and lays out as columns on a monitor");
+
+  /* Two shapes, one markup (`components/row.tsx`), so this has to be measured
+     at two widths. The narrow half is the original check and the reason this
+     step exists: `.admin .tap` is `inline-flex`, which beats a one-class
+     utility and lays a row's three stacked lines out side by side — the
+     catalog once read "EM-20-4F-TIALN EMPTY 2l Eme… B..". The wide half is
+     the newer contract: at `sm:` and up those same lines are *supposed* to be
+     side by side, one per column, or the console is a phone on a monitor.
+
+     Found by structure rather than by the classes that do it, because keying
+     on `block` or on `sm:flex` would pass on any build that dropped both the
+     class and the rows. */
+  const measureRow = `(() => {
+    const list = document.querySelector("div.divide-y");
+    const rows = !list ? [] : [...list.querySelectorAll("button")];
+    // The lines live either directly under the button, or under a single
+    // wrapper it holds — both shapes are legitimate, so descend to whichever
+    // actually carries them.
+    const holderOf = (b) => {
+      const direct = [...b.querySelectorAll(":scope > div")];
+      if (direct.length >= 2) return b;
+      if (direct.length === 1 && direct[0].querySelectorAll(":scope > div").length >= 2) {
+        return direct[0];
+      }
+      return null;
+    };
+    const row = rows.map(holderOf).find(Boolean);
+    if (!row) return { missing: true };
+    const lines = [...row.querySelectorAll(":scope > div")]
+      .map((d) => {
+        const r = d.getBoundingClientRect();
+        return {
+          top: Math.round(r.top),
+          bottom: Math.round(r.bottom),
+          width: Math.round(r.width),
+          text: (d.textContent || "").trim().slice(0, 28),
+        };
+      })
+      // A cell held open but empty at this width is not a line of anything.
+      .filter((l) => l.width > 0 && l.text !== "");
+    return { lines };
+  })()`;
+
+  await browser.send("Emulation.setDeviceMetricsOverride", {
+    width: 412, height: 915, deviceScaleFactor: 2, mobile: true,
+  });
   await browser.clickText("Catalog");
   await sleep(2000);
-  const stacking = await browser.evaluate(`(() => {
-    // Found by structure, not by the class that fixes it. Keying on "block"
-    // made the check unfindable on a build without it — failing, but for the
-    // wrong reason, and it would have passed on any build that dropped the
-    // class *and* the rows.
-    const list = document.querySelector("div.divide-y");
-    const row = !list
-      ? null
-      : [...list.querySelectorAll("button")].find(
-          (b) => b.querySelectorAll(":scope > div").length >= 2,
-        );
-    if (!row) return { missing: true };
-    const lines = [...row.querySelectorAll(":scope > div")].map((d) => {
-      const r = d.getBoundingClientRect();
-      return { top: Math.round(r.top), bottom: Math.round(r.bottom), text: (d.textContent || "").trim().slice(0, 28) };
-    });
-    return { lines };
-  })()`);
+  const narrow = await browser.evaluate(measureRow);
 
-  if (stacking.missing) {
-    t.bad("no catalog row found to measure");
+  if (narrow.missing) {
+    t.bad("no catalog row found to measure at 412px");
   } else {
-    const lines = stacking.lines;
-    const overlapping = lines.filter(
-      (line, i) => i > 0 && line.top < lines[i - 1].bottom - 1,
+    const overlapping = narrow.lines.filter(
+      (line, i) => i > 0 && line.top < narrow.lines[i - 1].bottom - 1,
     );
-    if (overlapping.length === 0) {
-      t.ok(`a catalog row stacks its ${lines.length} lines`);
+    if (narrow.lines.length >= 2 && overlapping.length === 0) {
+      t.ok(`at 412px a catalog row stacks its ${narrow.lines.length} lines`);
+    } else if (narrow.lines.length < 2) {
+      t.bad(
+        `at 412px only ${narrow.lines.length} line(s) survived — ${JSON.stringify(narrow.lines)}. ` +
+          "The columns are leaking below their breakpoint: laid out side by side " +
+          "at phone width the subtitle and meta cells squeeze to nothing.",
+      );
     } else {
       t.bad(
-        `a catalog row runs its lines together — ${JSON.stringify(lines)}. ` +
+        `at 412px a catalog row runs its lines together — ${JSON.stringify(narrow.lines)}. ` +
           "`.admin .tap` is inline-flex; the row needs the `block` class.",
       );
     }
   }
+
+  await browser.send("Emulation.setDeviceMetricsOverride", {
+    width: 1280, height: 900, deviceScaleFactor: 1, mobile: false,
+  });
+  await sleep(1200);
+  const wide = await browser.evaluate(measureRow);
+
+  if (wide.missing) {
+    t.bad("no catalog row found to measure at 1280px");
+  } else {
+    const sideBySide = wide.lines.filter(
+      (line, i) => i > 0 && line.top < wide.lines[i - 1].bottom - 1,
+    );
+    if (wide.lines.length >= 2 && sideBySide.length > 0) {
+      t.ok(`at 1280px the same row lays its ${wide.lines.length} lines out as columns`);
+    } else {
+      t.bad(
+        `at 1280px a catalog row is still stacked — ${JSON.stringify(wide.lines)}. ` +
+          "The console is a phone on a monitor; `Row`'s cells need their `sm:` widths.",
+      );
+    }
+  }
+  await browser.send("Emulation.clearDeviceMetricsOverride", {});
+  await sleep(500);
 
   t.step("5. a door that could not be asked does not report a door that never spoke");
   await browser.clickText("Setup");
