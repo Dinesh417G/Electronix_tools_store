@@ -14,7 +14,16 @@ export function Screen({
   className?: string;
 }) {
   return (
-    <div className={`flex min-h-full flex-col safe-top safe-bottom ${className}`}>
+    /* `min-h-dvh`, not `min-h-full`. A percentage min-height resolves against
+       the parent's height, and this sits inside the shell's
+       `div.relative.min-h-full` — which has a min-height and no definite
+       height, so the percentage resolved to nothing and every Screen collapsed
+       to its own content. Measured on the idle screen: 528px inside a 915px
+       viewport, which is why `justify-between` had been placing nothing at the
+       bottom since the cloud port and the terminal looked half empty. The
+       dynamic viewport unit needs no parent chain, and `dvh` rather than `vh`
+       so a mobile browser's retracting toolbar does not leave a gap. */
+    <div className={`flex min-h-dvh flex-col safe-top safe-bottom ${className}`}>
       {children}
     </div>
   );

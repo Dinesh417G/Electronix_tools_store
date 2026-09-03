@@ -192,6 +192,31 @@ export interface LedgerRow {
   reverses_id: number | null;
 }
 
+/** §3's door reader is optional: some cribs install one, some never will. */
+export interface TerminalStatus {
+  reader: {
+    /** Has a device *ever* checked in. A crib with none is never told to use one. */
+    installed: boolean;
+    /** Seen within the last quarter hour. Installed and quiet is a different fault. */
+    online: boolean;
+    last_seen_at: string | null;
+  };
+  today: {
+    movements: number;
+    issued: string;
+    received: string;
+    last_at: string | null;
+  };
+  recent: {
+    id: number;
+    delta_qty: string;
+    txn_type: string;
+    item_code: string;
+    operator_name: string;
+    created_at: string;
+  }[];
+}
+
 export interface AlertRow {
   id: string;
   item_id: string;
@@ -357,6 +382,16 @@ export const api = {
   alerts: () => request<AlertRow[]>("/api/v1/alerts"),
 
   alertSummary: () => request<AlertSummary>("/api/v1/alerts/summary"),
+
+  /**
+   * What the idle screen shows besides the clock.
+   *
+   * `since` is the tablet's own local midnight, because the tablet is the
+   * thing standing in the store: the server runs in UTC, and a day counted
+   * there rolls at 05:30 in an Indian plant, mid-shift.
+   */
+  terminalStatus: (since: string) =>
+    request<TerminalStatus>(`/api/v1/terminal/status?since=${encodeURIComponent(since)}`),
 
   machines: () => request<Machine[]>("/api/v1/machines"),
 

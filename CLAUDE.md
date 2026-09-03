@@ -150,9 +150,29 @@ The original plan was three binaries — `store-server`, a Tauri Android
 
 ## 3. Physical setup this software assumes
 
-- **1× ZKTeco access terminal** at the store door (IN01-A / F18 / iClock class):
+- **0–1× ZKTeco access terminal** at the store door (IN01-A / F18 / iClock class):
   fingerprint + RFID, TCP/IP, ADMS push, and its own relay outputs for the EM lock,
   exit button and door sensor.
+
+  > **Decision changed (2026-09-03). The reader is optional.** This section used
+  > to say "1×", and the terminal read that as a promise: its idle screen told
+  > every operator to *"put your finger on the door reader"* whether or not one
+  > existed. A crib that wants the tablet and nothing else is a real customer,
+  > and telling them to use hardware they never bought is the worst kind of
+  > wrong — confident, and about the one action the screen exists to prompt.
+  >
+  > Nothing in the software required the reader. §8 already had three other
+  > identity sources, §10's manual path was built for exactly this, and §2's
+  > "the terminal owns the lock" means we were never in that loop anyway. What
+  > was missing was the app knowing which kind of crib it is standing in.
+  >
+  > `GET /api/v1/terminal/status` answers it from the `devices` table: a crib
+  > where a device has **ever** checked in has a reader, one where none has does
+  > not. Ever, not recently — an installed reader that has been quiet for an
+  > hour is a fault to fix, a crib that never had one is a configuration, and
+  > the remedies are opposite. No setting for anybody to get wrong.
+  >
+  > Where a reader *is* installed, everything in §9 is unchanged.
 - **An outbound route to the internet** from whatever network the terminal is on.
   This is the one thing the cloud deployment added to the shopping list: the ADMS
   host is a public URL now, not a PC on the same switch.
@@ -813,7 +833,35 @@ the door reader are unaffected — neither goes through a PIN.
 
 Design for a shop-floor operator with oily gloves and no patience.
 
-1. **Idle** — clock, store name, on-screen keyboard hidden. Low-stock banner if any EMPTY items.
+1. **Idle** — store name, a one-line clock, and then, in priority order: the
+   sign-in button, what is short, and what the crib did today.
+
+   Rewritten on 2026-09-03 after the first user called it "minimal". It was,
+   and for three reasons worth keeping written down:
+
+   - **The clock was the largest thing on it**, on a phone whose own clock sits
+     six pixels above. It is a line now, and grows again at `sm:` for a wall
+     tablet read across a workshop.
+   - **The alert counts were a dead end.** *"2 items are EMPTY"* tells a
+     storekeeper there is a problem and nothing about which bin. They are
+     tappable chips now, opening the list filtered to that level. Note the
+     server's `low=true` means LOW *or* EMPTY — right for a stock screen, wrong
+     here, where a chip counting seven must not open a list of nine.
+   - **The way in was inverted.** With no reader installed, the only working
+     route was the smallest grey text on the screen. The primary button is now
+     the sign-in, and the sentence under it depends on what the crib actually
+     has (§3).
+
+   The space this freed goes to a **TODAY** strip — movement count, in and out,
+   and the last eight rows with times. It earns its place by answering what the
+   green "Live" pill only gestures at: whether anything is reaching the server.
+   The day boundary is the **tablet's** local midnight, sent as a parameter,
+   because the server runs in UTC and a day counted there rolls at 05:30 in an
+   Indian plant — mid-shift, with every number dropping to zero while somebody
+   watches.
+
+   None of it sits in front of the first tap: §12's eight-second budget belongs
+   to the steps after this screen, and the status is fetched only while idle.
 2. **Claim** — punch arrives → large name cards, photo if available. Auto-advance if only one card.
 3. **Direction** — two enormous buttons: **TAKE OUT** (red) / **PUT IN** (green). Nothing else.
 4. **Item** — camera opens immediately for scanning (browser `BarcodeDetector`).
@@ -1013,6 +1061,23 @@ written alongside it are what stop that from being the whole story:
 | `tests/serials.mjs` | §6's reprint rule, the label batch, and both printer modes | yes |
 | `tests/route-smoke.mjs` | every GET route answers, and none is unasked | yes |
 | `tests/endpoint-callers.mjs` | §11's dead-wiring rule: no route without a caller | no — it reads the repo |
+
+`tests/terminal-flow.mjs` also pins §3's optional reader: it reads the `devices`
+table and asserts the idle screen's sentence matches it, and separately that a
+crib with no reader is never told to use one. Only one branch runs per pass —
+`e2e.mjs` performs an ADMS handshake first, so CI always has a device by then —
+which is a real limit of that gate and the reason the no-reader branch was
+checked by hand against a stubbed response before it shipped.
+
+**A layout bug the whole terminal carried, found by looking at it.** `Screen`
+was `min-h-full`, and a percentage min-height resolves against the parent's
+height — the shell wraps it in a `div` with a *min*-height and no definite
+height, so the percentage resolved to nothing and every screen collapsed to its
+own content. Measured on the idle screen: **528 px inside a 915 px viewport**,
+which is why `justify-between` had been placing nothing at the bottom since the
+cloud port. `min-h-dvh` needs no parent chain. Nothing caught it because every
+test asserts on text, and text is present whether or not the page fills — a
+reminder that a passing suite is not a screenshot.
 
 Two things about them are worth stating, because both were learned the hard
 way rather than designed in:
