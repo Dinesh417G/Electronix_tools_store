@@ -667,7 +667,15 @@ function IdleScreen({
   const reader = status?.reader ?? null;
 
   return (
-    <Screen className="justify-between">
+    /* `h-dvh` on top of Screen's `min-h-dvh`, and `overflow-hidden` with it.
+     *
+     * A min-height alone lets the page grow: with twenty rows the idle screen
+     * became 1068 px inside a 915 px viewport, so the *page* scrolled, the
+     * table's own `overflow-y-auto` never engaged, and the settings gear —
+     * fixed to the viewport — ended up floating over the middle of the list,
+     * covering the operator column. Pinning the screen to exactly one viewport
+     * is what makes the inner scroll the one that moves. */
+    <Screen className="h-dvh justify-between overflow-hidden">
       <div className="flex items-center justify-between px-4">
         <span className="text-sm font-semibold tracking-wide text-slate-400">
           ELECTRONIX TOOL STORE
@@ -698,7 +706,11 @@ function IdleScreen({
       {/* Not `justify-center`. Centring left the button floating between two
           voids on a tall phone; the sign-in belongs high, where a thumb reaches
           it, and the space that is left belongs to the activity list. */}
-      <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 pt-6 pb-4">
+      {/* pb-20 clears the settings gear, which is fixed in the bottom-right
+          corner. Without it the table's last rows run underneath it and the
+          operator column reads "CI A" — data hidden by a control, which is the
+          same defect as the back button covering CONFIRM, just quieter. */}
+      <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 pt-6 pb-20">
         <div>
           <BigButton onClick={onStart} variant="primary" className="w-full">
             I&apos;m here — sign me in
@@ -803,8 +815,8 @@ function TodayStrip({ status }: { status: TerminalStatus }) {
   const { today, recent } = status;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col rounded-xl bg-slate-900 px-4 py-3">
-      <div className="flex shrink-0 items-center justify-between text-xs tracking-wide text-slate-500">
+    <div className="flex min-h-0 flex-1 flex-col rounded-xl bg-slate-900 py-3">
+      <div className="flex shrink-0 items-center justify-between px-4 text-xs tracking-wide text-slate-500">
         <span>TODAY</span>
         {today.last_at && (
           <span>
@@ -819,13 +831,13 @@ function TodayStrip({ status }: { status: TerminalStatus }) {
       </div>
 
       {today.movements === 0 ? (
-        <p className="pt-2 text-sm text-slate-400">Nothing has moved yet today.</p>
+        <p className="px-4 pt-2 text-sm text-slate-400">Nothing has moved yet today.</p>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
           {/* Trips to the crib, each way. The quantities these replaced were
               summed across units — twenty-litre drums added to carbide
               inserts — which is a number with no unit and no meaning (§6). */}
-          <div className="flex shrink-0 items-baseline gap-3 pt-1 text-sm">
+          <div className="flex shrink-0 items-baseline gap-3 px-4 pt-1 text-sm">
             <span>
               <strong className="tabular-nums">{today.movements}</strong>{" "}
               <span className="text-slate-400">
@@ -834,82 +846,77 @@ function TodayStrip({ status }: { status: TerminalStatus }) {
             </span>
             <span className="text-slate-600">·</span>
             <span className="text-slate-400">
-              <span className="text-red-400">↓</span>{" "}
-              <strong className="tabular-nums text-slate-300">{today.out_count}</strong> out
+              <strong className="tabular-nums text-red-300">{today.out_count}</strong> out
             </span>
             <span className="text-slate-400">
-              <span className="text-emerald-400">↑</span>{" "}
-              <strong className="tabular-nums text-slate-300">{today.in_count}</strong> in
+              <strong className="tabular-nums text-emerald-300">{today.in_count}</strong> in
             </span>
           </div>
 
-          {/* Scrolls rather than pushing the card past the fold. Twenty rows
-              rather than eight: the card grows into the space left below the
-              chips, and eight never filled a tall phone. A short screen shows
-              what fits and scrolls for the rest. */}
-          <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto pt-2">
-            {recent.map((row) => {
-              const out = row.delta_qty.startsWith("-");
-              return (
-                /* Fixed columns, not a row of inline spans.
-                 *
-                 * Every field was `shrink-0` in source order, so a quantity of
-                 * 11 pushed its item code two characters further right than a
-                 * quantity of 1 and the codes never lined up. Time and quantity
-                 * are numeric and get fixed widths — the quantity right-aligned
-                 * against the arrow, so the digits stack — and the item code
-                 * takes the rest. `tabular-nums` is what makes 1 and 11 occupy
-                 * the same width per digit. */
-                <li key={row.id} className="flex items-baseline gap-2 text-sm">
-                  {/* The time is what tells two otherwise identical lines
-                      apart. Three rows reading "2 COOL-SYN-20L R. Kumar" look
-                      like a rendering fault; three times are three trips to the
-                      crib, which is what they were. */}
-                  <span className="w-11 shrink-0 tabular-nums text-xs text-slate-500">
-                    {new Date(row.created_at).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      hour12: false,
-                    })}
-                  </span>
-                  <span
-                    className={`w-3 shrink-0 text-center ${
-                      out ? "text-red-400" : "text-emerald-400"
-                    }`}
-                  >
-                    {out ? "↓" : "↑"}
-                  </span>
-                  <span className="w-10 shrink-0 text-right tabular-nums text-slate-200">
-                    {formatQty(row.delta_qty.replace("-", ""))}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-slate-400">{row.item_code}</span>
-                  {/* Not `split(" ")[0]`: "R. Kumar" becomes "R.", which names
-                      nobody. CSS truncation keeps whatever fits. */}
-                  <span className="max-w-[5.5rem] shrink-0 truncate text-xs text-slate-500">
-                    {row.operator_name}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
+          {/* A real table, for the reason a watchlist is one: a column the eye
+              can run down beats a row it has to read.
+
+              The arrow column this replaces was the source of the raggedness.
+              It sat at a fixed position with the quantity right-aligned after
+              it, so "1" left a two-character gap where "11" left none, and
+              every row looked kicked out of line. The direction lives in the
+              number now — a signed, coloured quantity, the way a price change
+              carries its own sign — which removes a column and makes the sign
+              and the magnitude one thing to read instead of two.
+
+              Four columns, each with one alignment and one job: time and
+              quantity are numeric and `tabular-nums` so digits stack; the item
+              code is the thing being scanned for and takes the width that is
+              left; the operator trails, truncating rather than wrapping. */}
+          <div className="mt-2 flex min-h-0 flex-1 flex-col">
+            <div className="flex shrink-0 items-baseline gap-3 border-b border-slate-800 px-4 pb-1 text-[0.65rem] tracking-wider text-slate-600 uppercase">
+              <span className="w-11 shrink-0">Time</span>
+              <span className="w-12 shrink-0 text-right">Qty</span>
+              <span className="min-w-0 flex-1">Item</span>
+              <span className="w-20 shrink-0 text-right">By</span>
+            </div>
+
+            <ul className="min-h-0 flex-1 divide-y divide-slate-800/60 overflow-y-auto">
+              {recent.map((row) => {
+                const out = row.delta_qty.startsWith("-");
+                const qty = formatQty(row.delta_qty.replace("-", ""));
+                return (
+                  <li key={row.id} className="flex items-baseline gap-3 px-4 py-1.5 text-sm">
+                    {/* The time is what tells two otherwise identical rows
+                        apart. Three reading "1 16IR-AG60-TT9030 Store Admin"
+                        look like a rendering fault; three times are three trips
+                        to the crib, which is what they were. */}
+                    <span className="w-11 shrink-0 tabular-nums text-xs text-slate-500">
+                      {new Date(row.created_at).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        hour12: false,
+                      })}
+                    </span>
+                    <span
+                      className={`w-12 shrink-0 text-right font-semibold tabular-nums ${
+                        out ? "text-red-400" : "text-emerald-400"
+                      }`}
+                    >
+                      {out ? "−" : "+"}
+                      {qty}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-slate-300">{row.item_code}</span>
+                    {/* Not `split(" ")[0]`: "R. Kumar" becomes "R.", which names
+                        nobody. CSS truncation keeps whatever fits. */}
+                    <span className="w-20 shrink-0 truncate text-right text-xs text-slate-500">
+                      {row.operator_name}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         </div>
       )}
     </div>
   );
 }
-
-/**
- * What the EMPTY and LOW chips open.
- *
- * The banners this replaced said "2 items are EMPTY" and stopped there, which
- * tells a storekeeper there is a problem and nothing about which bin — the one
- * thing needed to act on it. §12 asks for the count on the idle screen; it does
- * not ask for it to be a dead end.
- *
- * Read-only, and it moves no stock: booking a receipt still goes through a
- * session like every other movement (§7), because a ledger row with no operator
- * behind it is exactly what the ledger exists to prevent.
- */
 function ShortagesScreen({
   level,
   onBack,

@@ -181,6 +181,59 @@ try {
     t.ok("no instruction to use hardware this crib does not have");
   }
 
+  /* The idle screen must fit one viewport, and its table must be what scrolls.
+   *
+   * `Screen` is `min-h-dvh`, which is a *minimum*: with twenty rows in the
+   * TODAY table the page grew to 1068 px inside a 915 px viewport, so the page
+   * scrolled, the table's own `overflow-y-auto` never engaged, and the settings
+   * gear — fixed to the viewport — floated over the middle of the list with the
+   * operator column reading "CI A". Data hidden by a control.
+   *
+   * Two assertions, because either alone passes on the broken build: the page
+   * does not scroll, and the fixed corner controls cover no row of the table.
+   */
+  const idleFit = await browser.evaluate(`(() => {
+    const doc = document.documentElement;
+    const gear = document.querySelector('button[aria-label="Settings"]');
+    const rows = [...document.querySelectorAll("li")];
+    const rect = (el) => {
+      const r = el.getBoundingClientRect();
+      return { l: r.left, r: r.right, t: r.top, b: r.bottom };
+    };
+    const g = gear ? rect(gear) : null;
+    // Clipped to the scroll container first. A row scrolled out of view still
+    // reports its position through getBoundingClientRect — the first version of
+    // this counted two such rows as "covered" while the list visibly ended
+    // 76 px above the gear. Only what the operator can actually see counts.
+    const list = document.querySelector("ul");
+    const view = list ? rect(list) : null;
+    const visible = (a) => !view || (a.t >= view.t - 1 && a.b <= view.b + 1);
+    const covered = !g ? 0 : rows
+      .map(rect)
+      .filter(visible)
+      .filter((a) => a.l < g.r && a.r > g.l && a.t < g.b && a.b > g.t).length;
+    return {
+      scrollHeight: doc.scrollHeight,
+      viewport: window.innerHeight,
+      rows: rows.length,
+      covered,
+    };
+  })()`);
+
+  if (idleFit.scrollHeight <= idleFit.viewport + 2) {
+    t.ok(`the idle screen fits one viewport (${idleFit.scrollHeight} <= ${idleFit.viewport})`);
+  } else {
+    t.bad(
+      `the idle screen is ${idleFit.scrollHeight}px in a ${idleFit.viewport}px viewport — ` +
+        "the page scrolls, so the table never does and the gear floats over it",
+    );
+  }
+  if (idleFit.covered === 0) {
+    t.ok(`the settings gear covers none of the ${idleFit.rows} table rows`);
+  } else {
+    t.bad(`the settings gear covers ${idleFit.covered} table row(s)`);
+  }
+
   t.step("2. sign in without the reader (§10 — manual identity)");
   if (!(await browser.clickText("Reader not working"))) t.bad("no manual entry link");
   await sleep(900);

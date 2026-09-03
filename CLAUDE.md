@@ -853,8 +853,17 @@ Design for a shop-floor operator with oily gloves and no patience.
      has (§3).
 
    The space this freed goes to a **TODAY** strip — movement count, in and out,
-   and the last twenty rows with times, in fixed columns so the quantities stack
-   and the item codes start at one edge.
+   and the last twenty rows as a **table**: a header row, hairline dividers, and
+   four columns each with one alignment and one job. Time and quantity are
+   `tabular-nums` so digits stack; the item code is what the eye scans for and
+   takes the width left over; the operator trails, truncating rather than
+   wrapping.
+
+   The direction lives *in* the quantity — `−2` red, `+2` green — the way a
+   price change carries its own sign. That removed a column and fixed what the
+   user reported as "still uneven": an arrow sat at a fixed position with the
+   quantity right-aligned after it, so `1` left a two-character gap where `11`
+   left none and every row looked kicked out of line.
 
    Two things it got wrong first, both caught by looking at a screenshot:
 
@@ -866,7 +875,20 @@ Design for a shop-floor operator with oily gloves and no patience.
    - **It added litres to pieces.** "13 out, 14 in" summed `delta_qty` across
      items whose `uom` differs (§6), which is a number with no unit. It counts
      movements each way now: how many times somebody came to the crib, and
-     which direction they went. It earns its place by answering what the
+     which direction they went.
+   - **The page scrolled instead of the table.** `Screen` is `min-h-dvh`, a
+     *minimum* — so twenty rows made the idle screen 1212 px inside a 915 px
+     viewport, the table's own `overflow-y-auto` never engaged, and the settings
+     gear, fixed to the viewport, floated over the middle of the list with the
+     operator column reading "CI A". Data hidden by a control. The idle screen
+     is pinned to `h-dvh` with `overflow-hidden`, which is what makes the inner
+     scroll the one that moves. Gated by two assertions in
+     `tests/terminal-flow.mjs`, because either alone passes on the broken build:
+     the page does not scroll, and the corner controls cover no *visible* row.
+     "Visible" is load-bearing — a row scrolled out of the list still reports a
+     position through `getBoundingClientRect`, and the first version of the
+     check counted two of those as covered while the list plainly ended 76 px
+     above the gear. It earns its place by answering what the
    green "Live" pill only gestures at: whether anything is reaching the server.
    The day boundary is the **tablet's** local midnight, sent as a parameter,
    because the server runs in UTC and a day counted there rolls at 05:30 in an
