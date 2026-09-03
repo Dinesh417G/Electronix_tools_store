@@ -1161,6 +1161,24 @@ passed on the broken build, because it always did.
 The UI calls it **fingerprint sign-in** now; the code keeps `passkey`, because
 on an iPhone or a laptop the same credential may be a face or a device PIN.
 
+The rename left one string behind, and it was the worst one to leave: the
+message a phone with *nothing registered* gets when it taps the fingerprint
+button. Chrome answers `get()` with a `NotAllowedError` that is
+indistinguishable from a cancelled prompt, so that sentence is the entire
+remedy — and it still read "register one in the admin console under Setup →
+Passkeys", naming a section that had been renamed and a console an operator
+cannot open. Wrong directions are worse than none: the reader believes them and
+goes looking. Gated by `tests/webauthn.mjs` step 2b, which taps the button
+before anything is registered — the state every phone starts in — and fails
+three ways on the old text.
+
+Two of that step's assertions passed against the stale message before they were
+tight enough, which is the same lesson as step 8's: `/admin/i` matched "the
+admin console", and the gear glyph on its own matched the floating settings
+button that is on that screen regardless. Only `⚙ → admin` in sequence appears
+solely inside the sentence being checked. **An assertion written against a
+screen has to be checked against the broken screen**, or it pins nothing.
+
 §6's RLS gap is closed, and by the cheapest possible thing: a step in the CI
 job queries `pg_class` after the migrations are applied and fails on any
 `public` table with `relrowsecurity` false, naming it. 0008 covered the

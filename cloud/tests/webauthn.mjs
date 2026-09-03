@@ -80,6 +80,46 @@ async function main() {
       ok("device already enrolled");
     }
 
+    // Before anything is registered, which is the state every phone starts in
+    // and the one the first user hit. Chrome answers `get()` with a
+    // NotAllowedError that is indistinguishable from a cancelled prompt, so
+    // what the screen says next is the entire remedy — and it used to name
+    // "the admin console under Setup → Passkeys", a route that stopped
+    // existing when operators got a page of their own. A message that sends
+    // somebody to a screen they cannot reach is worse than no message: they
+    // believe it and go looking.
+    step("2b. the empty-device message names a route that exists");
+    await clickText("Reader not working");
+    await sleep(900);
+    await clickText("Use fingerprint on this phone");
+    await sleep(3500);
+    const noneYet = await text();
+    if (/No fingerprint on this phone yet/i.test(noneYet)) {
+      ok("the screen explains there is nothing registered yet");
+    } else {
+      bad("no explanation on an unregistered device: " + trim(noneYet));
+    }
+    if (/Setup\s*→\s*Passkeys/i.test(noneYet)) {
+      bad("it still sends the reader to Setup → Passkeys, which no longer exists");
+    } else {
+      ok("and does not name the section that was renamed away");
+    }
+    // An operator never sees Setup, so the only route that works for every
+    // role is the gear and the admin entry behind it. Two weaker versions of
+    // this assertion passed against the stale message before this one: /admin/
+    // alone matched "the admin console", and the gear glyph alone matched the
+    // floating settings button that is on this screen regardless. The pair in
+    // sequence appears only inside the sentence being checked.
+    if (/⚙\s*→\s*admin/.test(noneYet)) {
+      ok("it names the gear → admin route a reader can follow");
+    } else {
+      bad("the message does not say how to get there: " + trim(noneYet));
+    }
+    if (/employee code and PIN/i.test(noneYet)) ok("and the PIN fallback below it");
+    else bad("no mention of the PIN fallback");
+    await goto(BASE);
+    await sleep(500);
+
     // The settings entry is an icon button: the text is a gear glyph and the
     // name lives in aria-label, so matching on text does not find it.
     const openAdmin = async () => {
