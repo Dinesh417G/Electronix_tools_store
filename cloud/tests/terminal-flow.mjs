@@ -48,21 +48,17 @@ const onHand = async (itemCode) => {
 };
 
 /**
- * The back control is a *fixed* button in the bottom-left corner. Anything a
- * screen puts at its own bottom lands underneath it, and the tap goes to back
- * — on the confirm screen that means an operator aiming at CONFIRM loses
- * everything they typed.
+ * Back lives in the bottom bar, which is reserved space rather than an overlay.
  *
- * Checked against **every** button on the screen, not one named control. The
- * first version of this compared the back button with CONFIRM alone and passed
- * while the item screen had it sitting on top of "Search", because that screen
- * passes `onCancel` rather than `onBack` and neither the check nor the grep
- * that found the screens to pad went looking for it.
+ * That is the whole point of the bar: a `fixed` control sits *over* content, and
+ * padding only protects the end of a list — everything mid-scroll still passes
+ * underneath. Five paddings were added in one day chasing that, and the console
+ * still had the settings gear covering "Serials", a control meant to be tapped.
  *
- * It also asserts the button is round. `safe-bottom` on the button rather than
- * its wrapper padded the inside of a 44 px circle to a 44 x 64 box, and
- * `rounded-full` drew that as an egg — a defect no text assertion can see and
- * the one a user actually reported.
+ * So this checks the structure that makes the fault impossible rather than the
+ * symptom: the control is inside the bar, and it covers no button on the screen.
+ * The second half is now structurally guaranteed and kept anyway — it is what
+ * would fail the day somebody reintroduces a floating control.
  */
 async function checkBackButton(where) {
   const result = await browser.evaluate(`(() => {
@@ -78,11 +74,21 @@ async function checkBackButton(where) {
       };
     };
     const a = box(back);
+    const bar = back.closest("div.border-t");
     const hits = [...document.querySelectorAll("button, a[href]")]
       .filter((el) => el !== back && el.getBoundingClientRect().width > 0)
+      // Controls inside the bar sit beside back by design; only content counts.
+      .filter((el) => !bar || !bar.contains(el))
       .map(box)
       .filter((b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top);
-    return { back: a, hits };
+    return {
+      back: a,
+      hits,
+      inBar: Boolean(bar),
+      pageScrolls: document.documentElement.scrollHeight > window.innerHeight + 1,
+      scrollHeight: document.documentElement.scrollHeight,
+      viewport: window.innerHeight,
+    };
   })()`);
 
   if (result.missing) {
@@ -91,10 +97,15 @@ async function checkBackButton(where) {
   }
   const { back, hits } = result;
 
-  if (Math.abs(back.w - back.h) <= 1) {
-    t.ok(`${where}: the back button is round (${back.w}x${back.h})`);
+  if (result.inBar) {
+    t.ok(`${where}: back sits inside the bottom bar`);
   } else {
-    t.bad(`${where}: the back button is ${back.w}x${back.h} — rounded-full draws that as an egg`);
+    t.bad(`${where}: back is outside the bar — a floating control covers what scrolls under it`);
+  }
+  if (!result.pageScrolls) {
+    t.ok(`${where}: the screen fits one viewport, so the list scrolls and not the page`);
+  } else {
+    t.bad(`${where}: the page scrolls (${result.scrollHeight}px in ${result.viewport}px)`);
   }
 
   if (hits.length === 0) {

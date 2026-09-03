@@ -7,7 +7,7 @@
 // terminal ranking by something else — two screens quietly disagreeing about
 // which tools move most is worse than neither offering the filter.
 
-import type { InsightItem, InsightView } from "@/lib/api";
+import { formatQty, type InsightItem, type InsightView } from "@/lib/api";
 
 export const VIEW_LABELS: { value: InsightView; label: string; hint: string }[] = [
   { value: "frequent", label: "Busiest", hint: "most taken in the last 100 issues" },
@@ -62,7 +62,7 @@ export function viewDetail(view: InsightView, item: InsightItem): string {
     case "frequent":
       return item.recent_issues === 0
         ? "not in the last 100 issues"
-        : `${item.recent_issues} of the last 100 issues · ${item.recent_qty} taken`;
+        : `${item.recent_issues} of the last 100 issues · ${formatQty(item.recent_qty)} taken`;
     case "recent":
       return days === null
         ? "never issued"
@@ -76,8 +76,8 @@ export function viewDetail(view: InsightView, item: InsightItem): string {
     case "newest":
       return `added ${new Date(item.created_at).toLocaleDateString()}`;
     case "high":
-      return `${item.on_hand} on hand, keeps ${item.reorder_level}`;
+      return `${formatQty(item.on_hand)} on hand, keeps ${formatQty(item.reorder_level)}`;
     case "low":
-      return `${item.on_hand} on hand, reorder at ${item.reorder_level}`;
+      return `${formatQty(item.on_hand)} on hand, reorder at ${formatQty(item.reorder_level)}`;
   }
 }

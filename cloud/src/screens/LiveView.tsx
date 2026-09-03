@@ -108,7 +108,7 @@ export function LiveView({ connection, revision, lastEvent }: Props) {
         ))}
       </nav>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-24">
+      <div className="flex-1 overflow-y-auto px-4 pb-4">
         {tab === "activity" && <Activity rows={ledger} />}
         {tab === "stock" && <Stock rows={stock} />}
         {tab === "alerts" && <Alerts rows={alerts} />}

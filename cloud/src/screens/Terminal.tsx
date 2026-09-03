@@ -675,7 +675,7 @@ function IdleScreen({
      * fixed to the viewport — ended up floating over the middle of the list,
      * covering the operator column. Pinning the screen to exactly one viewport
      * is what makes the inner scroll the one that moves. */
-    <Screen className="h-dvh justify-between overflow-hidden">
+    <Screen className="justify-between overflow-hidden">
       <div className="flex items-center justify-between px-4">
         <span className="text-sm font-semibold tracking-wide text-slate-400">
           ELECTRONIX TOOL STORE
@@ -706,11 +706,7 @@ function IdleScreen({
       {/* Not `justify-center`. Centring left the button floating between two
           voids on a tall phone; the sign-in belongs high, where a thumb reaches
           it, and the space that is left belongs to the activity list. */}
-      {/* pb-20 clears the settings gear, which is fixed in the bottom-right
-          corner. Without it the table's last rows run underneath it and the
-          operator column reads "CI A" — data hidden by a control, which is the
-          same defect as the back button covering CONFIRM, just quieter. */}
-      <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 pt-6 pb-20">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 pt-6 pb-4">
         <div>
           <BigButton onClick={onStart} variant="primary" className="w-full">
             I&apos;m here — sign me in
@@ -955,7 +951,7 @@ function ShortagesScreen({
         onBack={onBack}
       />
 
-      <div className="flex-1 space-y-2 overflow-y-auto px-4 pb-24">
+      <div className="flex-1 space-y-2 overflow-y-auto px-4 pb-4">
         <Loaded
           state={state}
           label="Reading stock"
@@ -1029,7 +1025,7 @@ function ClaimScreen({
       />
       {banner}
 
-      <div className="flex-1 space-y-3 overflow-y-auto px-4 pb-24">
+      <div className="flex-1 space-y-3 overflow-y-auto px-4 pb-4">
         {cards.length === 0 && <Spinner label="Waiting for a punch at the door…" />}
 
         {/* §10: every unclaimed punch from the last 90 s is listed. Tailgating
@@ -1184,7 +1180,7 @@ function ManualScreen({
         </p>
       </div>
 
-      <div className="px-4 pb-24 pt-3">
+      <div className="px-4 pt-3">
         <BigButton
           onClick={() => onSubmit(empCode.trim(), pin)}
           variant="primary"
@@ -1225,7 +1221,7 @@ function DirectionScreen({
           clearance it sits on the bottom-left of PUT IN, so an operator
           reaching for the direction they want books "back" instead. They are
           still the biggest targets in the app. */}
-      <div className="grid flex-1 grid-rows-2 gap-4 px-4 pt-4 pb-24">
+      <div className="grid flex-1 grid-rows-2 gap-4 p-4">
         <button
           type="button"
           onClick={() => onPick("issue")}
@@ -1413,7 +1409,7 @@ function ItemScreen({
       />
       {banner}
 
-      <div className="flex-1 overflow-y-auto px-4 pb-24">
+      <div className="flex-1 overflow-y-auto px-4 pb-4">
         {notFound && (
           <div className="pb-3">
             <Banner tone="warn" onDismiss={() => setNotFound(null)}>
@@ -1489,12 +1485,16 @@ function ItemScreen({
               </p>
             ) : (
               insights.map((item) => (
-                <div key={item.id}>
-                  <ItemRow item={item} onClick={() => onPick(item)} />
-                  <p className="px-4 pt-1 text-xs text-slate-500">
-                    {viewDetail(browseView, item)}
-                  </p>
-                </div>
+                /* The detail line goes *inside* the row, not after it. As a
+                   sibling it sat in the gap between two cards and read as a
+                   caption for the one below — "18.000 on hand" under the item
+                   with 18, describing the next one. */
+                <ItemRow
+                  key={item.id}
+                  item={item}
+                  onClick={() => onPick(item)}
+                  detail={viewDetail(browseView, item)}
+                />
               ))
             )}
           </div>
@@ -1533,7 +1533,7 @@ function ItemScreen({
           Browsing sits alongside it for the operator who would recognise the
           tool on sight but cannot name it — search cannot help you find a thing
           you do not know the word for. */}
-      <div className="flex gap-2 px-4 pb-24 pt-3">
+      <div className="flex gap-2 px-4 pt-3">
         {mode !== "scan" && isScanningSupported() && (
           <BigButton onClick={() => setMode("scan")} variant="ghost" className="flex-1">
             Scan
@@ -1554,7 +1554,16 @@ function ItemScreen({
   );
 }
 
-function ItemRow({ item, onClick }: { item: Item; onClick: () => void }) {
+function ItemRow({
+  item,
+  onClick,
+  detail,
+}: {
+  item: Item;
+  onClick: () => void;
+  /** Why this row is in *this* list — the sorted-on fact, when there is one. */
+  detail?: string;
+}) {
   return (
     <button
       type="button"
@@ -1567,6 +1576,7 @@ function ItemRow({ item, onClick }: { item: Item; onClick: () => void }) {
         {item.bin_location && (
           <div className="text-xs text-slate-500">Bin {item.bin_location}</div>
         )}
+        {detail && <div className="truncate pt-0.5 text-xs text-slate-500">{detail}</div>}
       </div>
       <div className="shrink-0 text-right">
         <div className="text-lg font-bold tabular-nums">{formatQty(item.on_hand)}</div>
@@ -1693,7 +1703,7 @@ function QuantityScreen({
         ))}
       </div>
 
-      <div className="px-4 pb-24 pt-4">
+      <div className="px-4 pt-4">
         <BigButton
           onClick={() => onNext(value)}
           variant="primary"
@@ -1773,7 +1783,7 @@ function OptionalScreen({
       <Header title="Anything else?" subtitle="Optional" onBack={onBack} />
       {banner}
 
-      <div className="flex-1 space-y-5 overflow-y-auto px-4 pb-24">
+      <div className="flex-1 space-y-5 overflow-y-auto px-4 pb-4">
         {direction === "issue" && machines.length > 0 && (
           <section>
             <h2 className="pb-2 text-sm font-semibold text-slate-400">
@@ -1846,7 +1856,7 @@ function OptionalScreen({
 
       {/* §12.6: skipping must never be slower than filling. SKIP is the biggest
           control here, and it is reachable without scrolling. */}
-      <div className="space-y-2 px-4 pb-24 pt-3">
+      <div className="space-y-2 px-4 pt-3">
         <BigButton
           onClick={() => onNext([], null, null)}
           variant="ghost"
@@ -1922,7 +1932,7 @@ function SplitScreen({
       <Header title="How many for each?" subtitle={item.item_code} onBack={onBack} />
       {banner}
 
-      <div className="flex-1 space-y-3 overflow-y-auto px-4 pb-24">
+      <div className="flex-1 space-y-3 overflow-y-auto px-4 pb-4">
         {machines.map((machine, i) => (
           <div
             key={machine.id}
@@ -1967,7 +1977,7 @@ function SplitScreen({
         </p>
       </div>
 
-      <div className="px-4 pb-24 pt-3">
+      <div className="px-4 pt-3">
         <BigButton onClick={() => onNext(machines.map((machine, i) => ({ machine, qty: quantities[i]! })))} variant="primary" className="w-full" disabled={!ready}>
           Next
         </BigButton>
@@ -2058,7 +2068,7 @@ function ConfirmScreen({
         </div>
       </div>
 
-      <div className="px-4 pb-24 pt-3">
+      <div className="px-4 pt-3">
         <BigButton
           onClick={onConfirm}
           variant={out ? "take-out" : "put-in"}
