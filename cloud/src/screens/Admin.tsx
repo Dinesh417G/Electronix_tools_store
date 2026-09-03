@@ -30,6 +30,7 @@ import {
   Chip,
   Field,
   Header,
+  ListCap,
   Spinner,
   TabStrip,
 } from "../components/ui";
@@ -513,6 +514,16 @@ function Catalog({
         </RowList>
       )}
 
+      {/* Only for the browse list. A search is answered by the server's own
+          matching, so "200" would be describing a cap this list is not
+          under. */}
+      {query.trim().length < 2 && (
+        <ListCap shown={items.length} limit={200}>
+          The first 200 items. Search for a code, description, ISO code or
+          grade to reach the rest.
+        </ListCap>
+      )}
+
     </div>
   );
 }
@@ -959,6 +970,14 @@ function StockTab() {
           </RowList>
         )}
       </Loaded>
+
+      {/* Every one of these views is a ranking — busiest, oldest, furthest
+          above the line — so a cap is a cut in that ranking, not a slice of
+          the catalog. Saying which end you are looking at is the whole point. */}
+      <ListCap shown={stockState.data?.length ?? 0} limit={200}>
+        The top 200 by this ranking. Items further down it are not on this
+        screen.
+      </ListCap>
     </div>
   );
 }
@@ -1215,6 +1234,16 @@ function ActivityTab({
           </RowList>
         )}
       </Loaded>
+
+      {/* The one that mattered most. This is the screen somebody opens to
+          answer "where did forty inserts go", and it was showing sixty rows
+          out of however many exist while looking exactly like the whole
+          ledger. The reason filter narrows the same sixty, so it says so. */}
+      <ListCap shown={state.data?.length ?? 0} limit={60}>
+        The 60 most recent movements
+        {reason ? " under this reason" : ""}. Older ones are in the ledger but
+        not on this screen — the consumption report covers a whole period.
+      </ListCap>
     </div>
   );
 }

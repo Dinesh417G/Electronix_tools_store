@@ -185,20 +185,35 @@ function Consumption({
       >
         {(loaded) => loaded.length > 0 && (
         <>
-          <div className="rounded-xl bg-surface px-4 py-3">
-            <div className="text-xs text-faint">
-              Total consumed · {loaded.length} {groupBy === "month" ? "months" : "buckets"}
-            </div>
-            <div className="flex items-baseline gap-3">
-              <span className="text-2xl font-bold tabular-nums">
-                {totalQty.toLocaleString(undefined, { maximumFractionDigits: 3 })}
-              </span>
-              {priced && (
-                <span className="text-sm text-muted tabular-nums">
-                  ₹{totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+          {/* The download sits on the summary line, where the reference puts
+              its Filters / Search / Download / Columns row: this is a utility
+              for the table, not a step in reading it. As a full-width slab at
+              the bottom it was the most prominent control on the panel, which
+              is the wrong claim for a secondary action. */}
+          <div className="flex items-end justify-between gap-3 rounded-xl bg-surface px-4 py-3">
+            <div>
+              <div className="text-xs text-faint">
+                Total consumed · {loaded.length} {groupBy === "month" ? "months" : "buckets"}
+              </div>
+              <div className="flex items-baseline gap-3">
+                <span className="text-2xl font-bold tabular-nums">
+                  {totalQty.toLocaleString(undefined, { maximumFractionDigits: 3 })}
                 </span>
-              )}
+                {priced && (
+                  <span className="text-sm text-muted tabular-nums">
+                    ₹{totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
+                )}
+              </div>
             </div>
+            <button
+              type="button"
+              disabled={downloading}
+              onClick={download}
+              className="tap shrink-0 rounded-lg px-3 text-sm font-semibold text-accent disabled:opacity-40"
+            >
+              {downloading ? "Preparing…" : "↓ CSV"}
+            </button>
           </div>
 
           {loaded.map((row) => (
@@ -225,15 +240,6 @@ function Consumption({
               </div>
             </div>
           ))}
-
-          <button
-            type="button"
-            disabled={downloading}
-            onClick={download}
-            className="tap w-full rounded-xl bg-surface-2 px-4 text-sm text-ink-2 disabled:opacity-40"
-          >
-            {downloading ? "Preparing…" : "Download CSV"}
-          </button>
         </>
         )}
       </Loaded>

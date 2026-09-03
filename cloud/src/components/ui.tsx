@@ -221,6 +221,35 @@ export function Field({
 }
 
 /**
+ * What the list is not showing.
+ *
+ * Every list on this console is served with a cap — the ledger 60, the
+ * catalog and the stock views 200, the live view 40 — and not one of them
+ * said so. A screen showing 60 of four thousand movements, with nothing to
+ * suggest there are more, is the same failure §14 keeps returning to: it
+ * turns "here is a page" into "here is all of it", and the reader has no way
+ * to tell.
+ *
+ * It says nothing when the list came back short of its cap, because then the
+ * page really is everything and a note would be noise. `shown === limit` is
+ * the only honest signal available without a count from the server: it means
+ * "at least this many", never a total, so the wording promises no number it
+ * cannot support.
+ */
+export function ListCap({
+  shown,
+  limit,
+  children,
+}: {
+  shown: number;
+  limit: number;
+  children: ReactNode;
+}) {
+  if (shown < limit) return null;
+  return <p className="pt-2 text-xs text-faint">{children}</p>;
+}
+
+/**
  * Where the bin sits in its band: reorder level ← on hand → full.
  *
  * The owner's reference shows a 52-week low/high strip with the price marked
