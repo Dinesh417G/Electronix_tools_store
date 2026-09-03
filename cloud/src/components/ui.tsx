@@ -3,6 +3,7 @@
 // Everything here is sized for §12's operator: oily gloves, no patience, and a
 // screen mounted on a wall or held in one hand.
 
+import { useRegisterBack } from "./chrome";
 import type { ReactNode } from "react";
 import type { ConnectionState } from "../lib/events";
 
@@ -14,18 +15,14 @@ export function Screen({
   className?: string;
 }) {
   return (
-    /* `min-h-dvh`, not `min-h-full`. A percentage min-height resolves against
-       the parent's height, and this sits inside the shell's
-       `div.relative.min-h-full` — which has a min-height and no definite
-       height, so the percentage resolved to nothing and every Screen collapsed
-       to its own content. Measured on the idle screen: 528px inside a 915px
-       viewport, which is why `justify-between` had been placing nothing at the
-       bottom since the cloud port and the terminal looked half empty. The
-       dynamic viewport unit needs no parent chain, and `dvh` rather than `vh`
-       so a mobile browser's retracting toolbar does not leave a gap. */
-    <div className={`flex min-h-dvh flex-col safe-top safe-bottom ${className}`}>
-      {children}
-    </div>
+    /* `h-full`, and the shell owns the viewport.
+     *
+     * This was `min-h-dvh`, which made every screen claim a full viewport of
+     * its own — so a screen taller than one scrolled the *page*, its inner
+     * `overflow-y-auto` never engaged, and the fixed corner controls floated
+     * over the middle of the list. The shell is now a single `h-dvh` column of
+     * [content, bar]; a screen fills the content half and scrolls inside it. */
+    <div className={`flex h-full min-h-0 flex-col safe-top ${className}`}>{children}</div>
   );
 }
 
@@ -173,45 +170,6 @@ export function Spinner({ label }: { label: string }) {
  * `fixed`, so it does not move with a scrolling list; screens that scroll pad
  * their bottom to clear it.
  */
-function BackButton({ onBack }: { onBack: () => void }) {
-  return (
-    /* `safe-bottom` belongs on this wrapper, never on the button.
-     *
-     * It is `padding-bottom: max(0.75rem, env(safe-area-inset-bottom))`, and on
-     * the button it padded the *inside*: a 44 px circle became a 44 × 64 box,
-     * and `rounded-full` drew that as an egg. That is the whole of why the
-     * first version looked wrong — not the colour or the icon. The settings
-     * gear escaped it because the class was always on its container. */
-    <div className="fixed bottom-3 left-3 z-10 safe-bottom">
-      <button
-        type="button"
-        onClick={onBack}
-        aria-label="Back"
-        className="tap flex h-14 w-14 items-center justify-center rounded-full bg-slate-800 text-slate-100 shadow-lg shadow-black/40 ring-1 ring-white/10 transition-transform active:scale-95 active:bg-slate-700"
-      >
-        {/* A drawn arrow rather than "←". The glyph rendered in whatever the
-            system font had — thin, weighted differently on every device, and
-            reading as a character in a sentence rather than a control. A full
-            arrow with a shaft, not a bare chevron: at a glance across a
-            workshop the shaft is what makes the direction unmistakable. */}
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="h-6 w-6"
-          aria-hidden="true"
-        >
-          <path d="M19 12H5" />
-          <path d="m12 19-7-7 7-7" />
-        </svg>
-      </button>
-    </div>
-  );
-}
-
 export function Header({
   title,
   subtitle,
@@ -223,21 +181,26 @@ export function Header({
   onBack?: () => void;
   right?: ReactNode;
 }) {
+  /* The back action is *declared* here and *drawn* in the bottom bar.
+   *
+   * It belongs to this screen — every Header already knows where back goes —
+   * but a control in the top-left of a 6.7" phone is out of thumb reach, and a
+   * floating one in the corner covers whatever scrolls under it. Registering it
+   * lets the shell put it in reserved space at the bottom, which is both
+   * reachable and incapable of hiding anything. */
+  useRegisterBack(onBack);
+
   return (
-    <>
-      <header className="flex items-center gap-3 px-4 pb-3">
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-xl font-bold">{title}</h1>
-          {subtitle && <p className="truncate text-sm text-slate-400">{subtitle}</p>}
-        </div>
-        {right}
-      </header>
-      {onBack && <BackButton onBack={onBack} />}
-    </>
+    <header className="flex shrink-0 items-center gap-3 px-4 pb-3">
+      <div className="min-w-0 flex-1">
+        <h1 className="truncate text-xl font-bold">{title}</h1>
+        {subtitle && <p className="truncate text-sm text-slate-400">{subtitle}</p>}
+      </div>
+      {right}
+    </header>
   );
 }
 
-/** A labelled form row. Shared by the item form and the printer settings. */
 export function Field({
   label,
   hint,

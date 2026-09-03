@@ -27,6 +27,7 @@ import { Enrol } from "@/screens/Enrol";
 import { LiveView } from "@/screens/LiveView";
 import { Terminal } from "@/screens/Terminal";
 import { Banner, BigButton, Spinner } from "@/components/ui";
+import { BottomBar, ChromeProvider } from "@/components/chrome";
 
 type Mode = "terminal" | "live" | "admin";
 
@@ -338,7 +339,12 @@ export function AppShell() {
   }
 
   return (
-    <div className="relative min-h-full">
+    /* One `h-dvh` column for the whole app: the screen fills the top half and
+     * the bar sits under it as reserved space. Nothing is `fixed` over content
+     * any more, which is what stops a control hiding a row mid-scroll. */
+    <ChromeProvider>
+      {(back) => (
+    <div className="relative flex h-dvh flex-col overflow-hidden">
       {updateReady && (
         <div className="sticky top-0 z-20 p-3">
           <Banner tone="info">
@@ -367,6 +373,10 @@ export function AppShell() {
         </div>
       )}
 
+      {/* The content region. `min-h-0` is what lets a child's own
+          `overflow-y-auto` engage: without it a flex item refuses to shrink
+          below its content and the whole column grows instead. */}
+      <main className="flex min-h-0 flex-1 flex-col">
       {mode === "terminal" && (
         <Terminal
           cards={cards}
@@ -417,11 +427,24 @@ export function AppShell() {
           />
         ))}
 
-      <ModeSwitch mode={mode} onChange={switchMode} onReset={() => {
-        clearCredentials();
-        setEnrolled(false);
-      }} />
+      </main>
+
+      <BottomBar
+        back={back}
+        right={
+          <ModeSwitch
+            mode={mode}
+            onChange={switchMode}
+            onReset={() => {
+              clearCredentials();
+              setEnrolled(false);
+            }}
+          />
+        }
+      />
     </div>
+      )}
+    </ChromeProvider>
   );
 }
 
@@ -443,9 +466,12 @@ function ModeSwitch({
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="fixed right-3 bottom-3 z-10 flex flex-col items-end gap-2 safe-bottom">
+    /* `relative`, and the panel is absolutely positioned above the button:
+       inside the bar there is no room to stack, and a menu that pushed the bar
+       taller would move every other control while it was open. */
+    <div className="relative">
       {open && (
-        <div className="w-56 space-y-2 rounded-2xl bg-slate-800 p-3 shadow-xl">
+        <div className="absolute right-0 bottom-full z-20 mb-2 w-56 space-y-2 rounded-2xl bg-slate-800 p-3 shadow-xl">
           {(["terminal", "live", "admin"] as const)
             .filter((m) => m !== mode)
             .map((m) => (
@@ -474,9 +500,12 @@ function ModeSwitch({
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-label="Settings"
-        className="tap flex h-14 w-14 items-center justify-center rounded-full bg-slate-800 text-xl text-slate-300 shadow-lg shadow-black/40 ring-1 ring-white/10 transition-transform active:scale-95 active:bg-slate-700"
+        className="tap flex h-11 items-center gap-2 rounded-xl px-3 text-slate-300 active:bg-slate-800"
       >
-        ⚙
+        <span className="text-lg">⚙</span>
+        <span className="text-sm font-semibold capitalize">
+          {mode === "live" ? "Live view" : mode}
+        </span>
       </button>
     </div>
   );

@@ -70,7 +70,7 @@ export function Admin({ token, operatorName, onSignOut }: Props) {
     // header and the tab bar off the top of the screen. The dynamic viewport
     // unit plus `min-h-0` on the scroller keeps scrolling inside the list,
     // where it belongs.
-    <div className="admin flex h-dvh flex-col overflow-hidden">
+    <div className="admin flex h-full min-h-0 flex-col overflow-hidden">
       <div className="shrink-0 safe-top">
         <Header
           title="Admin"
@@ -128,7 +128,7 @@ export function Admin({ token, operatorName, onSignOut }: Props) {
         </nav>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-24 safe-bottom">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 safe-bottom">
         {tab === "catalog" && (
           <Catalog client={client} onError={setError} onNotice={setNotice} />
         )}

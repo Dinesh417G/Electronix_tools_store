@@ -911,6 +911,26 @@ Design for a shop-floor operator with oily gloves and no patience.
    if it crossed the reorder level, a clear *"This item is now LOW — storekeeper notified."*
 8. Auto-return to idle after 15 s.
 
+**Back lives in a bottom bar**, not at the top of the header and no longer
+floating over the screen.
+
+The bar is *reserved space* — a flex sibling of the screen, so the scrolling
+region ends where the bar begins. That is the structural point, and it was
+learned by paying for the alternative: a `fixed` control sits over content, and
+padding only protects the *end* of a list, so everything mid-scroll still passes
+underneath. Five separate paddings were added in one day chasing that, and the
+console still had the settings gear covering **"Serials"** — a control the
+storekeeper is meant to tap. Reserved space cannot have the problem.
+
+It also required the shell to own the viewport. Every `Screen` used to claim
+`min-h-dvh` of its own, so a screen taller than one scrolled the *page* and its
+inner `overflow-y-auto` never engaged. The shell is now a single `h-dvh` column
+of [content, bar]; a screen fills the content half with `h-full` and scrolls
+inside it. `tests/terminal-flow.mjs` asserts both halves on every screen it
+visits: back is inside the bar, and the page does not scroll.
+
+The older note, kept because the reasoning still holds:
+
 **Back lives in the bottom-left corner**, not at the top of the header. A 6.7"
 phone puts the top-left corner outside thumb reach, so leaving a screen meant a
 second hand or a shuffle of the grip — with gloves on, next to a machine. It
