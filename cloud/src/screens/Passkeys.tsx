@@ -1,4 +1,11 @@
-// Passkeys — §8's fourth identity source, on a screen.
+// Fingerprint sign-in — §8's fourth identity source, on a screen.
+//
+// Called "fingerprint" in the UI and "passkey" in the code, deliberately. On
+// the Android phone this store runs on, registering one prompts the fingerprint
+// sensor and that is the whole of what a user sees; "passkey" named the
+// standard and left the first user looking for a fingerprint option that was
+// already in front of them. The code keeps the accurate word because on an
+// iPhone or a laptop the same credential may be a face or a device PIN.
 //
 // Everything behind this existed already: migration 0007, lib/webauthn.ts,
 // lib/passkey.ts and five routes. The terminal could *sign in* with a passkey.
@@ -18,7 +25,7 @@
 // trustworthy as the moment it was enrolled, so enrolling one means first
 // proving who you are by the means that already exist.
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ApiError } from "../lib/api";
 import type { Passkey, adminApi } from "../lib/admin";
 import { isPasskeySupported, registerPasskey } from "../lib/passkey";
@@ -32,13 +39,16 @@ export function Passkeys({
   onBack,
   onError,
   onNotice,
+  right,
 }: {
   client: ReturnType<typeof adminApi>;
   token: string;
   operatorName: string;
-  onBack: () => void;
+  /** Absent on the operator's own sign-in page, which has nowhere to go back to. */
+  onBack?: () => void;
   onError: (m: string) => void;
   onNotice: (m: string) => void;
+  right?: ReactNode;
 }) {
   const [supported, setSupported] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
@@ -61,8 +71,8 @@ export function Passkeys({
       const result = await registerPasskey(token);
       onNotice(
         result.backed_up
-          ? "Registered. This passkey is backed up, so it survives losing the device."
-          : "Registered. This passkey lives only on this device — losing it means registering again.",
+          ? "Registered. This is backed up by the phone, so it survives losing the device."
+          : "Registered. This lives only on this device — losing it means registering again.",
       );
       load();
     } catch (err) {
@@ -89,15 +99,16 @@ export function Passkeys({
   return (
     <div className="space-y-4">
       <Header
-        title="Passkeys"
+        title="Fingerprint sign-in"
         subtitle={`Devices that can sign in as ${operatorName}`}
         onBack={onBack}
+        right={right}
       />
 
       {supported === false && (
         <Banner tone="warn">
-          This browser has no passkey support, so nothing can be registered here.
-          Existing devices below still work, and can still be revoked.
+          This browser cannot use a fingerprint, so nothing can be registered
+          here. Existing devices below still work, and can still be revoked.
         </Banner>
       )}
 
@@ -106,9 +117,9 @@ export function Passkeys({
         label="Reading your devices…"
         empty={
           <Banner tone="info">
-            No passkey is registered. Sign-in still works with an employee code
-            and PIN — a passkey is the stronger of the two, and neither is as
-            strong as the door reader (§8).
+            No device is registered yet. Sign-in still works with an employee
+            code and PIN — a fingerprint is the stronger of the two, and neither
+            is as strong as the door reader (§8).
           </Banner>
         }
       >
@@ -172,14 +183,14 @@ export function Passkeys({
         onClick={() => void register()}
         className="tap w-full rounded-xl bg-sky-600 px-4 py-3 font-semibold disabled:opacity-50"
       >
-        {busy ? "Working…" : "Register this device"}
+        {busy ? "Working…" : "Use this device's fingerprint"}
       </button>
 
       <p className="text-sm text-slate-500">
-        A passkey proves that <em>this device</em> was unlocked by someone it
-        trusts — not whose finger it was. That is why a session opened with one
-        is still marked as not having come from the door, and why registering on
-        a shared tablet is refused (§8).
+        This proves that <em>this device</em> was unlocked by someone it trusts
+        — not whose finger it was. That is why a session opened with it is still
+        marked as not having come from the door, and why registering on a shared
+        tablet is refused (§8). Register on the phone in your own pocket.
       </p>
     </div>
   );

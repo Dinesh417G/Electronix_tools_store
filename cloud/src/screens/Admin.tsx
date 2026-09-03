@@ -236,8 +236,8 @@ function Setup({
     },
     {
       key: "passkeys",
-      title: "Passkeys",
-      blurb: "Which of your devices can sign in, and forgetting one you have lost.",
+      title: "Fingerprint sign-in",
+      blurb: "Which of your devices may sign in as you, and forgetting one you have lost.",
     },
     {
       key: "printer",

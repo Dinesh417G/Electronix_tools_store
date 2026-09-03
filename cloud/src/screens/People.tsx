@@ -158,7 +158,7 @@ export function People({
             {person.zk_user_id ? `door id ${person.zk_user_id}` : "no door id"}
             {person.has_pin ? " · PIN" : " · no PIN"}
             {person.passkey_count > 0
-              ? ` · ${person.passkey_count} passkey${person.passkey_count === 1 ? "" : "s"}`
+              ? ` · fingerprint on ${person.passkey_count} device${person.passkey_count === 1 ? "" : "s"}`
               : ""}
           </div>
         </button>
@@ -284,7 +284,7 @@ function OperatorForm({
 
       <Field
         label="Terminal user id"
-        hint="The id programmed into the door reader. Without it, a punch cannot find them."
+        hint="The id programmed into the door reader, where their fingerprint is enrolled. The reader keeps the fingerprint itself; this is only how a punch finds them. Without it, a punch cannot."
       >
         <input
           className={input}
@@ -319,6 +319,33 @@ function OperatorForm({
           placeholder={operator?.has_pin ? "••••" : ""}
         />
       </Field>
+
+      {/* Asked on the first day the console was used: "while adding a user I
+          have no option for adding a fingerprint". There cannot be one. A
+          phone's fingerprint unlocks a credential bound to that phone, so it
+          has to be registered on the person's own device, by them, after they
+          have proved who they are some other way. The door reader's fingerprint
+          is not ours at all — the terminal captures and matches it, and all we
+          keep is the id above. Saying so here is cheaper than the question. */}
+      <div className="rounded-xl bg-slate-900 px-4 py-3 text-sm text-slate-400">
+        <div className="font-semibold text-slate-300">Fingerprint sign-in</div>
+        <p className="pt-1">
+          {operator
+            ? operator.passkey_count > 0
+              ? `Registered on ${operator.passkey_count} device${
+                  operator.passkey_count === 1 ? "" : "s"
+                }.`
+              : "Not set up on any device yet."
+            : "Set up after this person exists."}
+        </p>
+        <p className="pt-2">
+          It cannot be added from here: a fingerprint unlocks a key held by one
+          phone, so {operator ? "they" : "the person"} must register it on{" "}
+          {operator ? "their" : "their"} own phone. Give them their employee code
+          and PIN, have them sign in at <strong>Admin</strong>, and the first
+          screen they see is where they add it.
+        </p>
+      </div>
 
       <button
         type="button"

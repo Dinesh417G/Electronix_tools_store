@@ -1,8 +1,14 @@
-// Admin sign-in (CLAUDE.md §11: "admin uses operator login").
+// Personal sign-in (CLAUDE.md §11: "admin uses operator login").
 //
 // A separate credential from the device token on purpose. The terminal acts for
-// whoever claimed the session; the admin console acts for a named person with
-// an ADMIN or STOREKEEPER role, and the catalog is theirs to change.
+// whoever claimed the session; this acts for a named person.
+//
+// It used to refuse an OPERATOR outright, which was right about the console and
+// wrong about everything else: §8's passkey routes all admit an OPERATOR, and
+// this screen was the only door to the one that registers a device. An operator
+// could therefore sign in with a fingerprint they had no way to enrol. Any role
+// may sign in here now; the shell decides what they see, and an operator sees
+// their own devices and nothing else.
 
 import { useEffect, useState } from "react";
 import { OfflineError } from "../lib/api";
@@ -14,7 +20,7 @@ export function AdminLogin({
   onSignedIn,
   onCancel,
 }: {
-  onSignedIn: (token: string, name: string) => void;
+  onSignedIn: (token: string, name: string, role: string) => void;
   onCancel: () => void;
 }) {
   const [empCode, setEmpCode] = useState("");
@@ -32,11 +38,7 @@ export function AdminLogin({
     setError(null);
     try {
       const result = await signInWithPasskeyAsOperator();
-      if (result.role !== "ADMIN" && result.role !== "STOREKEEPER") {
-        setError("That passkey belongs to an operator. The console needs a storekeeper or administrator.");
-        return;
-      }
-      onSignedIn(result.token, result.full_name);
+      onSignedIn(result.token, result.full_name, result.role);
     } catch (err) {
       setError(
         err instanceof OfflineError
@@ -55,12 +57,7 @@ export function AdminLogin({
     setError(null);
     try {
       const result = await login(empCode.trim(), pin);
-      if (result.role !== "ADMIN" && result.role !== "STOREKEEPER") {
-        // Told plainly rather than shown a console that refuses every action.
-        setError("That login is an operator. The admin console needs a storekeeper or administrator.");
-        return;
-      }
-      onSignedIn(result.token, result.full_name);
+      onSignedIn(result.token, result.full_name, result.role);
     } catch (err) {
       setError(
         err instanceof OfflineError
@@ -78,9 +75,11 @@ export function AdminLogin({
     <Screen>
       <div className="flex flex-1 flex-col justify-center gap-5 px-5">
         <div>
-          <h1 className="text-2xl font-bold">Admin sign-in</h1>
+          <h1 className="text-2xl font-bold">Sign in</h1>
           <p className="pt-1 text-slate-400">
-            Employee code and PIN. The session lasts 12 hours.
+            Employee code and PIN. The session lasts 12 hours. Storekeepers and
+            admins get the console; everybody else gets their own sign-in
+            settings.
           </p>
         </div>
 
@@ -133,11 +132,11 @@ export function AdminLogin({
             </BigButton>
 
             {/* Said plainly, because a button that silently does nothing is
-                worse than no button: a passkey has to be registered from inside
-                the console before it can open it. */}
+                worse than no button: a device has to be registered before it
+                can sign in with a fingerprint. */}
             <p className="-mt-2 text-center text-xs text-slate-500">
-              Only works once you have registered this device in
-              Setup → Passkeys. Sign in with your PIN first.
+              Only works once you have registered this device. Sign in with your
+              PIN first, then add it under Fingerprint sign-in.
             </p>
           </>
         )}

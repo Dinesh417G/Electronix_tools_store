@@ -25,9 +25,23 @@ export function forgetAdminSession(): void {
   if (typeof window === "undefined") return;
   localStorage.removeItem(ADMIN_TOKEN_KEY);
   localStorage.removeItem(ADMIN_NAME_KEY);
+  localStorage.removeItem(ADMIN_ROLE_KEY);
   window.dispatchEvent(new CustomEvent(ADMIN_SIGNED_OUT_EVENT));
 }
 export const ADMIN_NAME_KEY = "electronix.store.admin_name";
+
+/**
+ * The signed-in role, kept alongside the token.
+ *
+ * The shell restores a session from localStorage on load, and what it draws
+ * depends on the role: a console for a storekeeper or an admin, a personal
+ * sign-in page for an operator. Without this it would have the token and the
+ * name back and no idea which of the two to render.
+ *
+ * Not a permission. Every route checks the role behind the token itself; this
+ * only decides which screen is worth drawing.
+ */
+export const ADMIN_ROLE_KEY = "electronix.store.admin_role";
 
 export interface Category {
   id: string;
