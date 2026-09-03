@@ -22,6 +22,7 @@ import {
 import { adminApi, type Category, type ItemInput } from "../lib/admin";
 import { useRefreshOnReturn } from "../lib/refresh";
 import { AlertChip, Banner, BigButton, Field, Header, Spinner } from "../components/ui";
+import { Row, RowList } from "../components/row";
 import { PrinterSettings } from "./PrinterSettings";
 import { Serials } from "./Serials";
 import { People } from "./People";
@@ -425,53 +426,55 @@ function Catalog({
         </p>
       )}
 
-      {items.map((item) => (
-        <div
-          key={item.id}
-          className="flex items-center gap-3 rounded-xl bg-slate-900 px-3 py-3"
-        >
-          <button
-            type="button"
-            aria-label={`Select ${item.item_code}`}
-            onClick={() => toggle(item.id)}
-            className={`h-8 w-8 shrink-0 rounded-lg border-2 text-sm ${
-              selected.has(item.id)
-                ? "border-sky-500 bg-sky-600 text-white"
-                : "border-slate-600"
-            }`}
-          >
-            {selected.has(item.id) ? "✓" : ""}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setEditing(item)}
-            className="min-w-0 flex-1 text-left"
-          >
-            <div className="flex items-center gap-2">
-              <span className="truncate font-semibold">{item.item_code}</span>
-              <AlertChip level={item.alert_state} />
-              {!item.active && (
-                <span className="rounded-full bg-slate-700 px-2 py-0.5 text-xs">retired</span>
-              )}
-            </div>
-            <div className="truncate text-sm text-slate-400">{item.description}</div>
-            <div className="text-xs text-slate-500">
-              {item.bin_location ? `Bin ${item.bin_location} · ` : ""}
-              {formatQty(item.on_hand)} {item.uom} on hand
-            </div>
-          </button>
-
-          <button
-            type="button"
-            aria-label={`Serial numbers for ${item.item_code}`}
-            onClick={() => setSerialsFor(item)}
-            className="tap shrink-0 rounded-lg bg-slate-900 px-3 text-xs text-slate-300"
-          >
-            Serials
-          </button>
-        </div>
-      ))}
+      {items.length > 0 && (
+        <RowList>
+          {items.map((item) => (
+            <Row
+              key={item.id}
+              title={item.item_code}
+              badge={
+                <>
+                  <AlertChip level={item.alert_state} />
+                  {!item.active && (
+                    <span className="rounded-full bg-slate-700 px-2 py-0.5 text-xs">
+                      retired
+                    </span>
+                  )}
+                </>
+              }
+              subtitle={item.description}
+              meta={item.bin_location ? `Bin ${item.bin_location}` : undefined}
+              value={formatQty(item.on_hand)}
+              valueNote={item.uom}
+              onClick={() => setEditing(item)}
+              leading={
+                <button
+                  type="button"
+                  aria-label={`Select ${item.item_code}`}
+                  onClick={() => toggle(item.id)}
+                  className={`h-8 w-8 shrink-0 rounded-lg border-2 text-sm ${
+                    selected.has(item.id)
+                      ? "border-sky-500 bg-sky-600 text-white"
+                      : "border-slate-600"
+                  }`}
+                >
+                  {selected.has(item.id) ? "✓" : ""}
+                </button>
+              }
+              trailing={
+                <button
+                  type="button"
+                  aria-label={`Serial numbers for ${item.item_code}`}
+                  onClick={() => setSerialsFor(item)}
+                  className="tap shrink-0 rounded-lg bg-slate-800 px-3 text-xs text-slate-300"
+                >
+                  Serials
+                </button>
+              }
+            />
+          ))}
+        </RowList>
+      )}
 
     </div>
   );
@@ -804,24 +807,28 @@ function StockTab() {
         label="Loading stock…"
         empty={<p className="py-10 text-center text-slate-500">Nothing here.</p>}
       >
-        {(loaded) => loaded.map((item) => (
-        <div key={item.id} className="flex items-center gap-3 rounded-xl bg-slate-900 px-4 py-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="truncate font-semibold">{item.item_code}</span>
-              <AlertChip level={item.alert_state} />
-            </div>
-            <div className="truncate text-sm text-slate-400">{item.description}</div>
-            <div className="truncate text-xs text-slate-500">{viewDetail(view, item)}</div>
-          </div>
-          <div className="shrink-0 text-right">
-            <div className="text-xl font-bold tabular-nums">{formatQty(item.on_hand)}</div>
-            <div className="text-xs text-slate-500">
-              of {formatQty(item.reorder_level)}
-            </div>
-          </div>
-        </div>
-      ))}
+        {(loaded) => (
+          <RowList>
+            {loaded.map((item) => (
+              <Row
+                key={item.id}
+                title={item.item_code}
+                badge={<AlertChip level={item.alert_state} />}
+                subtitle={item.description}
+                meta={viewDetail(view, item)}
+                value={formatQty(item.on_hand)}
+                valueNote={`of ${formatQty(item.reorder_level)}`}
+                tone={
+                  item.alert_state === "EMPTY"
+                    ? "empty"
+                    : item.alert_state === "LOW"
+                      ? "low"
+                      : "plain"
+                }
+              />
+            ))}
+          </RowList>
+        )}
       </Loaded>
     </div>
   );
@@ -983,62 +990,60 @@ function ActivityTab({
           </p>
         }
       >
-        {(loaded) => loaded.map((row) => {
-        const out = row.delta_qty.startsWith("-");
-        const reversed = row.reverses_id !== null;
-        return (
-          <div key={row.id} className="rounded-xl bg-slate-900 px-4 py-3">
-            <div className="flex items-center gap-3">
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-semibold">{row.item_code}</div>
-                <div className="truncate text-sm text-slate-400">
-                  {row.txn_type} · {row.operator_name}
-                  {row.machine_code ? ` · ${row.machine_code}` : ""}
-                </div>
-                {row.reason_code && (
-                  <div className="truncate text-xs text-slate-500">
-                    {row.reason_code}
-                    {row.note ? ` — ${row.note}` : ""}
-                  </div>
-                )}
-                {reversed && (
-                  <div className="text-xs text-amber-400">
-                    reverses #{row.reverses_id}
-                  </div>
-                )}
-              </div>
-              <div
-                className={`shrink-0 text-lg font-bold tabular-nums ${
-                  out ? "text-red-400" : "text-emerald-400"
-                }`}
-              >
-                {formatQty(row.delta_qty)}
-              </div>
-            </div>
-
-            {/* §7: a mistake is corrected by appending the mirror image. There
-                is deliberately no edit and no delete here — the database would
-                refuse anyway. */}
-            {!reversed && (
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    await client.reverse(row.id);
-                    onNotice(`Reversed #${row.id}. Both rows stay in the ledger.`);
-                    load();
-                  } catch (err) {
-                    onError(describe(err));
+        {(loaded) => (
+          <RowList>
+            {loaded.map((row) => {
+              const out = row.delta_qty.startsWith("-");
+              const reversed = row.reverses_id !== null;
+              return (
+                <Row
+                  key={row.id}
+                  title={row.item_code}
+                  badge={
+                    reversed ? (
+                      <span className="rounded-full bg-amber-950 px-2 py-0.5 text-xs text-amber-300">
+                        reverses #{row.reverses_id}
+                      </span>
+                    ) : undefined
                   }
-                }}
-                className="tap mt-2 rounded-lg bg-slate-800 px-4 text-sm text-slate-300"
-              >
-                Reverse
-              </button>
-            )}
-          </div>
-        );
-        })}
+                  subtitle={
+                    `${row.txn_type} · ${row.operator_name}` +
+                    (row.machine_code ? ` · ${row.machine_code}` : "")
+                  }
+                  meta={
+                    row.reason_code
+                      ? row.reason_code + (row.note ? ` — ${row.note}` : "")
+                      : undefined
+                  }
+                  value={formatQty(row.delta_qty)}
+                  tone={out ? "out" : "in"}
+                  /* §7: a mistake is corrected by appending the mirror image.
+                     There is deliberately no edit and no delete here — the
+                     database would refuse anyway. */
+                  actions={
+                    reversed ? undefined : (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await client.reverse(row.id);
+                            onNotice(`Reversed #${row.id}. Both rows stay in the ledger.`);
+                            load();
+                          } catch (err) {
+                            onError(describe(err));
+                          }
+                        }}
+                        className="tap rounded-lg bg-slate-800 px-4 text-sm text-slate-300"
+                      >
+                        Reverse
+                      </button>
+                    )
+                  }
+                />
+              );
+            })}
+          </RowList>
+        )}
       </Loaded>
     </div>
   );

@@ -32,6 +32,7 @@ import { VIEW_LABELS, hintFor, viewDetail } from "./Filters";
 import { Loaded, useLoadable } from "./Loadable";
 import { isPasskeySupported, signInWithPasskey } from "../lib/passkey";
 import { AlertChip, Banner, BigButton, ConnectionPill, Header, Screen, Spinner } from "../components/ui";
+import { Row, RowList } from "../components/row";
 
 type Direction = "issue" | "receipt";
 
@@ -962,32 +963,19 @@ function ShortagesScreen({
           }
         >
           {(rows) => (
-            <div className="space-y-2">
+            <RowList>
               {rows.map((item) => (
-                <div key={item.id} className="rounded-xl bg-slate-900 px-4 py-3">
-                  <div className="flex items-baseline justify-between gap-3">
-                    <span className="min-w-0 flex-1 truncate font-semibold">
-                      {item.item_code}
-                    </span>
-                    <span className="shrink-0 tabular-nums">
-                      <strong
-                        className={level === "EMPTY" ? "text-red-300" : "text-amber-300"}
-                      >
-                        {formatQty(item.on_hand)}
-                      </strong>
-                      <span className="text-slate-500">
-                        {" "}
-                        / {formatQty(item.reorder_level)}
-                      </span>
-                    </span>
-                  </div>
-                  <div className="truncate pt-1 text-sm text-slate-400">{item.description}</div>
-                  {item.bin_location && (
-                    <div className="pt-1 text-xs text-slate-500">bin {item.bin_location}</div>
-                  )}
-                </div>
+                <Row
+                  key={item.id}
+                  title={item.item_code}
+                  subtitle={item.description}
+                  meta={item.bin_location ? `Bin ${item.bin_location}` : undefined}
+                  value={formatQty(item.on_hand)}
+                  valueNote={`of ${formatQty(item.reorder_level)}`}
+                  tone={level === "EMPTY" ? "empty" : "low"}
+                />
               ))}
-            </div>
+            </RowList>
           )}
         </Loaded>
       </div>
@@ -1460,9 +1448,13 @@ function ItemScreen({
 
             {browseView === "all" ? (
               <>
-                {catalog.map((item) => (
-                  <ItemRow key={item.id} item={item} onClick={() => onPick(item)} />
-                ))}
+                {catalog.length > 0 && (
+                  <RowList>
+                    {catalog.map((item) => (
+                      <ItemRow key={item.id} item={item} onClick={() => onPick(item)} />
+                    ))}
+                  </RowList>
+                )}
                 {catalog.length === 0 && !loadingMore && (
                   <p className="py-6 text-center text-slate-500">The catalog is empty.</p>
                 )}
@@ -1484,18 +1476,20 @@ function ItemScreen({
                 Nothing to show under {hintFor(browseView)}.
               </p>
             ) : (
-              insights.map((item) => (
-                /* The detail line goes *inside* the row, not after it. As a
-                   sibling it sat in the gap between two cards and read as a
-                   caption for the one below — "18.000 on hand" under the item
-                   with 18, describing the next one. */
-                <ItemRow
-                  key={item.id}
-                  item={item}
-                  onClick={() => onPick(item)}
-                  detail={viewDetail(browseView, item)}
-                />
-              ))
+              /* The detail line is a slot *inside* the row. As a sibling it sat
+                 in the gap between two cards and read as a caption for the one
+                 below — "18 on hand" under the item with 18, describing the
+                 next one. */
+              <RowList>
+                {insights.map((item) => (
+                  <ItemRow
+                    key={item.id}
+                    item={item}
+                    onClick={() => onPick(item)}
+                    detail={viewDetail(browseView, item)}
+                  />
+                ))}
+              </RowList>
             )}
           </div>
         ) : mode === "scan" ? (
@@ -1519,9 +1513,13 @@ function ItemScreen({
               placeholder="Code, description, ISO or grade"
               className="tap w-full rounded-2xl bg-slate-800 px-5 text-lg outline-none placeholder:text-slate-500 focus:ring-2 focus:ring-sky-500"
             />
-            {results.map((item) => (
-              <ItemRow key={item.id} item={item} onClick={() => onPick(item)} />
-            ))}
+            {results.length > 0 && (
+              <RowList>
+                {results.map((item) => (
+                  <ItemRow key={item.id} item={item} onClick={() => onPick(item)} />
+                ))}
+              </RowList>
+            )}
             {query.trim().length >= 2 && results.length === 0 && (
               <p className="py-6 text-center text-slate-500">Nothing matches that.</p>
             )}
@@ -1565,24 +1563,19 @@ function ItemRow({
   detail?: string;
 }) {
   return (
-    <button
-      type="button"
+    <Row
+      title={item.item_code}
+      badge={<AlertChip level={item.alert_state} />}
+      subtitle={item.description}
+      meta={
+        [item.bin_location ? `Bin ${item.bin_location}` : null, detail]
+          .filter(Boolean)
+          .join(" · ") || undefined
+      }
+      value={formatQty(item.on_hand)}
+      valueNote={item.uom}
       onClick={onClick}
-      className="tap flex w-full items-center gap-3 rounded-2xl bg-slate-800 px-4 py-3 text-left active:bg-slate-700"
-    >
-      <div className="min-w-0 flex-1">
-        <div className="truncate font-semibold">{item.item_code}</div>
-        <div className="truncate text-sm text-slate-400">{item.description}</div>
-        {item.bin_location && (
-          <div className="text-xs text-slate-500">Bin {item.bin_location}</div>
-        )}
-        {detail && <div className="truncate pt-0.5 text-xs text-slate-500">{detail}</div>}
-      </div>
-      <div className="shrink-0 text-right">
-        <div className="text-lg font-bold tabular-nums">{formatQty(item.on_hand)}</div>
-        <AlertChip level={item.alert_state} />
-      </div>
-    </button>
+    />
   );
 }
 
