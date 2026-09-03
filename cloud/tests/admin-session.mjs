@@ -185,6 +185,59 @@ try {
   // engineer the plant's outbound routing is wrong. On 2026-08-31 it was drawn
   // from a request that had timed out, against a deployment that had a device
   // and a punch.
+  /* Catalog rows must stack, not run along one line.
+   *
+   * `globals.css` sets `.admin .tap { display: inline-flex }` so a control in a
+   * dense console row is not 3.5rem tall. Two classes beat one, so any button
+   * inside the console that stacks a title over a description loses to it and
+   * lays the two side by side. It has now done that twice: the Setup menu once
+   * read "PeopleWho can take stock out", and the catalog once read
+   * "EM-20-4F-TIALN EMPTY 2l Eme... B..". The CSS carries `.admin .tap.block`
+   * as the escape hatch, and it only works if the markup asks for it.
+   *
+   * No text assertion can see this — every word is present either way. The
+   * geometry is the whole signal: a stacked pair has the title's bottom at or
+   * above the description's top, a collapsed pair overlaps them vertically.
+   */
+  t.step("4b. console rows stack their lines rather than running them together");
+  await browser.clickText("Catalog");
+  await sleep(2000);
+  const stacking = await browser.evaluate(`(() => {
+    // Found by structure, not by the class that fixes it. Keying on "block"
+    // made the check unfindable on a build without it — failing, but for the
+    // wrong reason, and it would have passed on any build that dropped the
+    // class *and* the rows.
+    const list = document.querySelector("div.divide-y");
+    const row = !list
+      ? null
+      : [...list.querySelectorAll("button")].find(
+          (b) => b.querySelectorAll(":scope > div").length >= 2,
+        );
+    if (!row) return { missing: true };
+    const lines = [...row.querySelectorAll(":scope > div")].map((d) => {
+      const r = d.getBoundingClientRect();
+      return { top: Math.round(r.top), bottom: Math.round(r.bottom), text: (d.textContent || "").trim().slice(0, 28) };
+    });
+    return { lines };
+  })()`);
+
+  if (stacking.missing) {
+    t.bad("no catalog row found to measure");
+  } else {
+    const lines = stacking.lines;
+    const overlapping = lines.filter(
+      (line, i) => i > 0 && line.top < lines[i - 1].bottom - 1,
+    );
+    if (overlapping.length === 0) {
+      t.ok(`a catalog row stacks its ${lines.length} lines`);
+    } else {
+      t.bad(
+        `a catalog row runs its lines together — ${JSON.stringify(lines)}. ` +
+          "`.admin .tap` is inline-flex; the row needs the `block` class.",
+      );
+    }
+  }
+
   t.step("5. a door that could not be asked does not report a door that never spoke");
   await browser.clickText("Setup");
   await sleep(1500);

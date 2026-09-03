@@ -1246,6 +1246,31 @@ way rather than designed in:
   above `statement_timeout` because it exists for what the database cannot
   report.
 
+**One row shape for every list of records** (`cloud/src/components/row.tsx`).
+The catalog, the stock views, the ledger, the browse list and the shortage list
+each grew their own markup, so the same item code sat at a different indent and
+its quantity in a different weight depending on the tab. `Row` takes a title, a
+badge, two quiet lines and a right-aligned `tabular-nums` value, with slots for
+the things these lists are not merely reading: a selection box, a per-row
+control, an action underneath. `RowList` divides them with hairlines rather than
+giving each a card — the shortage list fitted seven items per screen as cards
+and eleven as rows.
+
+**Not the operator flow.** §12 wants enormous targets for oily gloves and an
+eight-second path; a watchlist is designed for reading, not tapping. Alerts also
+keeps its cards: it carries an inline level editor, and a dense row would make a
+form look like a list item.
+
+**The `.admin .tap` trap caught the new component on its first run**, exactly as
+it caught the Setup menu before. `globals.css` sets `.admin .tap` to
+`inline-flex` so a console control is not 3.5 rem tall; two classes beat one, so
+any button that stacks a title over a description loses and lays them side by
+side. The catalog read *"EM-20-4F-TIALN EMPTY 2l Eme… B.."*. The escape hatch
+`.admin .tap.block` already existed from last time and only works if the markup
+asks. It is gated now, in `tests/admin-session.mjs`, by geometry — every word is
+present either way, so only the boxes can tell: stacked lines have each line's
+top at or below the previous line's bottom.
+
 `typecheck` still cannot see the database, so a column rename is a build that
 passes and a screen that breaks. `tests/route-smoke.mjs` is the cheap answer:
 it asks every GET route once, with parameters real enough to reach SQL, and
