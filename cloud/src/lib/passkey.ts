@@ -182,7 +182,14 @@ function friendly(err: unknown, context: "signin" | "register" = "register"): Ap
         400,
         "cancelled",
         context === "signin"
-          ? "No passkey on this device yet, or the prompt was cancelled. Register one in the admin console under Setup → Passkeys, or use your employee code and PIN."
+          // Names the route the reader can actually walk. It used to say
+          // "Setup → Passkeys", which was wrong twice over once operators could
+          // register at all: that section is called Fingerprint sign-in now,
+          // and an operator never sees Setup — they land on their own page the
+          // moment they sign in. A message that sends somebody to a screen they
+          // cannot reach is worse than the browser's own error, because they
+          // believe it and go looking.
+          ? "No fingerprint on this phone yet, or the prompt was cancelled. Sign in with your employee code and PIN below. To add this phone: ⚙ → admin, sign in, then register it there."
           : "Cancelled, or the sensor did not read. Try again.",
       );
     case "InvalidStateError":
