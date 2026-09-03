@@ -948,7 +948,7 @@ function ShortagesScreen({
         onBack={onBack}
       />
 
-      <div className="flex-1 space-y-2 overflow-y-auto px-4 pb-6">
+      <div className="flex-1 space-y-2 overflow-y-auto px-4 pb-20">
         <Loaded
           state={state}
           label="Reading stock"
@@ -1022,7 +1022,7 @@ function ClaimScreen({
       />
       {banner}
 
-      <div className="flex-1 space-y-3 overflow-y-auto px-4">
+      <div className="flex-1 space-y-3 overflow-y-auto px-4 pb-20">
         {cards.length === 0 && <Spinner label="Waiting for a punch at the door…" />}
 
         {/* §10: every unclaimed punch from the last 90 s is listed. Tailgating
@@ -1402,7 +1402,7 @@ function ItemScreen({
       />
       {banner}
 
-      <div className="flex-1 overflow-y-auto px-4">
+      <div className="flex-1 overflow-y-auto px-4 pb-20">
         {notFound && (
           <div className="pb-3">
             <Banner tone="warn" onDismiss={() => setNotFound(null)}>
@@ -1682,7 +1682,7 @@ function QuantityScreen({
         ))}
       </div>
 
-      <div className="px-4 pt-4">
+      <div className="px-4 pb-16 pt-4">
         <BigButton
           onClick={() => onNext(value)}
           variant="primary"
@@ -1762,7 +1762,7 @@ function OptionalScreen({
       <Header title="Anything else?" subtitle="Optional" onBack={onBack} />
       {banner}
 
-      <div className="flex-1 space-y-5 overflow-y-auto px-4">
+      <div className="flex-1 space-y-5 overflow-y-auto px-4 pb-20">
         {direction === "issue" && machines.length > 0 && (
           <section>
             <h2 className="pb-2 text-sm font-semibold text-slate-400">
@@ -1835,7 +1835,7 @@ function OptionalScreen({
 
       {/* §12.6: skipping must never be slower than filling. SKIP is the biggest
           control here, and it is reachable without scrolling. */}
-      <div className="space-y-2 px-4 pt-3">
+      <div className="space-y-2 px-4 pb-16 pt-3">
         <BigButton
           onClick={() => onNext([], null, null)}
           variant="ghost"
@@ -1911,7 +1911,7 @@ function SplitScreen({
       <Header title="How many for each?" subtitle={item.item_code} onBack={onBack} />
       {banner}
 
-      <div className="flex-1 space-y-3 overflow-y-auto px-4">
+      <div className="flex-1 space-y-3 overflow-y-auto px-4 pb-20">
         {machines.map((machine, i) => (
           <div
             key={machine.id}
@@ -1956,7 +1956,7 @@ function SplitScreen({
         </p>
       </div>
 
-      <div className="px-4 pt-3">
+      <div className="px-4 pb-16 pt-3">
         <BigButton onClick={() => onNext(machines.map((machine, i) => ({ machine, qty: quantities[i]! })))} variant="primary" className="w-full" disabled={!ready}>
           Next
         </BigButton>
@@ -2047,7 +2047,7 @@ function ConfirmScreen({
         </div>
       </div>
 
-      <div className="px-4 pt-3">
+      <div className="px-4 pb-16 pt-3">
         <BigButton
           onClick={onConfirm}
           variant={out ? "take-out" : "put-in"}

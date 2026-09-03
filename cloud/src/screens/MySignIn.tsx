@@ -39,7 +39,7 @@ export function MySignIn({
 
   return (
     <Screen>
-      <div className="flex-1 overflow-y-auto px-4 pt-4 pb-8">
+      <div className="flex-1 overflow-y-auto px-4 pt-4 pb-20">
         <div className="space-y-3">
           {error && (
             <Banner tone="error" onDismiss={() => setError(null)}>

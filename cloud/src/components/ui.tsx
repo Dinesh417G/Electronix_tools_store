@@ -157,6 +157,50 @@ export function Spinner({ label }: { label: string }) {
   );
 }
 
+/**
+ * Back, bottom left.
+ *
+ * It used to sit inline at the top of the header, which is where a back control
+ * goes on a desktop and the worst place for it on the phone this runs on: a
+ * 6.7" screen puts the top-left corner out of thumb reach entirely, so leaving
+ * a screen meant a second hand or a shuffle of the grip — with gloves on, next
+ * to a machine (§12).
+ *
+ * Bottom left mirrors the settings gear at bottom right, so the two controls
+ * that leave a screen sit in the two corners a thumb owns, and neither is ever
+ * where content is being read.
+ *
+ * `fixed`, so it does not move with a scrolling list; screens that scroll pad
+ * their bottom to clear it.
+ */
+function BackButton({ onBack }: { onBack: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onBack}
+      aria-label="Back"
+      className="tap fixed bottom-3 left-3 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-slate-800/90 text-slate-300 shadow-lg backdrop-blur safe-bottom active:bg-slate-700"
+    >
+      {/* An SVG rather than "←". The glyph rendered in whatever the system font
+          had, which is why it looked like a character in a sentence rather than
+          a control — thin, differently weighted on every device, and unmatched
+          to the gear opposite it. This is drawn at a fixed weight everywhere. */}
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="h-5 w-5"
+        aria-hidden="true"
+      >
+        <path d="M15 5 8 12l7 7" />
+      </svg>
+    </button>
+  );
+}
+
 export function Header({
   title,
   subtitle,
@@ -169,23 +213,16 @@ export function Header({
   right?: ReactNode;
 }) {
   return (
-    <header className="flex items-center gap-3 px-4 pb-3">
-      {onBack && (
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label="Back"
-          className="tap -ml-2 flex w-12 items-center justify-center rounded-xl text-2xl text-slate-400 active:bg-slate-800"
-        >
-          ←
-        </button>
-      )}
-      <div className="min-w-0 flex-1">
-        <h1 className="truncate text-xl font-bold">{title}</h1>
-        {subtitle && <p className="truncate text-sm text-slate-400">{subtitle}</p>}
-      </div>
-      {right}
-    </header>
+    <>
+      <header className="flex items-center gap-3 px-4 pb-3">
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-xl font-bold">{title}</h1>
+          {subtitle && <p className="truncate text-sm text-slate-400">{subtitle}</p>}
+        </div>
+        {right}
+      </header>
+      {onBack && <BackButton onBack={onBack} />}
+    </>
   );
 }
 

@@ -174,6 +174,45 @@ try {
   // §12.6: skipping must never be slower than filling.
   await browser.clickText("Skip");
   await sleep(800);
+  // The back control is a *fixed* button in the bottom-left corner, and the
+  // primary action on this screen is a full-width CONFIRM at the bottom. If
+  // they overlap, an operator aiming at the left of CONFIRM books "back"
+  // instead and loses everything they typed — the worst possible place for a
+  // stray tap, and invisible to every assertion that reads text. Geometry is
+  // the only thing that can catch it.
+  const boxes = await browser.evaluate(`(() => {
+    const back = document.querySelector('button[aria-label="Back"]');
+    const confirm = [...document.querySelectorAll("button")]
+      .find((b) => /CONFIRM/i.test(b.textContent || ""));
+    const box = (el) => {
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return {
+        left: Math.round(r.left), right: Math.round(r.right),
+        top: Math.round(r.top), bottom: Math.round(r.bottom),
+      };
+    };
+    return { back: box(back), confirm: box(confirm) };
+  })()`);
+
+  if (!boxes.back) {
+    t.bad("no back button on the confirm screen");
+  } else if (!boxes.confirm) {
+    t.bad("no CONFIRM button found to compare against");
+  } else {
+    const a = boxes.back;
+    const b = boxes.confirm;
+    const overlaps =
+      a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+    if (overlaps) {
+      t.bad(
+        `the back button overlaps CONFIRM: back ${JSON.stringify(a)} vs ${JSON.stringify(b)}`,
+      );
+    } else {
+      t.ok("the back button does not overlap CONFIRM");
+    }
+  }
+
   const confirmed = await browser.clickText("Confirm");
   if (!confirmed) t.bad("no CONFIRM button: " + trim(await browser.text()));
   await sleep(3000);
