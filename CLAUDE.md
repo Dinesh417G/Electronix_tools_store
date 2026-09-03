@@ -889,6 +889,25 @@ Design for a shop-floor operator with oily gloves and no patience.
    if it crossed the reorder level, a clear *"This item is now LOW — storekeeper notified."*
 8. Auto-return to idle after 15 s.
 
+**Back lives in the bottom-left corner**, not at the top of the header. A 6.7"
+phone puts the top-left corner outside thumb reach, so leaving a screen meant a
+second hand or a shuffle of the grip — with gloves on, next to a machine. It
+mirrors the settings gear at bottom right, so the two controls that leave a
+screen sit in the two corners a thumb owns.
+
+Its cost, and the reason `Header` is not the only file this touched: the button
+is `fixed`, so anything that reaches the bottom of a screen sits under it.
+Every scrolling list gained bottom padding, and so did the four screens with a
+full-width action bar — `QuantityScreen`, `OptionalScreen`, `SplitScreen` and
+`ConfirmScreen`. That last one is why this is a rule rather than a preference:
+without the clearance the back button overlaps the bottom-left of **CONFIRM**,
+and an operator aiming there books "back" and loses everything they typed.
+
+`tests/terminal-flow.mjs` asserts the two rectangles do not intersect, measured
+in the browser. No text assertion can see this — the words are all present and
+correct while the buttons sit on top of each other — and removing the clearance
+fails it with both rectangles printed.
+
 Target: **scan → qty → confirm in under 8 seconds.** If a screen doesn't serve that, cut it.
 
 Offline: writes queue to a local **IndexedDB** outbox and flush when the LAN returns.

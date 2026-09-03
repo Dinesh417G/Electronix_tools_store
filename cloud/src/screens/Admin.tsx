@@ -128,7 +128,7 @@ export function Admin({ token, operatorName, onSignOut }: Props) {
         </nav>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 safe-bottom">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-20 safe-bottom">
         {tab === "catalog" && (
           <Catalog client={client} onError={setError} onNotice={setNotice} />
         )}
