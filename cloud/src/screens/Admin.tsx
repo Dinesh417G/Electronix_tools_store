@@ -22,7 +22,7 @@ import {
 import { adminApi, type Category, type ItemInput } from "../lib/admin";
 import { useRefreshOnReturn } from "../lib/refresh";
 import { AlertChip, Banner, BigButton, Chip, Field, Header, Spinner, TabStrip } from "../components/ui";
-import { Row, RowList } from "../components/row";
+import { Row, RowHeader, RowList } from "../components/row";
 import { PrinterSettings } from "./PrinterSettings";
 import { Serials } from "./Serials";
 import { People } from "./People";
@@ -71,8 +71,13 @@ export function Admin({ token, operatorName, onSignOut }: Props) {
     // header and the tab bar off the top of the screen. The dynamic viewport
     // unit plus `min-h-0` on the scroller keeps scrolling inside the list,
     // where it belongs.
+    /* `SHELL` on the header block and on the scroller's inner content, not on
+       the scroller itself: constraining the scrolling element would park its
+       scrollbar in the middle of the page. Without it, a line of text on the
+       server PC's monitor runs the full 1568 px — the console was laid out for
+       a phone and never told it had grown. */
     <div className="admin flex h-full min-h-0 flex-col overflow-hidden">
-      <div className="shrink-0 safe-top">
+      <div className={`shrink-0 safe-top ${SHELL}`}>
         <Header
           title="Admin"
           subtitle={operatorName}
@@ -119,6 +124,7 @@ export function Admin({ token, operatorName, onSignOut }: Props) {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 safe-bottom">
+        <div className={SHELL}>
         {tab === "catalog" && (
           <Catalog client={client} onError={setError} onNotice={setNotice} />
         )}
@@ -139,10 +145,15 @@ export function Admin({ token, operatorName, onSignOut }: Props) {
         {tab === "activity" && (
           <ActivityTab client={client} onError={setError} onNotice={setNotice} />
         )}
+        </div>
       </div>
     </div>
   );
 }
+
+/** Content width. The console is read on a phone and on the server PC's
+ *  monitor, and 1568 px of unbroken text line is nobody's reading width. */
+const SHELL = "mx-auto w-full max-w-6xl";
 
 // ── Setup ───────────────────────────────────────────────────────────────
 //
@@ -433,6 +444,7 @@ function Catalog({
 
       {items.length > 0 && (
         <RowList>
+          <RowHeader title="Item" subtitle="Description" meta="Bin" value="On hand" />
           {items.map((item) => (
             <Row
               key={item.id}
@@ -814,6 +826,7 @@ function StockTab() {
       >
         {(loaded) => (
           <RowList>
+            <RowHeader title="Item" subtitle="Description" meta="Activity" value="On hand" />
             {loaded.map((item) => (
               <Row
                 key={item.id}
@@ -863,6 +876,12 @@ function AlertsTab({
       >
         {(loaded) => (
           <RowList>
+            {/* The severity edge is on a wrapper outside `Row`, so the header
+                needs the same 2px of left inset or its columns sit two pixels
+                left of the ones below it. */}
+            <div className="border-l-2 border-transparent">
+              <RowHeader title="Item" subtitle="Description" meta="Band" value="On hand" />
+            </div>
             {loaded.map((alert) => {
               const short = alert.max_level
                 ? Math.max(0, Number(alert.max_level) - Number(alert.on_hand))
@@ -1000,12 +1019,30 @@ function ActivityTab({
       >
         {(loaded) => (
           <RowList>
+            <RowHeader
+              leading="Time"
+              title="Item"
+              subtitle="Movement"
+              meta="Reason"
+              value="Qty"
+            />
             {loaded.map((row) => {
               const out = row.delta_qty.startsWith("-");
               const reversed = row.reverses_id !== null;
               return (
                 <Row
                   key={row.id}
+                  /* An audit list that never says *when* is missing the column
+                     somebody opens it for. §9.3: `created_at` is what the
+                     server observed, and the only clock this screen may use. */
+                  leading={
+                    <span
+                      className="w-12 shrink-0 text-xs tabular-nums text-faint"
+                      title={new Date(row.created_at).toLocaleString()}
+                    >
+                      {clock(row.created_at)}
+                    </span>
+                  }
                   title={row.item_code}
                   badge={
                     reversed ? (
@@ -1060,4 +1097,9 @@ function ActivityTab({
 function describe(err: unknown): string {
   if (err instanceof ApiError) return err.message;
   return err instanceof Error ? err.message : String(err);
+}
+
+/** Time of day, in the reader's own zone. The full stamp is on the `title`. */
+function clock(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
