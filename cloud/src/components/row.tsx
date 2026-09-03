@@ -121,6 +121,8 @@ export function Row({
   leading,
   trailing,
   actions,
+  detail,
+  open = false,
 }: {
   title: ReactNode;
   /** Sits beside the title: an alert chip, a "retired" pill. */
@@ -139,6 +141,21 @@ export function Row({
   trailing?: ReactNode;
   /** Under the row, inside its divider cell: buttons that act on it. */
   actions?: ReactNode;
+  /**
+   * Detail revealed under the row, in place.
+   *
+   * The catalog kept every tooling field — ISO code, grade, manufacturer,
+   * diameter, flutes, cost — behind a full-page edit form, so comparing two
+   * inserts meant in, out, in, out. The ledger was worse: it showed a
+   * truncated meta line and offered no route at all to the note, the two
+   * clocks, or the reversal chain.
+   *
+   * Rendering it here rather than navigating is the Zerodha screener's move,
+   * and Reports' by-machine panel has done it in this codebase all along.
+   */
+  detail?: ReactNode;
+  /** Whether `detail` is showing. The caller owns which row is open. */
+  open?: boolean;
 }) {
   const text = (
     <div className="min-w-0 sm:flex sm:items-baseline sm:gap-4">
@@ -162,19 +179,25 @@ export function Row({
   );
 
   return (
-    <div>
+    <div className="group">
       <div className="flex items-center gap-3 px-4 py-3">
         {leading}
         {/* A button only when the row does something. A div wrapped in a button
             that does nothing is a target that swallows taps and tells a screen
             reader it is interactive. */}
         {onClick ? (
-          /* `block` is not decoration. Inside the console `.admin .tap` sets
-             `display: inline-flex`, which beats a one-class utility on
-             specificity and lays this button's three stacked lines out side by
-             side — the catalog read "EM-20-4F-TIALN EMPTY 2l Eme... B..".
-             globals.css carries `.admin .tap.block` for exactly this, from the
-             last time it bit; it only works if the markup asks. */
+          /* `block` was load-bearing and is now belt-and-braces, which is
+             worth writing down rather than leaving as folklore.
+             `.admin .tap` sets `display: inline-flex`, beating a one-class
+             utility on specificity, and it used to lay this button's three
+             stacked lines out side by side — the catalog read
+             "EM-20-4F-TIALN EMPTY 2l Eme… B..". Since the lines moved into a
+             single wrapper (above), the button has one child and inline-flex
+             has nothing to spread, so removing `block` changes nothing —
+             checked, by removing it and watching the geometry test not care.
+             It stays because the day somebody flattens that wrapper again is
+             the day it matters, and `globals.css` still carries
+             `.admin .tap.block` for it. */
           <button
             type="button"
             onClick={onClick}
@@ -193,9 +216,86 @@ export function Row({
             )}
           </div>
         )}
+        {/* Desktop: the actions ride *in* the row, revealed on hover or on
+            keyboard focus, the way the watchlist row in the owner's second
+            reference does. Below `sm:` they stay in their own strip under the
+            row — there is no hover on a touch screen, and this console is
+            used on a phone too.
+
+            `pointer-events-none` while hidden is not decoration: an invisible
+            button that still takes clicks is a Reverse waiting to happen.
+            Keyboard focus ignores pointer-events, so Tab still reaches them
+            and `group-focus-within` brings them back into view. */}
+        {actions && (
+          <div className="hidden shrink-0 items-center gap-2 opacity-0 transition-opacity pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 sm:flex">
+            {actions}
+          </div>
+        )}
         {trailing}
       </div>
-      {actions && <div className="flex flex-wrap gap-2 px-4 pb-3">{actions}</div>}
+      {actions && (
+        <div className="flex flex-wrap gap-2 px-4 pb-3 sm:hidden">{actions}</div>
+      )}
+      {detail && open && <div className="px-4 pb-4">{detail}</div>}
     </div>
+  );
+}
+
+/**
+ * A group of label/value facts inside a `Row`'s `detail`.
+ *
+ * Zerodha's expanded row is four of these side by side — Instrument,
+ * Fundamentals, Price & volume, Growth — each a titled card of one-line
+ * label-left/value-right rows. They wrap to one column on a phone.
+ */
+export function DetailGroup({
+  title,
+  facts,
+}: {
+  title: string;
+  facts: Fact[];
+}) {
+  /* Facts, then groups. A movement with no reason, no note and no cost
+     rendered two titled boxes with nothing inside them — an empty box is a
+     louder way of saying nothing than leaving the space alone. Both levels
+     drop out: the fact when it has no value, the group when no fact survived. */
+  const shown = facts.filter(
+    (f) => f.value !== null && f.value !== undefined && f.value !== "",
+  );
+  if (shown.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border border-line bg-app/40 p-3">
+      <div className="pb-1 text-[0.65rem] font-semibold tracking-wider text-faint uppercase">
+        {title}
+      </div>
+      <dl className="divide-y divide-line">
+        {shown.map((f) => (
+          <div key={f.label} className="flex items-baseline justify-between gap-3 py-1.5">
+            <dt className="shrink-0 text-xs text-muted">{f.label}</dt>
+            <dd
+              className={`min-w-0 truncate text-right text-sm tabular-nums ${
+                f.tone ? TONES[f.tone] : "text-ink"
+              }`}
+            >
+              {f.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+export interface Fact {
+  label: string;
+  value: ReactNode;
+  tone?: Tone;
+}
+
+/** The wrapper the groups sit in: four across on a monitor, one on a phone. */
+export function DetailGrid({ children }: { children: ReactNode }) {
+  return (
+    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{children}</div>
   );
 }
