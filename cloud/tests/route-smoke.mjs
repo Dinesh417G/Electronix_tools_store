@@ -155,6 +155,10 @@ try {
     [`/api/v1/sessions/${session.id}`, "tablet"],
     ["/api/v1/sessions/unclaimed", "tablet"],
     ["/api/v1/stock?limit=5", "tablet"],
+    // The idle screen's own read. `since` is the tablet's local midnight; the
+    // route clamps anything older than 48 h, so a fixed literal here would
+    // silently fall back to its default and stop testing the parameter.
+    [`/api/v1/terminal/status?since=${encodeURIComponent(new Date(Date.now() - 3600e3).toISOString())}`, "tablet"],
   ];
 
   const headers = {

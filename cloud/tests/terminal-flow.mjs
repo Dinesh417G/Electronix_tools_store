@@ -75,8 +75,44 @@ try {
   }
 
   const idle = await browser.text();
-  if (/finger on the door reader/i.test(idle)) t.ok("the idle screen is up");
+  // Not the door-reader sentence any more. §3 listed a ZK terminal under
+  // "physical setup this software assumes", and that assumption is wrong for a
+  // crib that wants the tablet and nothing else — so the line under the button
+  // now depends on whether a device has ever checked in. The sign-in button is
+  // what identifies this screen in every configuration.
+  if (/sign me in/i.test(idle)) t.ok("the idle screen is up");
   else t.bad("not the idle screen: " + trim(idle));
+
+  // The reader is optional, and the screen has to tell the truth about the
+  // crib it is standing in: never installed, installed and talking, installed
+  // and gone quiet all need different sentences, and the first two need
+  // opposite remedies from the third.
+  const [device] = await sql`
+    select count(*) > 0 as installed,
+           max(last_seen_at) > now() - interval '15 minutes' as online
+      from devices`;
+  const expected = !device.installed
+    ? /Fingerprint on your own phone/i
+    : device.online
+      ? /finger on the door reader/i
+      : /door reader has gone quiet/i;
+  if (expected.test(idle)) {
+    t.ok(
+      `the reader line matches the database: installed=${device.installed}, online=${device.online ?? false}`,
+    );
+  } else {
+    t.bad(
+      `reader line does not match installed=${device.installed} online=${device.online}: ` +
+        trim(idle),
+    );
+  }
+  // Whatever the state, the crib must never be told to use hardware it does
+  // not have. This is the whole point of making it optional.
+  if (!device.installed && /finger on the door reader/i.test(idle)) {
+    t.bad("a crib with no reader was told to put a finger on one");
+  } else {
+    t.ok("no instruction to use hardware this crib does not have");
+  }
 
   t.step("2. sign in without the reader (§10 — manual identity)");
   if (!(await browser.clickText("Reader not working"))) t.bad("no manual entry link");
