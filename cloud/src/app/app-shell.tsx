@@ -26,7 +26,7 @@ import { MySignIn } from "@/screens/MySignIn";
 import { Enrol } from "@/screens/Enrol";
 import { LiveView } from "@/screens/LiveView";
 import { Terminal } from "@/screens/Terminal";
-import { Banner, BigButton, Spinner } from "@/components/ui";
+import { Banner, BigButton, Spinner, ThemeToggle } from "@/components/ui";
 import { BottomBar, ChromeProvider } from "@/components/chrome";
 
 type Mode = "terminal" | "live" | "admin";
@@ -328,7 +328,7 @@ export function AppShell() {
   // flash a setup form at every operator on every load.
   if (!hydrated) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950">
+      <div className="flex min-h-screen items-center justify-center bg-app">
         <Spinner label="Starting up" />
       </div>
     );
@@ -353,7 +353,7 @@ export function AppShell() {
               <button
                 type="button"
                 onClick={() => void applyUpdate.current(true)}
-                className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-semibold text-white"
+                className="rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-white"
               >
                 Update
               </button>
@@ -471,7 +471,7 @@ function ModeSwitch({
        taller would move every other control while it was open. */
     <div className="relative">
       {open && (
-        <div className="absolute right-0 bottom-full z-20 mb-2 w-56 space-y-2 rounded-2xl bg-slate-800 p-3 shadow-xl">
+        <div className="absolute right-0 bottom-full z-20 mb-2 w-56 space-y-2 rounded-2xl border border-line bg-surface-2 p-3 shadow-xl">
           {(["terminal", "live", "admin"] as const)
             .filter((m) => m !== mode)
             .map((m) => (
@@ -487,10 +487,13 @@ function ModeSwitch({
                 {m === "live" ? "Live view" : m}
               </BigButton>
             ))}
+          <div className="border-t border-line pt-2">
+            <ThemeToggle className="w-full" />
+          </div>
           <button
             type="button"
             onClick={onReset}
-            className="w-full rounded-xl px-3 py-2 text-sm text-slate-400 active:bg-slate-700"
+            className="w-full rounded-xl px-3 py-2 text-sm text-muted active:bg-surface-3"
           >
             Un-enrol this device
           </button>
@@ -500,7 +503,7 @@ function ModeSwitch({
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-label="Settings"
-        className="tap flex h-11 items-center gap-2 rounded-xl px-3 text-slate-300 active:bg-slate-800"
+        className="tap flex h-11 items-center gap-2 rounded-xl px-3 text-ink-2 active:bg-surface-2"
       >
         <span className="text-lg">⚙</span>
         <span className="text-sm font-semibold capitalize">

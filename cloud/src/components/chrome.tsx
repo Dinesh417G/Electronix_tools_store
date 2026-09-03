@@ -27,6 +27,7 @@ import {
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -37,15 +38,37 @@ interface BackRegistration {
 
 const BackContext = createContext<BackRegistration>({ register: () => {} });
 
-/** Called by `Header`. A screen with no back action passes nothing. */
+/**
+ * Called by `Header`. A screen with no back action passes nothing.
+ *
+ * The registration effect keys on *whether* a handler exists, not on the
+ * handler's identity — `register`'s own bail-out check
+ * (`current[id] === onBack`) is a reference comparison, and most callers pass
+ * an inline `() => setSection(null)`, a fresh closure every render. Depending
+ * on `onBack` directly re-registers on every one of those renders, which
+ * changes `entries` (a new value at `id`), which re-renders `ChromeProvider`,
+ * which re-renders whatever built the inline closure, which renders a new one
+ * — an update loop with no fixed point. The ref keeps the latest closure
+ * callable without making the effect sensitive to it changing.
+ */
 export function useRegisterBack(onBack?: () => void): void {
   const { register } = useContext(BackContext);
   const id = useId();
+  const onBackRef = useRef(onBack);
+  useEffect(() => {
+    onBackRef.current = onBack;
+  });
+
+  const hasBack = onBack !== undefined;
 
   useEffect(() => {
-    register(id, onBack ?? null);
+    if (!hasBack) {
+      register(id, null);
+      return;
+    }
+    register(id, () => onBackRef.current?.());
     return () => register(id, null);
-  }, [register, id, onBack]);
+  }, [register, id, hasBack]);
 }
 
 /**
@@ -101,13 +124,13 @@ export function BottomBar({
   right?: ReactNode;
 }) {
   return (
-    <div className="flex shrink-0 items-center justify-between border-t border-slate-800 bg-slate-950 px-3 py-2 safe-bottom">
+    <div className="flex shrink-0 items-center justify-between border-t border-line bg-app px-3 py-2 safe-bottom">
       {back ? (
         <button
           type="button"
           onClick={back}
           aria-label="Back"
-          className="tap flex h-11 items-center gap-2 rounded-xl px-3 text-slate-300 active:bg-slate-800"
+          className="tap flex h-11 items-center gap-2 rounded-xl px-3 text-ink-2 active:bg-surface-2"
         >
           <svg
             viewBox="0 0 24 24"

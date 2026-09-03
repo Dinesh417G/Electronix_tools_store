@@ -67,7 +67,7 @@ function DoorStatusView({
   return (
     <div className="space-y-4">
       <section className="space-y-2">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-faint">
           Terminals
         </h2>
 
@@ -84,8 +84,8 @@ function DoorStatusView({
           return (
             <div
               key={device.id}
-              className={`rounded-xl border-l-4 bg-slate-900 px-4 py-3 ${
-                stale ? "border-amber-500" : "border-emerald-500"
+              className={`rounded-xl border-l-4 bg-surface px-4 py-3 ${
+                stale ? "border-warning" : "border-success"
               }`}
             >
               <div className="flex items-center gap-2">
@@ -93,20 +93,20 @@ function DoorStatusView({
                   {device.name ?? device.serial_no}
                 </span>
                 {stale && (
-                  <span className="shrink-0 rounded-full border border-amber-600 bg-amber-500/20 px-2 py-0.5 text-xs font-bold text-amber-300">
+                  <span className="shrink-0 rounded-full border border-warning-line bg-warning-soft px-2 py-0.5 text-xs font-bold text-warning">
                     QUIET
                   </span>
                 )}
               </div>
-              <div className="truncate text-sm text-slate-400">
+              <div className="truncate text-sm text-muted">
                 {device.serial_no}
                 {device.location ? ` · ${device.location}` : ""}
                 {device.firmware ? ` · ${device.firmware}` : ""}
               </div>
-              <div className="pt-1 text-sm text-slate-300">
+              <div className="pt-1 text-sm text-ink-2">
                 Last heard {ago(device.last_seen_at)}
               </div>
-              <div className="text-xs text-slate-500 tabular-nums">
+              <div className="text-xs text-faint tabular-nums">
                 {device.punch_count} punch{device.punch_count === 1 ? "" : "es"}
                 {device.last_punch_at ? ` · last ${ago(device.last_punch_at)}` : ""}
                 {device.timezone_offset_min !== null
@@ -120,7 +120,7 @@ function DoorStatusView({
 
       {status.unknown_users.length > 0 && (
         <section className="space-y-2">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-faint">
             Unknown at the reader
           </h2>
           <Banner tone="warn">
@@ -130,9 +130,9 @@ function DoorStatusView({
             correct their terminal user id.
           </Banner>
           {status.unknown_users.map((punch) => (
-            <div key={punch.id} className="rounded-xl bg-slate-900 px-4 py-3">
+            <div key={punch.id} className="rounded-xl bg-surface px-4 py-3">
               <div className="font-semibold">id {punch.zk_user_id}</div>
-              <div className="text-sm text-slate-400">
+              <div className="text-sm text-muted">
                 {punch.device_serial} · {ago(punch.received_at)}
               </div>
             </div>
@@ -141,28 +141,28 @@ function DoorStatusView({
       )}
 
       <section className="space-y-2">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-faint">
           Recent punches
         </h2>
         {status.recent_punches.length === 0 && (
-          <p className="py-6 text-center text-slate-500">Nothing yet.</p>
+          <p className="py-6 text-center text-faint">Nothing yet.</p>
         )}
         {status.recent_punches.map((punch) => (
-          <div key={punch.id} className="rounded-xl bg-slate-900 px-4 py-3">
+          <div key={punch.id} className="rounded-xl bg-surface px-4 py-3">
             <div className="flex items-center gap-2">
               <span className="truncate font-semibold">
                 {punch.full_name ?? `id ${punch.zk_user_id}`}
               </span>
               {punch.claimed === false && (
-                <span className="shrink-0 text-xs text-slate-500">unclaimed</span>
+                <span className="shrink-0 text-xs text-faint">unclaimed</span>
               )}
             </div>
-            <div className="text-sm text-slate-400">
+            <div className="text-sm text-muted">
               {ago(punch.received_at)}
               {punch.verify_mode ? ` · ${punch.verify_mode.toLowerCase()}` : ""}
             </div>
             {driftSeconds(punch) !== null && Math.abs(driftSeconds(punch)!) > 120 && (
-              <div className="pt-1 text-xs text-amber-400">
+              <div className="pt-1 text-xs text-warning">
                 The terminal&apos;s clock is {describeDrift(driftSeconds(punch)!)}. Only
                 diagnostic — the ledger uses what the server observed.
               </div>
@@ -174,7 +174,7 @@ function DoorStatusView({
       <button
         type="button"
         onClick={onRefresh}
-        className="tap w-full rounded-xl bg-slate-800 px-4 text-sm text-slate-300"
+        className="tap w-full rounded-xl bg-surface-2 px-4 text-sm text-ink-2"
       >
         Refresh
       </button>

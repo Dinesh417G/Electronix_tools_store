@@ -678,7 +678,7 @@ function IdleScreen({
      * is what makes the inner scroll the one that moves. */
     <Screen className="justify-between overflow-hidden">
       <div className="flex items-center justify-between px-4">
-        <span className="text-sm font-semibold tracking-wide text-slate-400">
+        <span className="text-sm font-semibold tracking-wide text-muted">
           ELECTRONIX TOOL STORE
         </span>
         <ConnectionPill state={connection} pending={pending} />
@@ -699,7 +699,7 @@ function IdleScreen({
             hour12: false,
           })}
         </span>
-        <span className="text-sm text-slate-400 sm:text-lg">
+        <span className="text-sm text-muted sm:text-lg">
           {now.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })}
         </span>
       </div>
@@ -715,7 +715,7 @@ function IdleScreen({
           {/* What is actually true of *this* crib. A store with no reader is
               never told to put a finger on one; a store whose reader has gone
               quiet is told that, because the two need opposite remedies. */}
-          <p className="pt-2 text-center text-sm text-slate-400">
+          <p className="pt-2 text-center text-sm text-muted">
             {reader === null
               ? "\\u00a0"
               : !reader.installed
@@ -762,7 +762,7 @@ function IdleScreen({
         <button
           type="button"
           onClick={onManual}
-          className="w-full rounded-xl px-4 py-3 text-sm text-slate-400 active:bg-slate-800"
+          className="w-full rounded-xl px-4 py-3 text-sm text-muted active:bg-surface-2"
         >
           {reader?.installed === false
             ? "Enter my number"
@@ -785,8 +785,8 @@ function ShortageChip({
   onClick: () => void;
 }) {
   const tones = {
-    error: "border-red-700 bg-red-950 text-red-100",
-    warn: "border-amber-600 bg-amber-950 text-amber-100",
+    error: "border-danger-line bg-danger-soft text-danger",
+    warn: "border-warning-line bg-warning-soft text-warning",
   };
   return (
     <button
@@ -812,8 +812,8 @@ function TodayStrip({ status }: { status: TerminalStatus }) {
   const { today, recent } = status;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col rounded-xl bg-slate-900 py-3">
-      <div className="flex shrink-0 items-center justify-between px-4 text-xs tracking-wide text-slate-500">
+    <div className="flex min-h-0 flex-1 flex-col rounded-xl bg-surface py-3">
+      <div className="flex shrink-0 items-center justify-between px-4 text-xs tracking-wide text-faint">
         <span>TODAY</span>
         {today.last_at && (
           <span>
@@ -828,7 +828,7 @@ function TodayStrip({ status }: { status: TerminalStatus }) {
       </div>
 
       {today.movements === 0 ? (
-        <p className="px-4 pt-2 text-sm text-slate-400">Nothing has moved yet today.</p>
+        <p className="px-4 pt-2 text-sm text-muted">Nothing has moved yet today.</p>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
           {/* Trips to the crib, each way. The quantities these replaced were
@@ -837,16 +837,16 @@ function TodayStrip({ status }: { status: TerminalStatus }) {
           <div className="flex shrink-0 items-baseline gap-3 px-4 pt-1 text-sm">
             <span>
               <strong className="tabular-nums">{today.movements}</strong>{" "}
-              <span className="text-slate-400">
+              <span className="text-muted">
                 movement{today.movements === 1 ? "" : "s"}
               </span>
             </span>
-            <span className="text-slate-600">·</span>
-            <span className="text-slate-400">
-              <strong className="tabular-nums text-red-300">{today.out_count}</strong> out
+            <span className="text-faint">·</span>
+            <span className="text-muted">
+              <strong className="tabular-nums text-danger">{today.out_count}</strong> out
             </span>
-            <span className="text-slate-400">
-              <strong className="tabular-nums text-emerald-300">{today.in_count}</strong> in
+            <span className="text-muted">
+              <strong className="tabular-nums text-success">{today.in_count}</strong> in
             </span>
           </div>
 
@@ -866,14 +866,14 @@ function TodayStrip({ status }: { status: TerminalStatus }) {
               code is the thing being scanned for and takes the width that is
               left; the operator trails, truncating rather than wrapping. */}
           <div className="mt-2 flex min-h-0 flex-1 flex-col">
-            <div className="flex shrink-0 items-baseline gap-3 border-b border-slate-800 px-4 pb-1 text-[0.65rem] tracking-wider text-slate-600 uppercase">
+            <div className="flex shrink-0 items-baseline gap-3 border-b border-line px-4 pb-1 text-[0.65rem] tracking-wider text-faint uppercase">
               <span className="w-11 shrink-0">Time</span>
               <span className="w-12 shrink-0 text-right">Qty</span>
               <span className="min-w-0 flex-1">Item</span>
               <span className="w-20 shrink-0 text-right">By</span>
             </div>
 
-            <ul className="min-h-0 flex-1 divide-y divide-slate-800/60 overflow-y-auto">
+            <ul className="min-h-0 flex-1 divide-y divide-line overflow-y-auto">
               {recent.map((row) => {
                 const out = row.delta_qty.startsWith("-");
                 const qty = formatQty(row.delta_qty.replace("-", ""));
@@ -883,7 +883,7 @@ function TodayStrip({ status }: { status: TerminalStatus }) {
                         apart. Three reading "1 16IR-AG60-TT9030 Store Admin"
                         look like a rendering fault; three times are three trips
                         to the crib, which is what they were. */}
-                    <span className="w-11 shrink-0 tabular-nums text-xs text-slate-500">
+                    <span className="w-11 shrink-0 tabular-nums text-xs text-faint">
                       {new Date(row.created_at).toLocaleTimeString([], {
                         hour: "2-digit",
                         minute: "2-digit",
@@ -892,16 +892,16 @@ function TodayStrip({ status }: { status: TerminalStatus }) {
                     </span>
                     <span
                       className={`w-12 shrink-0 text-right font-semibold tabular-nums ${
-                        out ? "text-red-400" : "text-emerald-400"
+                        out ? "text-danger" : "text-success"
                       }`}
                     >
                       {out ? "−" : "+"}
                       {qty}
                     </span>
-                    <span className="min-w-0 flex-1 truncate text-slate-300">{row.item_code}</span>
+                    <span className="min-w-0 flex-1 truncate text-ink-2">{row.item_code}</span>
                     {/* Not `split(" ")[0]`: "R. Kumar" becomes "R.", which names
                         nobody. CSS truncation keeps whatever fits. */}
-                    <span className="w-20 shrink-0 truncate text-right text-xs text-slate-500">
+                    <span className="w-20 shrink-0 truncate text-right text-xs text-faint">
                       {row.operator_name}
                     </span>
                   </li>
@@ -957,7 +957,7 @@ function ShortagesScreen({
           state={state}
           label="Reading stock"
           empty={
-            <p className="py-10 text-center text-slate-500">
+            <p className="py-10 text-center text-faint">
               Nothing is {level === "EMPTY" ? "empty" : "low"} right now.
             </p>
           }
@@ -1025,19 +1025,19 @@ function ClaimScreen({
             type="button"
             disabled={busy}
             onClick={() => onPick(card)}
-            className="tap flex w-full items-center gap-4 rounded-2xl bg-slate-800 px-5 py-4 text-left active:bg-slate-700 disabled:opacity-50"
+            className="tap flex w-full items-center gap-4 rounded-2xl bg-surface-2 px-5 py-4 text-left active:bg-surface-3 disabled:opacity-50"
           >
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-sky-600 text-xl font-bold">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-accent text-xl font-bold text-white">
               {initials(card.full_name)}
             </div>
             <div className="min-w-0 flex-1">
               <div className="truncate text-xl font-semibold">{card.full_name}</div>
-              <div className="truncate text-sm text-slate-400">
+              <div className="truncate text-sm text-muted">
                 {card.emp_code}
                 {card.department ? ` · ${card.department}` : ""}
               </div>
             </div>
-            <div className="shrink-0 text-sm tabular-nums text-slate-500">
+            <div className="shrink-0 text-sm tabular-nums text-faint">
               {card.expires_in_secs}s
             </div>
           </button>
@@ -1051,7 +1051,7 @@ function ClaimScreen({
         <button
           type="button"
           onClick={onManual}
-          className="w-full rounded-xl px-4 py-3 text-sm text-slate-400 active:bg-slate-800"
+          className="w-full rounded-xl px-4 py-3 text-sm text-muted active:bg-surface-2"
         >
           My name isn&apos;t here — enter my number
         </button>
@@ -1118,7 +1118,7 @@ function ManualScreen({
           <BigButton onClick={onPasskey} variant="primary" className="w-full" disabled={busy}>
             Use fingerprint on this phone
           </BigButton>
-          <p className="pt-2 text-center text-xs text-slate-500">
+          <p className="pt-2 text-center text-xs text-faint">
             Only on a phone you registered yourself.
           </p>
         </div>
@@ -1132,7 +1132,7 @@ function ManualScreen({
           masked in CSS rather than `type="password"`. */}
       <div className="flex flex-1 flex-col gap-5 px-4">
         <label className="block">
-          <span className="text-sm font-semibold text-slate-400">EMPLOYEE CODE</span>
+          <span className="text-sm font-semibold text-muted">EMPLOYEE CODE</span>
           <input
             name="terminal-emp-code"
             value={empCode}
@@ -1141,12 +1141,12 @@ function ManualScreen({
             autoComplete="off"
             data-1p-ignore
             data-lpignore="true"
-            className="tap mt-1 w-full rounded-xl bg-slate-800 px-4 text-2xl tabular-nums outline-none focus:ring-2 focus:ring-sky-500"
+            className="tap mt-1 w-full rounded-xl border border-line bg-surface px-4 text-2xl tabular-nums outline-none focus:border-accent focus:ring-1 focus:ring-accent/30"
           />
         </label>
 
         <label className="block">
-          <span className="text-sm font-semibold text-slate-400">PIN</span>
+          <span className="text-sm font-semibold text-muted">PIN</span>
           <input
             name="terminal-pin"
             inputMode="numeric"
@@ -1158,11 +1158,11 @@ function ManualScreen({
             onKeyDown={(e) => {
               if (e.key === "Enter" && ready) onSubmit(empCode.trim(), pin);
             }}
-            className="pin tap mt-1 w-full rounded-xl bg-slate-800 px-4 text-2xl tabular-nums outline-none focus:ring-2 focus:ring-sky-500"
+            className="pin tap mt-1 w-full rounded-xl border border-line bg-surface px-4 text-2xl tabular-nums outline-none focus:border-accent focus:ring-1 focus:ring-accent/30"
           />
         </label>
 
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-faint">
           This is recorded as a typed entry rather than a punch, and the
           storekeeper can see which is which.
         </p>
@@ -1425,7 +1425,7 @@ function ItemScreen({
                 type="button"
                 onClick={() => setBrowseView("all")}
                 className={`tap rounded-lg px-2 text-sm font-semibold ${
-                  browseView === "all" ? "bg-sky-600 text-white" : "bg-slate-800 text-slate-300"
+                  browseView === "all" ? "bg-accent text-white" : "bg-surface-2 text-ink-2"
                 }`}
               >
                 All
@@ -1437,8 +1437,8 @@ function ItemScreen({
                   onClick={() => setBrowseView(option.value)}
                   className={`tap rounded-lg px-2 text-sm font-semibold ${
                     browseView === option.value
-                      ? "bg-sky-600 text-white"
-                      : "bg-slate-800 text-slate-300"
+                      ? "bg-accent text-white"
+                      : "bg-surface-2 text-ink-2"
                   }`}
                 >
                   {option.label}
@@ -1456,7 +1456,7 @@ function ItemScreen({
                   </RowList>
                 )}
                 {catalog.length === 0 && !loadingMore && (
-                  <p className="py-6 text-center text-slate-500">The catalog is empty.</p>
+                  <p className="py-6 text-center text-faint">The catalog is empty.</p>
                 )}
                 {loadingMore && <Spinner label="Loading the catalog…" />}
                 {!catalogDone && !loadingMore && catalog.length > 0 && (
@@ -1472,7 +1472,7 @@ function ItemScreen({
             ) : insights === null ? (
               <Spinner label="Working out what moves…" />
             ) : insights.length === 0 ? (
-              <p className="py-6 text-center text-slate-500">
+              <p className="py-6 text-center text-faint">
                 Nothing to show under {hintFor(browseView)}.
               </p>
             ) : (
@@ -1496,7 +1496,7 @@ function ItemScreen({
           <div className="relative overflow-hidden rounded-2xl bg-black">
             <video ref={videoRef} className="aspect-3/4 w-full object-cover" muted />
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-              <div className="h-28 w-4/5 rounded-xl border-4 border-sky-400/80" />
+              <div className="h-28 w-4/5 rounded-xl border-4 border-accent/80" />
             </div>
             {looking && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/60">
@@ -1511,7 +1511,7 @@ function ItemScreen({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Code, description, ISO or grade"
-              className="tap w-full rounded-2xl bg-slate-800 px-5 text-lg outline-none placeholder:text-slate-500 focus:ring-2 focus:ring-sky-500"
+              className="tap w-full rounded-2xl border border-line bg-surface px-5 text-lg outline-none placeholder:text-faint focus:border-accent focus:ring-1 focus:ring-accent/30"
             />
             {results.length > 0 && (
               <RowList>
@@ -1521,7 +1521,7 @@ function ItemScreen({
               </RowList>
             )}
             {query.trim().length >= 2 && results.length === 0 && (
-              <p className="py-6 text-center text-slate-500">Nothing matches that.</p>
+              <p className="py-6 text-center text-faint">Nothing matches that.</p>
             )}
           </div>
         )}
@@ -1637,8 +1637,8 @@ function QuantityScreen({
       {banner}
 
       <div className="px-4 pb-3">
-        <div className="flex items-baseline justify-between rounded-2xl bg-slate-900 px-4 py-3">
-          <span className="text-sm text-slate-400">
+        <div className="flex items-baseline justify-between rounded-2xl bg-surface px-4 py-3">
+          <span className="text-sm text-muted">
             In system{item.bin_location ? ` · bin ${item.bin_location}` : ""}
           </span>
           <span className="text-lg font-bold tabular-nums">
@@ -1648,7 +1648,7 @@ function QuantityScreen({
       </div>
 
       <div className="px-4 pb-2 text-center">
-        <div className={`text-6xl font-bold tabular-nums ${refused ? "text-red-400" : ""}`}>
+        <div className={`text-6xl font-bold tabular-nums ${refused ? "text-danger" : ""}`}>
           {value}
         </div>
         {/* §7: the server rejects an issue that would take stock below zero
@@ -1658,13 +1658,13 @@ function QuantityScreen({
             §7 wording. Where allow_negative is set the number is legal and
             the old advisory warning stands. */}
         {short && !item.allow_negative && (
-          <p className="mt-2 text-sm text-red-400">
+          <p className="mt-2 text-sm text-danger">
             Only {formatQty(item.on_hand)} {item.uom} left in system — count the bin and
             adjust.
           </p>
         )}
         {short && item.allow_negative && (
-          <p className="mt-2 text-sm text-amber-400">
+          <p className="mt-2 text-sm text-warning">
             More than the system shows — count the bin before you confirm.
           </p>
         )}
@@ -1676,7 +1676,7 @@ function QuantityScreen({
             key={n}
             type="button"
             onClick={() => bump(n)}
-            className="tap flex-1 rounded-xl bg-slate-800 text-lg font-semibold active:bg-slate-700"
+            className="tap flex-1 rounded-xl bg-surface-2 text-lg font-semibold active:bg-surface-3"
           >
             +{n}
           </button>
@@ -1689,7 +1689,7 @@ function QuantityScreen({
             key={key}
             type="button"
             onClick={() => press(key)}
-            className="tap rounded-xl bg-slate-800 text-2xl font-semibold active:bg-slate-700"
+            className="tap rounded-xl bg-surface-2 text-2xl font-semibold active:bg-surface-3"
           >
             {key}
           </button>
@@ -1779,10 +1779,10 @@ function OptionalScreen({
       <div className="flex-1 space-y-5 overflow-y-auto px-4 pb-4">
         {direction === "issue" && machines.length > 0 && (
           <section>
-            <h2 className="pb-2 text-sm font-semibold text-slate-400">
+            <h2 className="pb-2 text-sm font-semibold text-muted">
               MACHINE
               {picked.length > 1 && (
-                <span className="pl-2 font-normal text-sky-400">
+                <span className="pl-2 font-normal text-accent">
                   {picked.length} selected — you&apos;ll set a quantity for each
                 </span>
               )}
@@ -1808,7 +1808,7 @@ function OptionalScreen({
 
         {applicable.length > 0 && (
           <section>
-            <h2 className="pb-2 text-sm font-semibold text-slate-400">REASON</h2>
+            <h2 className="pb-2 text-sm font-semibold text-muted">REASON</h2>
             <div className="flex flex-wrap gap-2">
               {applicable.map((r) => (
                 <Chip
@@ -1826,18 +1826,18 @@ function OptionalScreen({
 
             {damaged && (
               <div className="pt-3">
-                <label className="block text-sm font-semibold text-slate-400">
+                <label className="block text-sm font-semibold text-muted">
                   WHAT HAPPENED?
-                  <span className="pl-2 font-normal text-amber-400">required</span>
+                  <span className="pl-2 font-normal text-warning">required</span>
                 </label>
                 <input
                   autoFocus
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   placeholder="Crashed into the fixture / bad edge out of the box"
-                  className="tap mt-1 w-full rounded-xl bg-slate-800 px-4 text-base outline-none placeholder:text-slate-500 focus:ring-2 focus:ring-amber-500"
+                  className="tap mt-1 w-full rounded-xl border border-line bg-surface px-4 text-base outline-none placeholder:text-faint focus:border-warning focus:ring-1 focus:ring-warning/30"
                 />
-                <p className="pt-1 text-xs text-slate-500">
+                <p className="pt-1 text-xs text-faint">
                   {damaged.label} on its own says a tool broke. This says why, which
                   is the part somebody can act on.
                 </p>
@@ -1929,14 +1929,14 @@ function SplitScreen({
         {machines.map((machine, i) => (
           <div
             key={machine.id}
-            className="flex items-center gap-3 rounded-2xl bg-slate-800 px-4 py-3"
+            className="flex items-center gap-3 rounded-2xl bg-surface-2 px-4 py-3"
           >
             <span className="flex-1 text-lg font-semibold">{machine.code}</span>
             <button
               type="button"
               aria-label={`one fewer for ${machine.code}`}
               onClick={() => set(i, String(Math.max(0, (Number.parseFloat(quantities[i]!) || 0) - 1)))}
-              className="tap w-14 rounded-xl bg-slate-700 text-2xl font-semibold active:bg-slate-600"
+              className="tap w-14 rounded-xl bg-surface-3 text-2xl font-semibold active:bg-line-strong"
             >
               −
             </button>
@@ -1947,7 +1947,7 @@ function SplitScreen({
               type="button"
               aria-label={`one more for ${machine.code}`}
               onClick={() => set(i, String((Number.parseFloat(quantities[i]!) || 0) + 1))}
-              className="tap w-14 rounded-xl bg-slate-700 text-2xl font-semibold active:bg-slate-600"
+              className="tap w-14 rounded-xl bg-surface-3 text-2xl font-semibold active:bg-line-strong"
             >
               +
             </button>
@@ -1956,7 +1956,7 @@ function SplitScreen({
       </div>
 
       <div className="px-4 pt-3 text-center">
-        <p className={`text-sm ${refused ? "text-red-400" : "text-slate-400"}`}>
+        <p className={`text-sm ${refused ? "text-danger" : "text-muted"}`}>
           {refused ? (
             <>
               Only {formatQty(item.on_hand)} {item.uom} left in system — count the bin and
@@ -1993,7 +1993,7 @@ function Chip({
       type="button"
       onClick={onClick}
       className={`tap rounded-xl px-5 text-base font-semibold ${
-        selected ? "bg-sky-600 text-white" : "bg-slate-800 text-slate-200 active:bg-slate-700"
+        selected ? "bg-accent text-white" : "bg-surface-2 text-ink-2 active:bg-surface-3"
       }`}
     >
       {label}
@@ -2024,18 +2024,18 @@ function ConfirmScreen({
 
       <div className="flex flex-1 flex-col items-center justify-center gap-6 px-4 text-center">
         <div
-          className={`rounded-2xl px-6 py-2 text-2xl font-bold ${
+          className={`rounded-2xl px-6 py-2 text-2xl font-bold text-white ${
             out ? "bg-red-700" : "bg-emerald-700"
           }`}
         >
           {out ? "TAKE OUT" : "PUT IN"}
         </div>
         <div className="text-6xl font-bold tabular-nums">
-          {step.qty} <span className="text-3xl text-slate-400">{step.item.uom}</span>
+          {step.qty} <span className="text-3xl text-muted">{step.item.uom}</span>
         </div>
         <div>
           <div className="text-2xl font-semibold">{step.item.item_code}</div>
-          <div className="text-slate-400">{step.item.description}</div>
+          <div className="text-muted">{step.item.description}</div>
         </div>
 
         {/* A split issue writes one row per machine. Show the breakdown before
@@ -2043,19 +2043,19 @@ function ConfirmScreen({
         {step.splits && (
           <div className="w-full max-w-xs space-y-1">
             {step.splits.map((s) => (
-              <div key={s.machine.id} className="flex justify-between text-slate-300">
+              <div key={s.machine.id} className="flex justify-between text-ink-2">
                 <span>{s.machine.code}</span>
                 <span className="font-semibold tabular-nums">
                   {formatQty(s.qty)} {step.item.uom}
                 </span>
               </div>
             ))}
-            <p className="pt-1 text-xs text-slate-500">
+            <p className="pt-1 text-xs text-faint">
               {step.splits.length} ledger rows, one per machine
             </p>
           </div>
         )}
-        <div className="text-sm text-slate-500">
+        <div className="text-sm text-faint">
           {step.session.full_name} · {step.session.emp_code}
           {step.session.manual ? " · typed in" : ""}
         </div>
@@ -2099,7 +2099,7 @@ function SuccessScreen({
 
         <div>
           <div className="text-2xl font-bold">{result.item_code}</div>
-          <div className="text-slate-400">{result.description}</div>
+          <div className="text-muted">{result.description}</div>
         </div>
 
         {queued ? (
@@ -2109,7 +2109,7 @@ function SuccessScreen({
           </Banner>
         ) : (
           <div>
-            <div className="text-sm text-slate-400">Now in system</div>
+            <div className="text-sm text-muted">Now in system</div>
             <div className="text-5xl font-bold tabular-nums">{formatQty(result.on_hand)}</div>
           </div>
         )}

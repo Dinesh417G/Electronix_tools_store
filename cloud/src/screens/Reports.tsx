@@ -19,6 +19,7 @@ import { useState } from "react";
 import { ApiError } from "../lib/api";
 import type { GroupBy, adminApi } from "../lib/admin";
 import { Loaded, useLoadable } from "./Loadable";
+import { Chip } from "../components/ui";
 
 const GROUPS: { value: GroupBy; label: string }[] = [
   { value: "machine", label: "Machine" },
@@ -69,35 +70,24 @@ export function Reports(props: {
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-3 gap-1">
+      <div className="grid grid-cols-3 gap-1.5">
         {PANELS.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => setPanel(option.value)}
-            className={`tap rounded-lg px-2 text-sm font-semibold ${
-              panel === option.value
-                ? "bg-slate-700 text-white"
-                : "bg-slate-900 text-slate-400"
-            }`}
-          >
+          <Chip key={option.value} active={panel === option.value} onClick={() => setPanel(option.value)}>
             {option.label}
-          </button>
+          </Chip>
         ))}
       </div>
 
-      <div className="grid grid-cols-4 gap-1">
+      <div className="grid grid-cols-4 gap-1.5">
         {PRESETS.map((option) => (
-          <button
+          <Chip
             key={option.value}
-            type="button"
+            active={preset === option.value}
             onClick={() => setPreset(option.value)}
-            className={`tap rounded-lg px-1 text-xs ${
-              preset === option.value ? "bg-slate-700 text-white" : "bg-slate-900 text-slate-400"
-            }`}
+            size="sm"
           >
             {option.label}
-          </button>
+          </Chip>
         ))}
       </div>
 
@@ -161,23 +151,20 @@ function Consumption({
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-3 gap-1">
+      <div className="grid grid-cols-3 gap-1.5">
         {GROUPS.map((group) => (
-          <button
+          <Chip
             key={group.value}
-            type="button"
+            active={groupBy === group.value}
             onClick={() => {
               // `useLoadable` blanks the rows whenever its deps change, so
               // numbers from the previous grouping can never sit under a new
               // heading — the one thing a report must never do.
               setGroupBy(group.value);
             }}
-            className={`tap rounded-lg px-2 text-sm font-semibold ${
-              groupBy === group.value ? "bg-sky-600 text-white" : "bg-slate-800 text-slate-300"
-            }`}
           >
             {group.label}
-          </button>
+          </Chip>
         ))}
       </div>
 
@@ -185,7 +172,7 @@ function Consumption({
         state={state}
         label="Adding it up…"
         empty={
-          <p className="py-10 text-center text-slate-500">
+          <p className="py-10 text-center text-faint">
             Nothing went out in this period. Only ISSUE and SCRAP count as
             consumption — stock arriving is not.
           </p>
@@ -193,22 +180,22 @@ function Consumption({
       >
         {(loaded) => loaded.length > 0 && (
         <>
-          <div className="rounded-xl bg-slate-900 px-4 py-3">
-            <div className="text-xs text-slate-500">
+          <div className="rounded-xl bg-surface px-4 py-3">
+            <div className="text-xs text-faint">
               Total consumed · {loaded.length} {groupBy === "month" ? "months" : "buckets"}
             </div>
             <div className="flex items-baseline gap-3">
               <span className="text-2xl font-bold tabular-nums">
                 {totalQty.toLocaleString(undefined, { maximumFractionDigits: 3 })}
               </span>
-              <span className="text-sm text-slate-400 tabular-nums">
+              <span className="text-sm text-muted tabular-nums">
                 ₹{totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </span>
             </div>
           </div>
 
           {loaded.map((row) => (
-            <div key={row.bucket_key} className="rounded-xl bg-slate-900 px-4 py-3">
+            <div key={row.bucket_key} className="rounded-xl bg-surface px-4 py-3">
               <div className="flex items-baseline gap-3">
                 <span className="min-w-0 flex-1 truncate font-semibold">
                   {row.bucket_label}
@@ -217,13 +204,13 @@ function Consumption({
                   {Number(row.qty).toLocaleString(undefined, { maximumFractionDigits: 3 })}
                 </span>
               </div>
-              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-800">
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-2">
                 <div
-                  className="h-full rounded-full bg-sky-500"
+                  className="h-full rounded-full bg-accent"
                   style={{ width: `${(Number(row.qty) / biggest) * 100}%` }}
                 />
               </div>
-              <div className="pt-1 text-xs text-slate-500 tabular-nums">
+              <div className="pt-1 text-xs text-faint tabular-nums">
                 ₹{Number(row.value).toLocaleString(undefined, { minimumFractionDigits: 2 })} ·{" "}
                 {row.txn_count} transaction{row.txn_count === 1 ? "" : "s"}
               </div>
@@ -234,7 +221,7 @@ function Consumption({
             type="button"
             disabled={downloading}
             onClick={download}
-            className="tap w-full rounded-xl bg-slate-800 px-4 text-sm text-slate-200 disabled:opacity-40"
+            className="tap w-full rounded-xl bg-surface-2 px-4 text-sm text-ink-2 disabled:opacity-40"
           >
             {downloading ? "Preparing…" : "Download CSV"}
           </button>
@@ -242,7 +229,7 @@ function Consumption({
         )}
       </Loaded>
 
-      <p className="pb-4 text-xs text-slate-500">
+      <p className="pb-4 text-xs text-faint">
         Priced at the unit cost recorded when each movement was booked, not
         today&apos;s. A reversed transaction nets itself out — the correcting row
         is a real row with the opposite sign.
@@ -281,7 +268,7 @@ function MachinePanel({
       state={state}
       label="Adding up each machine…"
       empty={
-        <p className="py-10 text-center text-slate-500">
+        <p className="py-10 text-center text-faint">
           Nothing was issued to any machine in this period.
         </p>
       }
@@ -293,7 +280,7 @@ function MachinePanel({
             {rows.map((row) => {
               const key = row.machine_id ?? "none";
               return (
-                <div key={key} className="rounded-xl bg-slate-900 px-4 py-3">
+                <div key={key} className="rounded-xl bg-surface px-4 py-3">
                   <button
                     type="button"
                     onClick={() => setOpen(open === key ? null : key)}
@@ -303,7 +290,7 @@ function MachinePanel({
                       <span className="min-w-0 flex-1 truncate font-semibold">
                         {row.machine_code}
                         {row.machine_name && (
-                          <span className="pl-2 text-sm font-normal text-slate-400">
+                          <span className="pl-2 text-sm font-normal text-muted">
                             {row.machine_name}
                           </span>
                         )}
@@ -312,16 +299,16 @@ function MachinePanel({
                         {Number(row.qty).toLocaleString(undefined, { maximumFractionDigits: 3 })}
                       </span>
                     </div>
-                    <div className="mt-1 h-1.5 overflow-hidden rounded bg-slate-800">
+                    <div className="mt-1 h-1.5 overflow-hidden rounded bg-surface-2">
                       <div
-                        className="h-full bg-sky-500"
+                        className="h-full bg-accent"
                         style={{ width: `${(Number(row.qty) / biggest) * 100}%` }}
                       />
                     </div>
-                    <div className="pt-1 text-xs text-slate-500">
+                    <div className="pt-1 text-xs text-faint">
                       {row.distinct_tools} different tools · {row.movements} movements · ₹
                       {Number(row.value).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                      <span className="pl-2 text-slate-600">
+                      <span className="pl-2 text-faint">
                         {open === key ? "tap to close" : "tap for the tools"}
                       </span>
                     </div>
@@ -331,7 +318,7 @@ function MachinePanel({
                 </div>
               );
             })}
-            <p className="pb-4 text-xs text-slate-500">
+            <p className="pb-4 text-xs text-faint">
               Movements booked without a machine are kept and labelled rather than
               dropped — §12.6 makes the machine optional, so a report that ignored
               them would not add up to the consumption report beside it.
@@ -361,20 +348,20 @@ function MachineTools({
   );
 
   return (
-    <div className="mt-3 border-t border-slate-800 pt-2">
+    <div className="mt-3 border-t border-line pt-2">
       <Loaded
         state={state}
         label="Which tools…"
-        empty={<p className="py-3 text-sm text-slate-500">Nothing recorded.</p>}
+        empty={<p className="py-3 text-sm text-faint">Nothing recorded.</p>}
       >
         {(tools) =>
           tools.map((tool) => (
             <div key={tool.item_id} className="flex items-baseline gap-3 py-1">
               <span className="min-w-0 flex-1 truncate text-sm">
                 {tool.item_code}
-                <span className="pl-2 text-slate-500">{tool.description}</span>
+                <span className="pl-2 text-faint">{tool.description}</span>
               </span>
-              <span className="shrink-0 text-sm tabular-nums text-slate-300">
+              <span className="shrink-0 text-sm tabular-nums text-ink-2">
                 {Number(tool.qty).toLocaleString(undefined, { maximumFractionDigits: 3 })}
               </span>
             </div>
@@ -409,16 +396,16 @@ function PeoplePanel({
     <Loaded
       state={state}
       label="Counting sign-ins…"
-      empty={<p className="py-10 text-center text-slate-500">Nobody signed in during this period.</p>}
+      empty={<p className="py-10 text-center text-faint">Nobody signed in during this period.</p>}
     >
       {(rows) => (
         <div className="space-y-2">
           {rows.map((row) => (
-            <div key={row.operator_id} className="rounded-xl bg-slate-900 px-4 py-3">
+            <div key={row.operator_id} className="rounded-xl bg-surface px-4 py-3">
               <div className="flex items-baseline gap-3">
                 <span className="min-w-0 flex-1 truncate font-semibold">
                   {row.full_name}
-                  <span className="pl-2 text-sm font-normal text-slate-500">
+                  <span className="pl-2 text-sm font-normal text-faint">
                     {row.emp_code} · {row.role.toLowerCase()}
                   </span>
                 </span>
@@ -426,19 +413,19 @@ function PeoplePanel({
                   {Number(row.qty).toLocaleString(undefined, { maximumFractionDigits: 3 })}
                 </span>
               </div>
-              <div className="pt-1 text-xs text-slate-500">
+              <div className="pt-1 text-xs text-faint">
                 {row.sessions} sign-in{row.sessions === 1 ? "" : "s"} · {row.movements} movement
                 {row.movements === 1 ? "" : "s"} · ₹
                 {Number(row.value).toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </div>
               <div className="flex gap-1 pt-2 text-xs">
-                <IdentityChip label="door" n={row.punch_sessions} tone="bg-emerald-900 text-emerald-200" />
-                <IdentityChip label="passkey" n={row.passkey_sessions} tone="bg-sky-900 text-sky-200" />
-                <IdentityChip label="typed PIN" n={row.pin_sessions} tone="bg-amber-900 text-amber-200" />
+                <IdentityChip label="door" n={row.punch_sessions} tone="bg-success-soft text-success" />
+                <IdentityChip label="passkey" n={row.passkey_sessions} tone="bg-accent-soft text-accent" />
+                <IdentityChip label="typed PIN" n={row.pin_sessions} tone="bg-warning-soft text-warning" />
               </div>
             </div>
           ))}
-          <p className="pb-4 text-xs text-slate-500">
+          <p className="pb-4 text-xs text-faint">
             A punch is the reader deciding whose finger it was. A passkey is a
             registered device unlocked by somebody it trusts. A typed PIN is four
             digits somebody knew. They are not equal evidence (§8), so they are

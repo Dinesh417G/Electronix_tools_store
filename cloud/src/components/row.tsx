@@ -21,11 +21,11 @@ import type { ReactNode } from "react";
 type Tone = "plain" | "out" | "in" | "low" | "empty";
 
 const TONES: Record<Tone, string> = {
-  plain: "text-slate-100",
-  out: "text-red-400",
-  in: "text-emerald-400",
-  low: "text-amber-300",
-  empty: "text-red-400",
+  plain: "text-ink",
+  out: "text-danger",
+  in: "text-success",
+  low: "text-warning",
+  empty: "text-danger",
 };
 
 /**
@@ -38,7 +38,7 @@ const TONES: Record<Tone, string> = {
  */
 export function RowList({ children }: { children: ReactNode }) {
   return (
-    <div className="divide-y divide-slate-800/60 overflow-hidden rounded-xl bg-slate-900">
+    <div className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface">
       {children}
     </div>
   );
@@ -81,8 +81,8 @@ export function Row({
         <span className="truncate font-semibold">{title}</span>
         {badge}
       </div>
-      {subtitle && <div className="truncate text-sm text-slate-400">{subtitle}</div>}
-      {meta && <div className="truncate text-xs text-slate-500">{meta}</div>}
+      {subtitle && <div className="truncate text-sm text-muted">{subtitle}</div>}
+      {meta && <div className="truncate text-xs text-faint">{meta}</div>}
     </>
   );
 
@@ -114,7 +114,7 @@ export function Row({
           <div className="shrink-0 text-right">
             <div className={`text-lg font-bold tabular-nums ${TONES[tone]}`}>{value}</div>
             {valueNote && (
-              <div className="text-xs tabular-nums text-slate-500">{valueNote}</div>
+              <div className="text-xs tabular-nums text-faint">{valueNote}</div>
             )}
           </div>
         )}

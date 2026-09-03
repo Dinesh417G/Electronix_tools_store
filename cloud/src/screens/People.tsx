@@ -15,7 +15,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "../lib/api";
 import type { Operator, OperatorInput, Role, adminApi } from "../lib/admin";
-import { Banner, Field, Header, Spinner } from "../components/ui";
+import { Banner, Chip, Field, Header, Spinner } from "../components/ui";
+import { Row, RowList } from "../components/row";
 
 const ROLES: { value: Role; label: string; blurb: string }[] = [
   { value: "OPERATOR", label: "Operator", blurb: "Takes tools out and puts them back." },
@@ -28,7 +29,7 @@ const ROLES: { value: Role; label: string; blurb: string }[] = [
 ];
 
 const input =
-  "w-full rounded-xl bg-slate-800 px-4 py-3 text-base outline-none focus:ring-2 focus:ring-sky-500";
+  "w-full rounded-xl border border-line bg-surface px-4 py-3 text-base outline-none focus:border-accent focus:ring-1 focus:ring-accent/30";
 
 export function People({
   client,
@@ -109,12 +110,12 @@ export function People({
         <button
           type="button"
           onClick={() => setEditing("new")}
-          className="tap flex-1 rounded-xl bg-sky-600 px-4 font-semibold text-white"
+          className="tap flex-1 rounded-xl bg-accent px-4 font-semibold text-white"
         >
           Add person
         </button>
-        <button
-          type="button"
+        <Chip
+          active={showRetired}
           onClick={() => {
             // Clearing here rather than inside the effect: the spinner belongs
             // to the tap that caused it, and React would rather not have a
@@ -122,50 +123,48 @@ export function People({
             setRows(null);
             setShowRetired((v) => !v);
           }}
-          className={`tap rounded-xl px-4 text-sm ${
-            showRetired ? "bg-slate-700" : "bg-slate-900 text-slate-400"
-          }`}
         >
           {showRetired ? "Hiding none" : "Show inactive"}
-        </button>
+        </Chip>
       </div>
 
       {!rows && <Spinner label="Loading people…" />}
 
-      {rows?.map((person) => (
-        <button
-          key={person.id}
-          type="button"
-          onClick={() => setEditing(person)}
-          className={`tap block w-full rounded-xl px-4 py-3 text-left ${
-            person.active ? "bg-slate-900" : "bg-slate-900/50 opacity-60"
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <span className="truncate font-semibold">{person.full_name}</span>
-            <span className="shrink-0 rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-300">
-              {person.role}
-            </span>
-            {!person.active && (
-              <span className="shrink-0 text-xs text-slate-500">inactive</span>
-            )}
-          </div>
-          <div className="truncate text-sm text-slate-400">
-            {person.emp_code}
-            {person.department ? ` · ${person.department}` : ""}
-          </div>
-          <div className="pt-1 text-xs text-slate-500">
-            {person.zk_user_id ? `door id ${person.zk_user_id}` : "no door id"}
-            {person.has_pin ? " · PIN" : " · no PIN"}
-            {person.passkey_count > 0
-              ? ` · fingerprint on ${person.passkey_count} device${person.passkey_count === 1 ? "" : "s"}`
-              : ""}
-          </div>
-        </button>
-      ))}
+      {rows && rows.length > 0 && (
+        <RowList>
+          {rows.map((person) => (
+            <div key={person.id} className={person.active ? undefined : "opacity-60"}>
+              <Row
+                title={person.full_name}
+                badge={
+                  <>
+                    <span className="shrink-0 rounded-full bg-surface-2 px-2 py-0.5 text-xs text-ink-2">
+                      {person.role}
+                    </span>
+                    {!person.active && (
+                      <span className="shrink-0 text-xs text-faint">inactive</span>
+                    )}
+                  </>
+                }
+                subtitle={
+                  person.emp_code + (person.department ? ` · ${person.department}` : "")
+                }
+                meta={
+                  (person.zk_user_id ? `door id ${person.zk_user_id}` : "no door id") +
+                  (person.has_pin ? " · PIN" : " · no PIN") +
+                  (person.passkey_count > 0
+                    ? ` · fingerprint on ${person.passkey_count} device${person.passkey_count === 1 ? "" : "s"}`
+                    : "")
+                }
+                onClick={() => setEditing(person)}
+              />
+            </div>
+          ))}
+        </RowList>
+      )}
 
       {rows?.length === 0 && !forbidden && (
-        <p className="py-10 text-center text-slate-500">Nobody here yet.</p>
+        <p className="py-10 text-center text-faint">Nobody here yet.</p>
       )}
     </div>
   );
@@ -265,14 +264,16 @@ function OperatorForm({
               key={role.value}
               type="button"
               onClick={() => set("role", role.value)}
-              className={`tap block w-full rounded-xl px-4 py-3 text-left ${
-                form.role === role.value ? "bg-sky-600 text-white" : "bg-slate-800"
+              className={`tap block w-full rounded-xl border px-4 py-3 text-left ${
+                form.role === role.value
+                  ? "border-accent-line bg-accent-soft"
+                  : "border-line bg-surface"
               }`}
             >
               <div className="font-semibold">{role.label}</div>
               <div
                 className={`text-xs ${
-                  form.role === role.value ? "text-sky-100" : "text-slate-400"
+                  form.role === role.value ? "text-accent" : "text-muted"
                 }`}
               >
                 {role.blurb}
@@ -327,8 +328,8 @@ function OperatorForm({
           have proved who they are some other way. The door reader's fingerprint
           is not ours at all — the terminal captures and matches it, and all we
           keep is the id above. Saying so here is cheaper than the question. */}
-      <div className="rounded-xl bg-slate-900 px-4 py-3 text-sm text-slate-400">
-        <div className="font-semibold text-slate-300">Fingerprint sign-in</div>
+      <div className="rounded-xl bg-surface px-4 py-3 text-sm text-muted">
+        <div className="font-semibold text-ink-2">Fingerprint sign-in</div>
         <p className="pt-1">
           {operator
             ? operator.passkey_count > 0
@@ -351,7 +352,7 @@ function OperatorForm({
         type="button"
         disabled={busy || !form.emp_code.trim() || !form.full_name.trim()}
         onClick={save}
-        className="tap w-full rounded-xl bg-sky-600 px-4 font-semibold text-white disabled:opacity-40"
+        className="tap w-full rounded-xl bg-accent px-4 font-semibold text-white disabled:opacity-40"
       >
         {busy ? "Saving…" : "Save"}
       </button>
@@ -371,7 +372,7 @@ function OperatorForm({
               setBusy(false);
             }
           }}
-          className="tap w-full rounded-xl bg-slate-800 px-4 text-sm text-red-300 disabled:opacity-40"
+          className="tap w-full rounded-xl bg-surface-2 px-4 text-sm text-danger disabled:opacity-40"
         >
           Deactivate
         </button>
@@ -392,7 +393,7 @@ function OperatorForm({
               setBusy(false);
             }
           }}
-          className="tap w-full rounded-xl bg-slate-800 px-4 text-sm text-slate-300"
+          className="tap w-full rounded-xl bg-surface-2 px-4 text-sm text-ink-2"
         >
           Reactivate
         </button>
@@ -413,13 +414,13 @@ function OperatorForm({
               setBusy(false);
             }
           }}
-          className="tap w-full rounded-xl bg-slate-800 px-4 text-sm text-slate-400"
+          className="tap w-full rounded-xl bg-surface-2 px-4 text-sm text-muted"
         >
           Clear PIN
         </button>
       )}
 
-      <p className="pb-4 text-xs text-slate-500">
+      <p className="pb-4 text-xs text-faint">
         Deactivating never deletes. Every transaction they signed keeps their
         name on it — that is what makes the ledger worth having.
       </p>

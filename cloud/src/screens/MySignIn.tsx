@@ -65,14 +65,14 @@ export function MySignIn({
               <button
                 type="button"
                 onClick={onSignOut}
-                className="tap rounded-xl px-3 py-2 text-sm text-slate-400 active:bg-slate-800"
+                className="tap rounded-xl px-3 py-2 text-sm text-muted active:bg-surface-2"
               >
                 Sign out
               </button>
             }
           />
 
-          <p className="pt-2 text-sm text-slate-500">
+          <p className="pt-2 text-sm text-faint">
             Registering here means you can open a session at the terminal with
             this phone&apos;s fingerprint instead of typing your PIN. It is not
             the door reader: the reader matches your finger against what is

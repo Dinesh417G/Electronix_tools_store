@@ -21,7 +21,7 @@ import {
 } from "../lib/api";
 import { adminApi, type Category, type ItemInput } from "../lib/admin";
 import { useRefreshOnReturn } from "../lib/refresh";
-import { AlertChip, Banner, BigButton, Field, Header, Spinner } from "../components/ui";
+import { AlertChip, Banner, BigButton, Chip, Field, Header, Spinner, TabStrip } from "../components/ui";
 import { Row, RowList } from "../components/row";
 import { PrinterSettings } from "./PrinterSettings";
 import { Serials } from "./Serials";
@@ -80,7 +80,7 @@ export function Admin({ token, operatorName, onSignOut }: Props) {
             <button
               type="button"
               onClick={onSignOut}
-              className="tap rounded-lg px-4 text-sm text-slate-400 active:bg-slate-800"
+              className="tap rounded-lg px-4 text-sm text-muted active:bg-surface-2"
             >
               Sign out
             </button>
@@ -102,31 +102,20 @@ export function Admin({ token, operatorName, onSignOut }: Props) {
         </div>
       )}
 
-      {/* Six tabs will not fit across a 390 px phone in one row, so they wrap
-          into two of three and spread out again on anything wider. */}
-        <nav className="grid grid-cols-3 gap-1 px-4 pb-3 sm:grid-cols-6">
-        {(
-          [
-            ["catalog", "Catalog"],
-            ["stock", "Stock"],
-            ["alerts", "Alerts"],
-            ["activity", "Ledger"],
-            ["reports", "Reports"],
-            ["settings", "Setup"],
-          ] as const
-        ).map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => openTab(key)}
-            className={`tap rounded-xl px-2 text-sm font-semibold ${
-              tab === key ? "bg-sky-600 text-white" : "bg-slate-800 text-slate-300"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-        </nav>
+      {/* Six labels will not fit a 390 px phone at a readable size, so this
+          scrolls as one row instead of wrapping into a block of six pills. */}
+      <TabStrip
+        value={tab}
+        onChange={openTab}
+        options={[
+          { value: "catalog", label: "Catalog" },
+          { value: "stock", label: "Stock" },
+          { value: "alerts", label: "Alerts" },
+          { value: "activity", label: "Ledger" },
+          { value: "reports", label: "Reports" },
+          { value: "settings", label: "Setup" },
+        ]}
+      />
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 safe-bottom">
@@ -248,19 +237,35 @@ function Setup({
   ];
 
   return (
-    <div className="space-y-2">
+    <RowList>
       {sections.map((entry) => (
-        <button
+        <Row
           key={entry.key}
-          type="button"
+          title={entry.title}
+          subtitle={entry.blurb}
           onClick={() => setSection(entry.key)}
-          className="tap block w-full rounded-xl bg-slate-900 px-4 py-3 text-left"
-        >
-          <div className="font-semibold">{entry.title}</div>
-          <div className="text-sm text-slate-400">{entry.blurb}</div>
-        </button>
+          trailing={<ChevronRight />}
+        />
       ))}
-    </div>
+    </RowList>
+  );
+}
+
+/** The "this row goes somewhere" affordance — Setup's list, nowhere else yet. */
+function ChevronRight() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-4 w-4 shrink-0 text-faint"
+      aria-hidden="true"
+    >
+      <path d="m9 18 6-6-6-6" />
+    </svg>
   );
 }
 
@@ -376,7 +381,7 @@ function Catalog({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search the catalog"
-          className="tap flex-1 rounded-xl bg-slate-800 px-4 outline-none placeholder:text-slate-500 focus:ring-2 focus:ring-sky-500"
+          className="tap flex-1 rounded-xl border border-line bg-surface px-4 outline-none placeholder:text-faint focus:border-accent focus:ring-1 focus:ring-accent/30"
         />
         <BigButton onClick={() => setEditing("new")} variant="primary" className="px-5 text-base">
           + Item
@@ -384,21 +389,21 @@ function Catalog({
       </div>
 
       {selected.size > 0 && (
-        <div className="flex items-center gap-2 rounded-xl bg-sky-950 px-4 py-3">
+        <div className="flex items-center gap-2 rounded-xl bg-accent-soft px-4 py-3">
           <span className="flex-1 text-sm">
             {selected.size} selected for label printing
           </span>
           <button
             type="button"
             onClick={() => setSelected(new Set())}
-            className="tap rounded-lg px-4 text-sm text-slate-400"
+            className="tap rounded-lg px-4 text-sm text-muted"
           >
             Clear
           </button>
           <button
             type="button"
             onClick={() => void printSelected()}
-            className="tap rounded-lg bg-sky-600 px-4 text-sm font-semibold"
+            className="tap rounded-lg bg-accent px-4 text-sm font-semibold text-white"
           >
             Print labels
           </button>
@@ -409,11 +414,11 @@ function Catalog({
 
       {!loading && failed && items.length === 0 && (
         <div className="space-y-3 py-10 text-center">
-          <p className="text-slate-400">The catalog did not load.</p>
+          <p className="text-muted">The catalog did not load.</p>
           <button
             type="button"
             onClick={() => void load()}
-            className="tap rounded-xl bg-sky-600 px-6 py-3 font-semibold text-white"
+            className="tap rounded-xl bg-accent px-6 py-3 font-semibold text-white"
           >
             Try again
           </button>
@@ -421,7 +426,7 @@ function Catalog({
       )}
 
       {!loading && !failed && items.length === 0 && (
-        <p className="py-10 text-center text-slate-500">
+        <p className="py-10 text-center text-faint">
           {query.trim() ? "Nothing matches." : "No items yet. Add one with + Item."}
         </p>
       )}
@@ -436,7 +441,7 @@ function Catalog({
                 <>
                   <AlertChip level={item.alert_state} />
                   {!item.active && (
-                    <span className="rounded-full bg-slate-700 px-2 py-0.5 text-xs">
+                    <span className="rounded-full bg-surface-3 px-2 py-0.5 text-xs">
                       retired
                     </span>
                   )}
@@ -454,8 +459,8 @@ function Catalog({
                   onClick={() => toggle(item.id)}
                   className={`h-8 w-8 shrink-0 rounded-lg border-2 text-sm ${
                     selected.has(item.id)
-                      ? "border-sky-500 bg-sky-600 text-white"
-                      : "border-slate-600"
+                      ? "border-accent bg-accent text-white"
+                      : "border-line-strong"
                   }`}
                 >
                   {selected.has(item.id) ? "✓" : ""}
@@ -466,7 +471,7 @@ function Catalog({
                   type="button"
                   aria-label={`Serial numbers for ${item.item_code}`}
                   onClick={() => setSerialsFor(item)}
-                  className="tap shrink-0 rounded-lg bg-slate-800 px-3 text-xs text-slate-300"
+                  className="tap shrink-0 rounded-lg bg-surface-2 px-3 text-xs text-ink-2"
                 >
                   Serials
                 </button>
@@ -504,32 +509,32 @@ function LevelBand({
   const invalid = max.trim() !== "" && Number(max) < Number(min || 0);
 
   return (
-    <div className="mt-3 space-y-2 rounded-xl bg-slate-950/60 p-3">
+    <div className="mt-3 space-y-2 rounded-xl bg-app/60 p-3">
       <div className="flex items-end gap-2">
-        <label className="flex-1 text-xs text-slate-400">
+        <label className="flex-1 text-xs text-muted">
           Reorder at
           <input
             value={min}
             onChange={(e) => setMin(e.target.value.replace(/[^\d.]/g, ""))}
             inputMode="decimal"
-            className="tap mt-1 w-full rounded-lg bg-slate-800 px-3 text-base text-slate-100"
+            className="tap mt-1 w-full rounded-lg bg-surface-2 px-3 text-base text-ink"
           />
         </label>
-        <span className="pb-3 text-slate-500">to</span>
-        <label className="flex-1 text-xs text-slate-400">
+        <span className="pb-3 text-faint">to</span>
+        <label className="flex-1 text-xs text-muted">
           Full at
           <input
             value={max}
             onChange={(e) => setMax(e.target.value.replace(/[^\d.]/g, ""))}
             inputMode="decimal"
             placeholder="optional"
-            className="tap mt-1 w-full rounded-lg bg-slate-800 px-3 text-base text-slate-100"
+            className="tap mt-1 w-full rounded-lg bg-surface-2 px-3 text-base text-ink"
           />
         </label>
       </div>
 
       {invalid && (
-        <p className="text-xs text-amber-400">
+        <p className="text-xs text-warning">
           The maximum cannot be below the reorder level.
         </p>
       )}
@@ -546,14 +551,14 @@ function LevelBand({
             });
             setBusy(false);
           }}
-          className="tap flex-1 rounded-lg bg-sky-600 px-4 text-sm font-semibold disabled:opacity-40"
+          className="tap flex-1 rounded-lg bg-accent px-4 text-sm font-semibold text-white disabled:opacity-40"
         >
           {busy ? "Saving…" : "Save"}
         </button>
         <button
           type="button"
           onClick={onCancel}
-          className="tap rounded-lg bg-slate-800 px-4 text-sm text-slate-300"
+          className="tap rounded-lg bg-surface-2 px-4 text-sm text-ink-2"
         >
           Cancel
         </button>
@@ -627,7 +632,7 @@ function ItemForm({
         <button
           type="button"
           onClick={() => onDone()}
-          className="tap -ml-2 w-12 rounded-xl text-2xl text-slate-400 active:bg-slate-800"
+          className="tap -ml-2 w-12 rounded-xl text-2xl text-muted active:bg-surface-2"
         >
           ←
         </button>
@@ -734,7 +739,7 @@ function ItemForm({
         />
       </Field>
 
-      <label className="flex items-center gap-3 rounded-xl bg-slate-900 px-4 py-3">
+      <label className="flex items-center gap-3 rounded-xl bg-surface px-4 py-3">
         <input
           type="checkbox"
           checked={form.allow_negative}
@@ -743,7 +748,7 @@ function ItemForm({
         />
         <span className="flex-1 text-sm">
           Allow negative stock
-          <span className="block text-xs text-slate-500">
+          <span className="block text-xs text-faint">
             Lets an issue go below zero. Reserve this for items the shop consumes
             faster than it books.
           </span>
@@ -770,7 +775,7 @@ function ItemForm({
               onError(describe(err));
             }
           }}
-          className="w-full rounded-xl px-4 py-3 text-sm text-red-400 active:bg-slate-800"
+          className="w-full rounded-xl px-4 py-3 text-sm text-danger active:bg-surface-2"
         >
           Retire this item
         </button>
@@ -780,7 +785,7 @@ function ItemForm({
 }
 
 const inputClass =
-  "tap w-full rounded-xl bg-slate-800 px-4 text-base outline-none focus:ring-2 focus:ring-sky-500";
+  "tap w-full rounded-xl border border-line bg-surface px-4 text-base outline-none focus:border-accent focus:ring-1 focus:ring-accent/30";
 
 
 // ── Stock, alerts, ledger ───────────────────────────────────────────────
@@ -800,12 +805,12 @@ function StockTab() {
   return (
     <div className="space-y-3">
       <FilterChips view={view} onChange={setView} />
-      <p className="px-1 text-xs text-slate-500">{hintFor(view)}</p>
+      <p className="px-1 text-xs text-faint">{hintFor(view)}</p>
 
       <Loaded
         state={stockState}
         label="Loading stock…"
-        empty={<p className="py-10 text-center text-slate-500">Nothing here.</p>}
+        empty={<p className="py-10 text-center text-faint">Nothing here.</p>}
       >
         {(loaded) => (
           <RowList>
@@ -854,21 +859,21 @@ function AlertsTab({
       <Loaded
         state={state}
         label="Loading alerts…"
-        empty={<p className="py-10 text-center text-slate-500">Nothing is low or empty.</p>}
+        empty={<p className="py-10 text-center text-faint">Nothing is low or empty.</p>}
       >
         {(loaded) => loaded.map((alert) => (
         <div
           key={alert.id}
-          className={`rounded-xl border-l-4 bg-slate-900 px-4 py-3 ${
-            alert.level === "EMPTY" ? "border-red-500" : "border-amber-500"
+          className={`rounded-xl border-l-4 bg-surface px-4 py-3 ${
+            alert.level === "EMPTY" ? "border-danger" : "border-warning"
           }`}
         >
           <div className="flex items-center gap-2">
             <span className="font-semibold">{alert.item_code}</span>
             <AlertChip level={alert.level} />
           </div>
-          <div className="text-sm text-slate-400">{alert.description}</div>
-          <div className="pt-1 text-sm tabular-nums text-slate-300">
+          <div className="text-sm text-muted">{alert.description}</div>
+          <div className="pt-1 text-sm tabular-nums text-ink-2">
             {formatQty(alert.on_hand)} on hand · band {formatQty(alert.reorder_level)}
             {alert.max_level ? `–${formatQty(alert.max_level)}` : "–—"}
             {alert.max_level
@@ -896,13 +901,13 @@ function AlertsTab({
             <button
               type="button"
               onClick={() => setEditing(alert.item_id)}
-              className="tap mt-2 mr-2 rounded-lg bg-slate-800 px-4 text-sm text-slate-300"
+              className="tap mt-2 mr-2 rounded-lg bg-surface-2 px-4 text-sm text-ink-2"
             >
               Set levels
             </button>
           )}
           {alert.acknowledged_at ? (
-            <div className="pt-1 text-xs text-slate-500">Acknowledged</div>
+            <div className="pt-1 text-xs text-faint">Acknowledged</div>
           ) : (
             <button
               type="button"
@@ -914,7 +919,7 @@ function AlertsTab({
                   onError(describe(err));
                 }
               }}
-              className="tap mt-2 rounded-lg bg-slate-700 px-4 text-sm"
+              className="tap mt-2 rounded-lg bg-surface-3 px-4 text-sm"
             >
               Acknowledge
             </button>
@@ -923,7 +928,7 @@ function AlertsTab({
         ))}
       </Loaded>
       {rows && rows.length > 0 && (
-        <p className="pt-2 text-xs text-slate-500">
+        <p className="pt-2 text-xs text-faint">
           Acknowledging records that you have seen it. The alert stays open until
           stock actually arrives.
         </p>
@@ -955,27 +960,19 @@ function ActivityTab({
 
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap gap-1">
-        <button
-          type="button"
-          onClick={() => setReason(null)}
-          className={`tap rounded-lg px-3 text-sm ${
-            reason === null ? "bg-slate-700 text-white" : "bg-slate-900 text-slate-400"
-          }`}
-        >
+      <div className="flex flex-wrap gap-1.5">
+        <Chip active={reason === null} onClick={() => setReason(null)} size="sm">
           All reasons
-        </button>
+        </Chip>
         {(reasons.data ?? []).map((r) => (
-          <button
+          <Chip
             key={r.id}
-            type="button"
+            active={reason === r.code}
             onClick={() => setReason(reason === r.code ? null : r.code)}
-            className={`tap rounded-lg px-3 text-sm ${
-              reason === r.code ? "bg-slate-700 text-white" : "bg-slate-900 text-slate-400"
-            }`}
+            size="sm"
           >
             {r.label}
-          </button>
+          </Chip>
         ))}
       </div>
 
@@ -983,7 +980,7 @@ function ActivityTab({
         state={state}
         label="Loading the ledger…"
         empty={
-          <p className="py-10 text-center text-slate-500">
+          <p className="py-10 text-center text-faint">
             {reason
               ? "No movements booked under that reason in the last 60."
               : "No movements yet."}
@@ -1001,7 +998,7 @@ function ActivityTab({
                   title={row.item_code}
                   badge={
                     reversed ? (
-                      <span className="rounded-full bg-amber-950 px-2 py-0.5 text-xs text-amber-300">
+                      <span className="rounded-full bg-warning-soft px-2 py-0.5 text-xs text-warning">
                         reverses #{row.reverses_id}
                       </span>
                     ) : undefined
@@ -1033,7 +1030,7 @@ function ActivityTab({
                             onError(describe(err));
                           }
                         }}
-                        className="tap rounded-lg bg-slate-800 px-4 text-sm text-slate-300"
+                        className="tap rounded-lg bg-surface-2 px-4 text-sm text-ink-2"
                       >
                         Reverse
                       </button>
