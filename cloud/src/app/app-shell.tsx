@@ -474,7 +474,7 @@ function ModeSwitch({
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-label="Settings"
-        className="h-11 w-11 rounded-full bg-slate-800/90 text-lg text-slate-400 shadow-lg backdrop-blur active:bg-slate-700"
+        className="tap flex h-14 w-14 items-center justify-center rounded-full bg-slate-800 text-xl text-slate-300 shadow-lg shadow-black/40 ring-1 ring-white/10 transition-transform active:scale-95 active:bg-slate-700"
       >
         ⚙
       </button>

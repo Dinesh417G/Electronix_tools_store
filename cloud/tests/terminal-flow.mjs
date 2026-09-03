@@ -47,6 +47,66 @@ const onHand = async (itemCode) => {
   return Number(row.on_hand);
 };
 
+/**
+ * The back control is a *fixed* button in the bottom-left corner. Anything a
+ * screen puts at its own bottom lands underneath it, and the tap goes to back
+ * — on the confirm screen that means an operator aiming at CONFIRM loses
+ * everything they typed.
+ *
+ * Checked against **every** button on the screen, not one named control. The
+ * first version of this compared the back button with CONFIRM alone and passed
+ * while the item screen had it sitting on top of "Search", because that screen
+ * passes `onCancel` rather than `onBack` and neither the check nor the grep
+ * that found the screens to pad went looking for it.
+ *
+ * It also asserts the button is round. `safe-bottom` on the button rather than
+ * its wrapper padded the inside of a 44 px circle to a 44 x 64 box, and
+ * `rounded-full` drew that as an egg — a defect no text assertion can see and
+ * the one a user actually reported.
+ */
+async function checkBackButton(where) {
+  const result = await browser.evaluate(`(() => {
+    const back = document.querySelector('button[aria-label="Back"]');
+    if (!back) return { missing: true };
+    const box = (el) => {
+      const r = el.getBoundingClientRect();
+      return {
+        left: Math.round(r.left), right: Math.round(r.right),
+        top: Math.round(r.top), bottom: Math.round(r.bottom),
+        w: Math.round(r.width), h: Math.round(r.height),
+        label: (el.getAttribute("aria-label") || el.textContent || "?").trim().slice(0, 24),
+      };
+    };
+    const a = box(back);
+    const hits = [...document.querySelectorAll("button, a[href]")]
+      .filter((el) => el !== back && el.getBoundingClientRect().width > 0)
+      .map(box)
+      .filter((b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top);
+    return { back: a, hits };
+  })()`);
+
+  if (result.missing) {
+    t.bad(`no back button on the ${where} screen`);
+    return;
+  }
+  const { back, hits } = result;
+
+  if (Math.abs(back.w - back.h) <= 1) {
+    t.ok(`${where}: the back button is round (${back.w}x${back.h})`);
+  } else {
+    t.bad(`${where}: the back button is ${back.w}x${back.h} — rounded-full draws that as an egg`);
+  }
+
+  if (hits.length === 0) {
+    t.ok(`${where}: the back button covers nothing`);
+  } else {
+    t.bad(
+      `${where}: the back button overlaps ${hits.map((h) => `"${h.label}"`).join(", ")} — ` +
+        `back ${JSON.stringify(back)}`,
+    );
+  }
+}
+
 const browser = await launchChrome({ port: 9355 });
 
 try {
@@ -64,6 +124,13 @@ try {
   const before = await onHand(item.item_code);
 
   t.step("1. enrol this browser as a terminal");
+  // A phone, not whatever window Chrome opened. The geometry checks below are
+  // about where controls land, and a 473 px-tall desktop window is not a shape
+  // any operator holds — it makes the bottom of every screen artificially
+  // crowded and the checks report faults that no device would show.
+  await browser.send("Emulation.setDeviceMetricsOverride", {
+    width: 412, height: 915, deviceScaleFactor: 2, mobile: true,
+  });
   await browser.goto(BASE);
   if ((await browser.evaluate('document.querySelectorAll("input").length')) >= 2) {
     await browser.fill([['input[type="password"]', SECRET]]);
@@ -137,6 +204,8 @@ try {
   await browser.clickText("Continue");
   await sleep(2500);
 
+  await checkBackButton("manual sign-in");
+
   const direction = await browser.text();
   if (/TAKE OUT/i.test(direction)) t.ok("signed in — the direction screen is up");
   else t.bad("no direction screen: " + trim(direction));
@@ -158,9 +227,13 @@ try {
   }
   await sleep(1200);
 
+  await checkBackButton("item search");
+
   const card = await browser.text();
   if (card.includes(item.item_code)) t.ok("the item card shows the code");
   else t.bad("no item card: " + trim(card));
+
+  await checkBackButton("quantity");
 
   t.step("4. quantity 2, skip the optional step, confirm");
   const typedQty = 2;
@@ -174,44 +247,7 @@ try {
   // §12.6: skipping must never be slower than filling.
   await browser.clickText("Skip");
   await sleep(800);
-  // The back control is a *fixed* button in the bottom-left corner, and the
-  // primary action on this screen is a full-width CONFIRM at the bottom. If
-  // they overlap, an operator aiming at the left of CONFIRM books "back"
-  // instead and loses everything they typed — the worst possible place for a
-  // stray tap, and invisible to every assertion that reads text. Geometry is
-  // the only thing that can catch it.
-  const boxes = await browser.evaluate(`(() => {
-    const back = document.querySelector('button[aria-label="Back"]');
-    const confirm = [...document.querySelectorAll("button")]
-      .find((b) => /CONFIRM/i.test(b.textContent || ""));
-    const box = (el) => {
-      if (!el) return null;
-      const r = el.getBoundingClientRect();
-      return {
-        left: Math.round(r.left), right: Math.round(r.right),
-        top: Math.round(r.top), bottom: Math.round(r.bottom),
-      };
-    };
-    return { back: box(back), confirm: box(confirm) };
-  })()`);
-
-  if (!boxes.back) {
-    t.bad("no back button on the confirm screen");
-  } else if (!boxes.confirm) {
-    t.bad("no CONFIRM button found to compare against");
-  } else {
-    const a = boxes.back;
-    const b = boxes.confirm;
-    const overlaps =
-      a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
-    if (overlaps) {
-      t.bad(
-        `the back button overlaps CONFIRM: back ${JSON.stringify(a)} vs ${JSON.stringify(b)}`,
-      );
-    } else {
-      t.ok("the back button does not overlap CONFIRM");
-    }
-  }
+  await checkBackButton("confirm");
 
   const confirmed = await browser.clickText("Confirm");
   if (!confirmed) t.bad("no CONFIRM button: " + trim(await browser.text()));

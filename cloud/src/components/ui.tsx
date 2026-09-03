@@ -175,29 +175,40 @@ export function Spinner({ label }: { label: string }) {
  */
 function BackButton({ onBack }: { onBack: () => void }) {
   return (
-    <button
-      type="button"
-      onClick={onBack}
-      aria-label="Back"
-      className="tap fixed bottom-3 left-3 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-slate-800/90 text-slate-300 shadow-lg backdrop-blur safe-bottom active:bg-slate-700"
-    >
-      {/* An SVG rather than "←". The glyph rendered in whatever the system font
-          had, which is why it looked like a character in a sentence rather than
-          a control — thin, differently weighted on every device, and unmatched
-          to the gear opposite it. This is drawn at a fixed weight everywhere. */}
-      <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="h-5 w-5"
-        aria-hidden="true"
+    /* `safe-bottom` belongs on this wrapper, never on the button.
+     *
+     * It is `padding-bottom: max(0.75rem, env(safe-area-inset-bottom))`, and on
+     * the button it padded the *inside*: a 44 px circle became a 44 × 64 box,
+     * and `rounded-full` drew that as an egg. That is the whole of why the
+     * first version looked wrong — not the colour or the icon. The settings
+     * gear escaped it because the class was always on its container. */
+    <div className="fixed bottom-3 left-3 z-10 safe-bottom">
+      <button
+        type="button"
+        onClick={onBack}
+        aria-label="Back"
+        className="tap flex h-14 w-14 items-center justify-center rounded-full bg-slate-800 text-slate-100 shadow-lg shadow-black/40 ring-1 ring-white/10 transition-transform active:scale-95 active:bg-slate-700"
       >
-        <path d="M15 5 8 12l7 7" />
-      </svg>
-    </button>
+        {/* A drawn arrow rather than "←". The glyph rendered in whatever the
+            system font had — thin, weighted differently on every device, and
+            reading as a character in a sentence rather than a control. A full
+            arrow with a shaft, not a bare chevron: at a glance across a
+            workshop the shaft is what makes the direction unmistakable. */}
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="h-6 w-6"
+          aria-hidden="true"
+        >
+          <path d="M19 12H5" />
+          <path d="m12 19-7-7 7-7" />
+        </svg>
+      </button>
+    </div>
   );
 }
 

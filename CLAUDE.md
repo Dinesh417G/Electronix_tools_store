@@ -903,10 +903,31 @@ full-width action bar — `QuantityScreen`, `OptionalScreen`, `SplitScreen` and
 without the clearance the back button overlaps the bottom-left of **CONFIRM**,
 and an operator aiming there books "back" and loses everything they typed.
 
-`tests/terminal-flow.mjs` asserts the two rectangles do not intersect, measured
-in the browser. No text assertion can see this — the words are all present and
-correct while the buttons sit on top of each other — and removing the clearance
-fails it with both rectangles printed.
+`tests/terminal-flow.mjs` measures it in the browser on **every** screen the
+flow visits, against **every** button on each, and also asserts the control is
+round. No text assertion can see any of this: the words are all present and
+correct while the buttons sit on top of each other.
+
+Both halves of that generality were learned by getting them wrong first.
+
+- **The check compared one named control**, CONFIRM, and passed while the item
+  screen had the back button sitting on top of "Search". Three screens were
+  missed because the grep that found them looked for `onBack={onBack}`, and
+  `ItemScreen`, `ManualScreen` and `DirectionScreen` pass `onCancel`. Comparing
+  against every button found all three immediately.
+- **It ran in whatever window Chrome opened** — 473 px tall, a shape no
+  operator holds, which crowds the bottom of every screen and reports faults no
+  device would show. It emulates a 412×915 phone now.
+
+The clearance is `pb-24`: the button is 56 px, sits 12 px up, and its wrapper
+adds another 12 px of safe-area padding, so it owns the bottom 80 px and 64 px
+was never enough.
+
+**And the styling defect a user reported, which no test could have caught
+either way:** `safe-bottom` was on the button rather than its wrapper. It is
+`padding-bottom: max(0.75rem, env(safe-area-inset-bottom))`, so it padded the
+*inside* — a 44 px circle became a 44 × 64 box, and `rounded-full` drew that as
+an egg. The test now asserts width equals height.
 
 Target: **scan → qty → confirm in under 8 seconds.** If a screen doesn't serve that, cut it.
 
