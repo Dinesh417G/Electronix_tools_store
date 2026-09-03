@@ -18,7 +18,7 @@ import {
   type LedgerRow,
 } from "../lib/api";
 import type { ConnectionState, ServerEvent } from "../lib/events";
-import { AlertChip, Chip, ConnectionPill, Spinner } from "../components/ui";
+import { AlertChip, Chip, ConnectionPill, ListCap, Spinner } from "../components/ui";
 import { Row, RowList } from "../components/row";
 
 interface Props {
@@ -148,6 +148,7 @@ function Activity({ rows }: { rows: LedgerRow[] | null }) {
   }
 
   return (
+    <>
     <RowList>
       {rows.map((row) => {
         const out = row.delta_qty.startsWith("-");
@@ -179,6 +180,11 @@ function Activity({ rows }: { rows: LedgerRow[] | null }) {
         );
       })}
     </RowList>
+    <ListCap shown={rows.length} limit={40}>
+      The 40 most recent movements. This view is a window on the shop, not the
+      whole ledger — the console&apos;s Ledger tab and the reports go further back.
+    </ListCap>
+    </>
   );
 }
 
@@ -187,6 +193,7 @@ function Stock({ rows }: { rows: Item[] | null }) {
   if (rows.length === 0) return <Empty>No items in the catalog yet.</Empty>;
 
   return (
+    <>
     <RowList>
       {rows.map((item) => (
         <Row
@@ -200,6 +207,10 @@ function Stock({ rows }: { rows: Item[] | null }) {
         />
       ))}
     </RowList>
+    <ListCap shown={rows.length} limit={200}>
+      The first 200 items. The console&apos;s Catalog tab can search the rest.
+    </ListCap>
+    </>
   );
 }
 
