@@ -306,6 +306,62 @@ try {
       ok(what + " on stock_ledger refused");
     }
   }
+
+  step("11. the idle screen's status agrees with its own header");
+  // The strip is headed TODAY and its counts are scoped to a window the tablet
+  // sends. The recent list was not scoped at all, so a quiet morning rendered
+  // "7 movements" above eight rows, the last from the previous evening. A panel
+  // that contradicts its own header teaches the reader to distrust every number
+  // on the screen — including the stock figures, which is the whole product.
+  // Ninety seconds, not an hour. An hour-wide window passed against a build
+  // with the scope removed: this database holds far more than twenty movements
+  // from the last hour, so the unscoped "last twenty" all fell inside it by
+  // accident and the check proved nothing. A window narrower than the run's own
+  // history is what makes an unscoped query show its stray rows.
+  const since = new Date(Date.now() - 90 * 1000);
+  const status = await call(
+    `/api/v1/terminal/status?since=${encodeURIComponent(since.toISOString())}`,
+    { headers: { Authorization: "Bearer " + tabletTok } },
+  );
+  if (status.status === 200) ok("200");
+  else bad("terminal status answered " + status.status);
+
+  const rows = status.body?.recent ?? [];
+  const stray = rows.find((r) => new Date(r.created_at) < since);
+  if (!stray) ok(`all ${rows.length} recent rows fall inside the window`);
+  else bad(`a row from ${stray.created_at} is listed under a window starting ${since.toISOString()}`);
+
+  // The list is capped at 8, so it may be shorter than the count but never
+  // longer: more rows than movements is the contradiction itself.
+  if (rows.length <= status.body?.today?.movements) {
+    ok(`${rows.length} rows under a count of ${status.body.today.movements}`);
+  } else {
+    bad(`${rows.length} rows listed but only ${status.body?.today?.movements} counted`);
+  }
+
+  // Counts each way, not summed quantities: §6 gives every item a uom, and
+  // adding twenty-litre drums to carbide inserts is a number with no unit.
+  const t = status.body?.today ?? {};
+  if (t.out_count + t.in_count === t.movements) {
+    ok(`out ${t.out_count} + in ${t.in_count} = ${t.movements} movements`);
+  } else {
+    bad(`${t.out_count} + ${t.in_count} does not equal ${t.movements}`);
+  }
+
+  // §9.3 and the reason `since` is the tablet's: the window is clamped, so a
+  // client cannot ask the server to scan the whole ledger.
+  const absurd = await call(
+    "/api/v1/terminal/status?since=1970-01-01T00:00:00.000Z",
+    { headers: { Authorization: "Bearer " + tabletTok } },
+  );
+  const clamped = absurd.body?.recent ?? [];
+  const cutoff = Date.now() - 25 * 60 * 60 * 1000;
+  if (absurd.status === 200 && !clamped.some((r) => new Date(r.created_at).getTime() < cutoff)) {
+    ok("a since of 1970 falls back to the last 24 hours rather than scanning the ledger");
+  } else {
+    bad("an unbounded since was honoured: " + clamped.length + " rows");
+  }
+
 } catch (e) {
   bad("aborted: " + (e instanceof Error ? e.message : String(e)));
 } finally {
