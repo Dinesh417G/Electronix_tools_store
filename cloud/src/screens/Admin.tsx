@@ -509,7 +509,7 @@ function LevelBand({
   const invalid = max.trim() !== "" && Number(max) < Number(min || 0);
 
   return (
-    <div className="mt-3 space-y-2 rounded-xl bg-app/60 p-3">
+    <div className="w-full space-y-2 rounded-xl bg-surface-2 p-3">
       <div className="flex items-end gap-2">
         <label className="flex-1 text-xs text-muted">
           Reorder at
@@ -517,7 +517,7 @@ function LevelBand({
             value={min}
             onChange={(e) => setMin(e.target.value.replace(/[^\d.]/g, ""))}
             inputMode="decimal"
-            className="tap mt-1 w-full rounded-lg bg-surface-2 px-3 text-base text-ink"
+            className="tap mt-1 w-full rounded-lg border border-line bg-surface px-3 text-base text-ink outline-none focus:border-accent focus:ring-1 focus:ring-accent/30"
           />
         </label>
         <span className="pb-3 text-faint">to</span>
@@ -528,7 +528,7 @@ function LevelBand({
             onChange={(e) => setMax(e.target.value.replace(/[^\d.]/g, ""))}
             inputMode="decimal"
             placeholder="optional"
-            className="tap mt-1 w-full rounded-lg bg-surface-2 px-3 text-base text-ink"
+            className="tap mt-1 w-full rounded-lg border border-line bg-surface px-3 text-base text-ink outline-none focus:border-accent focus:ring-1 focus:ring-accent/30"
           />
         </label>
       </div>
@@ -861,71 +861,82 @@ function AlertsTab({
         label="Loading alerts…"
         empty={<p className="py-10 text-center text-faint">Nothing is low or empty.</p>}
       >
-        {(loaded) => loaded.map((alert) => (
-        <div
-          key={alert.id}
-          className={`rounded-xl border-l-4 bg-surface px-4 py-3 ${
-            alert.level === "EMPTY" ? "border-danger" : "border-warning"
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <span className="font-semibold">{alert.item_code}</span>
-            <AlertChip level={alert.level} />
-          </div>
-          <div className="text-sm text-muted">{alert.description}</div>
-          <div className="pt-1 text-sm tabular-nums text-ink-2">
-            {formatQty(alert.on_hand)} on hand · band {formatQty(alert.reorder_level)}
-            {alert.max_level ? `–${formatQty(alert.max_level)}` : "–—"}
-            {alert.max_level
-              ? ` · short ${formatQty(
-                  String(Math.max(0, Number(alert.max_level) - Number(alert.on_hand))),
-                )}`
-              : ""}
-          </div>
-
-          {editing === alert.item_id ? (
-            <LevelBand
-              alert={alert}
-              onCancel={() => setEditing(null)}
-              onSave={async (levels) => {
-                try {
-                  await client.setLevels(alert.item_id, levels);
-                  setEditing(null);
-                  load();
-                } catch (err) {
-                  onError(describe(err));
-                }
-              }}
-            />
-          ) : (
-            <button
-              type="button"
-              onClick={() => setEditing(alert.item_id)}
-              className="tap mt-2 mr-2 rounded-lg bg-surface-2 px-4 text-sm text-ink-2"
-            >
-              Set levels
-            </button>
-          )}
-          {alert.acknowledged_at ? (
-            <div className="pt-1 text-xs text-faint">Acknowledged</div>
-          ) : (
-            <button
-              type="button"
-              onClick={async () => {
-                try {
-                  await client.ackAlert(alert.id);
-                  load();
-                } catch (err) {
-                  onError(describe(err));
-                }
-              }}
-              className="tap mt-2 rounded-lg bg-surface-3 px-4 text-sm"
-            >
-              Acknowledge
-            </button>
-          )}
-        </div>
-        ))}
+        {(loaded) => (
+          <RowList>
+            {loaded.map((alert) => {
+              const short = alert.max_level
+                ? Math.max(0, Number(alert.max_level) - Number(alert.on_hand))
+                : null;
+              return (
+                <div
+                  key={alert.id}
+                  className={`border-l-2 ${
+                    alert.level === "EMPTY" ? "border-danger" : "border-warning"
+                  }`}
+                >
+                  <Row
+                    title={alert.item_code}
+                    badge={<AlertChip level={alert.level} />}
+                    subtitle={alert.description}
+                    meta={
+                      `band ${formatQty(alert.reorder_level)}${
+                        alert.max_level ? `–${formatQty(alert.max_level)}` : "–—"
+                      }` +
+                      (short !== null ? ` · short ${formatQty(String(short))}` : "") +
+                      (alert.acknowledged_at ? " · acknowledged" : "")
+                    }
+                    value={formatQty(alert.on_hand)}
+                    valueNote="on hand"
+                    tone={alert.level === "EMPTY" ? "empty" : "low"}
+                    actions={
+                      editing === alert.item_id ? (
+                        <LevelBand
+                          alert={alert}
+                          onCancel={() => setEditing(null)}
+                          onSave={async (levels) => {
+                            try {
+                              await client.setLevels(alert.item_id, levels);
+                              setEditing(null);
+                              load();
+                            } catch (err) {
+                              onError(describe(err));
+                            }
+                          }}
+                        />
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setEditing(alert.item_id)}
+                            className="tap rounded-lg bg-surface-2 px-4 text-sm text-ink-2"
+                          >
+                            Set levels
+                          </button>
+                          {!alert.acknowledged_at && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  await client.ackAlert(alert.id);
+                                  load();
+                                } catch (err) {
+                                  onError(describe(err));
+                                }
+                              }}
+                              className="tap rounded-lg bg-surface-3 px-4 text-sm"
+                            >
+                              Acknowledge
+                            </button>
+                          )}
+                        </>
+                      )
+                    }
+                  />
+                </div>
+              );
+            })}
+          </RowList>
+        )}
       </Loaded>
       {rows && rows.length > 0 && (
         <p className="pt-2 text-xs text-faint">
