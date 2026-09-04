@@ -726,8 +726,10 @@ POST   /api/v1/txn/issue                   { session_id, item_id, qty, machine_i
 POST   /api/v1/txn/receipt                 { session_id, item_id, qty, unit_cost?, reason_id?, note? }
 POST   /api/v1/txn/{id}/reverse            admin only; inserts the reversing row
 
-GET    /api/v1/stock                       filters: low, empty, category, bin
+GET    /api/v1/stock                       filters: low, empty, category, bin; paged and
+                                           sortable (limit, offset, sort, dir)
 GET    /api/v1/ledger                      filters: item, operator, machine, date range; paginated
+                                           and sortable (sort, dir)
 GET    /api/v1/alerts                      + POST /api/v1/alerts/{id}/ack
 GET    /api/v1/alerts/summary              counts by level — the tablet idle banner
 GET    /api/v1/machines, /reason-codes     pickers for the optional step (§12.6)
@@ -750,6 +752,28 @@ store-cli operator add | set-pin | list
 #                                npm run operator -- add | set-pin | list
 # reconcile, backup, export and device-probe stay Rust-only.
 ```
+
+**Every list route answers `X-Total-Count`** — how many rows matched before
+`limit` took its slice — and the body stays the bare array it always was
+(`cloud/src/lib/paging.ts`). A header rather than an envelope because both
+implementations serve these routes: `crates/` answers an array with no such
+header, and a client that needed a wrapper would break against it. Every reader
+therefore treats the count as optional, which is what `ListCap` does — with a
+total it says "60 of 4,231", without one it falls back to "the 60 most recent".
+
+`sort` and `dir` are whitelisted in that same file, shared by the route that
+resolves them and the screen that renders one header per entry, so the two
+cannot drift; an unknown key falls back to the default rather than 400, because
+a bookmarked URL from an older build should still answer in a defined order.
+Every ordering carries a tiebreak (`item_code`, `l.id`), without which two pages
+of one query can overlap or skip a row.
+
+**Why the console had no sortable columns until now**, recorded because the
+reasoning outlived two attempts to add them: the ledger is served `limit=60` and
+the catalog `limit=200`, so sorting what arrived would reorder a page while
+implying it had ranked the whole table — wrong, and invisibly so, on the screen
+somebody opens to answer "where did forty inserts go". The ordering had to move
+to the server before the control could exist.
 
 Auth: tablets hold a device token; admin uses operator login. Every write carries an
 `operator_id` — there are no anonymous ledger rows.
@@ -1180,6 +1204,7 @@ written alongside it are what stop that from being the whole story:
 | `tests/auth-throttle.mjs` | §11's 429: the brake in front of the PIN check | yes |
 | `tests/admin-crud.mjs` | M7's first step: the catalog's write paths, and the ack that is not a resolve | yes |
 | `tests/serials.mjs` | §6's reprint rule, the label batch, and both printer modes | yes |
+| `tests/list-paging.mjs` | paging, `X-Total-Count`, and server-side ordering | yes |
 | `tests/route-smoke.mjs` | every GET route answers, and none is unasked | yes |
 | `tests/endpoint-callers.mjs` | §11's dead-wiring rule: no route without a caller | no — it reads the repo |
 

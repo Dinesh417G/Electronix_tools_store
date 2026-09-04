@@ -7,6 +7,7 @@ import { NextResponse } from "next/server";
 import { authenticate } from "@/lib/auth";
 import { handler } from "@/lib/errors";
 import { browseItems } from "@/lib/items";
+import { TOTAL_HEADER } from "@/lib/paging";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,7 +19,12 @@ export const GET = handler(async (request: Request) => {
   const offset = Number.parseInt(params.get("offset") ?? "0", 10);
   const limit = Number.parseInt(params.get("limit") ?? "25", 10);
 
-  return NextResponse.json(
-    await browseItems(Number.isNaN(offset) ? 0 : offset, Number.isNaN(limit) ? 25 : limit),
+  const page = await browseItems(
+    Number.isNaN(offset) ? 0 : offset,
+    Number.isNaN(limit) ? 25 : limit,
   );
+
+  // The count is what lets the terminal say "40 of 412" while it pages, rather
+  // than "40" and a button whose end nobody can see coming.
+  return NextResponse.json(page.rows, { headers: { [TOTAL_HEADER]: String(page.total) } });
 });

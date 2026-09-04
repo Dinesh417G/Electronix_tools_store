@@ -7,6 +7,7 @@
 // status rather than flattening everything into a string.
 
 import { fetchOrThrow } from "./offline";
+import { TOTAL_HEADER } from "./paging";
 
 export const TOKEN_KEY = "electronix.store.token";
 export const TERMINAL_KEY = "electronix.store.terminal_id";
@@ -102,6 +103,56 @@ async function request<T>(
   }
 
   return body as T;
+}
+
+/**
+ * A page of rows, and how many matched before the limit.
+ *
+ * `total` is nullable on purpose. The count arrives in a header, and a server
+ * that does not send one is a real case rather than a defensive nicety: §11
+ * serves these routes from `crates/` too, and that implementation answers a
+ * bare array. A screen that cannot render without a total would break against
+ * it.
+ */
+export interface Page<T> {
+  rows: T[];
+  total: number | null;
+}
+
+/**
+ * A list request that also reads how many rows matched.
+ *
+ * The body is the same array `request` would return; the count comes back in
+ * `X-Total-Count` (`src/lib/paging.ts`). `total` is `null` when the header is
+ * absent — which is not hypothetical, since §11 serves these same routes from
+ * `crates/`, which does not send it. Every reader has to render without one,
+ * and `ListCap` does.
+ */
+async function requestPage<T>(path: string): Promise<Page<T>> {
+  const headers = new Headers({ accept: "application/json" });
+  const token = getToken();
+  if (!token) throw new ApiError(401, "unauthorized", "This device is not enrolled.");
+  headers.set("authorization", `Bearer ${token}`);
+
+  const response = await fetchOrThrow(path, { headers });
+  const text = await response.text();
+  const body = text ? safeJson(text) : null;
+
+  if (!response.ok) {
+    const parsed = body as Record<string, unknown> | null;
+    throw new ApiError(
+      response.status,
+      (parsed?.code as string) ?? "error",
+      (parsed?.message as string) ?? `Request failed (${response.status}).`,
+    );
+  }
+
+  const raw = response.headers.get(TOTAL_HEADER);
+  const total = raw === null ? null : Number.parseInt(raw, 10);
+  return {
+    rows: (body ?? []) as T[],
+    total: total === null || Number.isNaN(total) ? null : total,
+  };
 }
 
 function safeJson(text: string): Record<string, unknown> | null {
@@ -378,9 +429,9 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  stock: (params = "") => request<Item[]>(`/api/v1/stock?${params}`),
+  stock: (params = "") => requestPage<Item>(`/api/v1/stock?${params}`),
 
-  ledger: (params = "limit=50") => request<LedgerRow[]>(`/api/v1/ledger?${params}`),
+  ledger: (params = "limit=50") => requestPage<LedgerRow>(`/api/v1/ledger?${params}`),
 
   alerts: () => request<AlertRow[]>("/api/v1/alerts"),
 
@@ -413,10 +464,10 @@ export const api = {
    * offering the filter.
    */
   insights: (view: InsightView, limit = 40) =>
-    request<InsightItem[]>(`/api/v1/items/insights?view=${view}&limit=${limit}`),
+    requestPage<InsightItem>(`/api/v1/items/insights?view=${view}&limit=${limit}`),
 
   browse: (offset = 0, limit = 25) =>
-    request<Item[]>(`/api/v1/items/browse?offset=${offset}&limit=${limit}`),
+    requestPage<Item>(`/api/v1/items/browse?offset=${offset}&limit=${limit}`),
 
   /** §9.4: fingers the door accepted that we cannot put a name to. */
   unknownPunches: (since?: string) =>

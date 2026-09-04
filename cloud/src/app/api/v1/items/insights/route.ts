@@ -14,6 +14,7 @@ import { NextResponse } from "next/server";
 import { authenticate } from "@/lib/auth";
 import { ApiError, handler } from "@/lib/errors";
 import { isInsightView, itemInsights, VIEWS } from "@/lib/insights";
+import { TOTAL_HEADER } from "@/lib/paging";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,7 +31,11 @@ export const GET = handler(async (request: Request) => {
   }
 
   const limit = Number.parseInt(p.get("limit") ?? "50", 10);
-  return NextResponse.json(
-    await itemInsights(view, Number.isNaN(limit) ? 50 : limit),
-  );
+  const page = await itemInsights(view, Number.isNaN(limit) ? 50 : limit);
+
+  // No `sort` here, deliberately. Each view *is* an ordering — "what is running
+  // out", "what has not moved in a quarter" — so letting a caller reorder one
+  // would answer a different question under the same name. The count still
+  // matters: it says how many items the ranking has to rank.
+  return NextResponse.json(page.rows, { headers: { [TOTAL_HEADER]: String(page.total) } });
 });

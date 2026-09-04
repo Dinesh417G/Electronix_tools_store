@@ -935,7 +935,7 @@ function ShortagesScreen({
       // stock screen and wrong for this one: the chip that opened it counted
       // seven and this would list nine. A count that does not survive being
       // tapped is worse than no count.
-      return rows.filter((item) => item.alert_state === level);
+      return rows.rows.filter((item) => item.alert_state === level);
     },
     [level],
   );
@@ -1259,6 +1259,8 @@ function ItemScreen({
   // sight but not by name. Search needs you to already know what it is called.
   const [catalog, setCatalog] = useState<Item[]>([]);
   const [catalogDone, setCatalogDone] = useState(false);
+  /** How many items there are to page through, from the server's count. */
+  const [catalogTotal, setCatalogTotal] = useState<number | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
 
   // Browsing starts on "Busiest" rather than alphabetically. An operator who
@@ -1333,8 +1335,9 @@ function ItemScreen({
       // correctly: `api.browse` names the path, so the wiring existed. No
       // screen reached it, which is the half that check cannot see.
       const page = await api.browse(offset, PAGE);
-      setCatalog((current) => [...current, ...page]);
-      if (page.length < PAGE) setCatalogDone(true);
+      setCatalog((current) => [...current, ...page.rows]);
+      setCatalogTotal(page.total);
+      if (page.rows.length < PAGE) setCatalogDone(true);
     } catch {
       // Leave what has already loaded on screen; the button stays available.
       setCatalogDone(true);
@@ -1361,8 +1364,8 @@ function ItemScreen({
     setInsightError(null);
     api
       .insights(browseView, 60)
-      .then((rows) => {
-        if (!cancelled) setInsights(rows);
+      .then((page) => {
+        if (!cancelled) setInsights(page.rows);
       })
       .catch((err) => {
         // Emptiness and failure are different things, on this screen too: an
@@ -1466,7 +1469,11 @@ function ItemScreen({
                 {loadingMore && <Spinner label="Loading the catalog…" />}
                 {!catalogDone && !loadingMore && catalog.length > 0 && (
                   <BigButton onClick={() => void loadMore()} variant="ghost" className="w-full">
-                    Show more
+                    {/* With a count, the button says how far there is to go
+                        rather than leaving somebody to tap until it stops. */}
+                    {typeof catalogTotal === "number"
+                      ? `Show more — ${catalog.length} of ${catalogTotal}`
+                      : "Show more"}
                   </BigButton>
                 )}
               </>

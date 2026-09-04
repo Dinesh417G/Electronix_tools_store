@@ -296,6 +296,74 @@ try {
   await browser.send("Emulation.clearDeviceMetricsOverride", {});
   await sleep(500);
 
+
+  t.step("4c. a column header sorts the list, rather than decorating it");
+
+  /* What this proves and what it does not. `list-paging.mjs` proves the
+     *server* orders the whole table — that is where the ordering lives, and it
+     has to be checked there, because this crib holds 90 items against a
+     `limit=200` fetch, so every row is on screen and a client-side sort would
+     look identical. What only a browser can show is the half in between: that
+     the header renders as a control at this width, that tapping it moves the
+     state, and that the state reaches the request and comes back rendered.
+     That wiring is exactly where this project's defects live — built at both
+     ends, connected at neither. */
+  await browser.send("Emulation.setDeviceMetricsOverride", {
+    width: 1280, height: 900, deviceScaleFactor: 1, mobile: false,
+  });
+  await sleep(800);
+
+  const clickSort = (label) =>
+    browser.evaluate(`(() => {
+      const b = [...document.querySelectorAll("button")]
+        .find((x) => x.getAttribute("aria-label") === "Sort by ${label}");
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+
+  // The first row's title, found the same way step 4b finds a row: by shape,
+  // not by a class that a restyle would take away.
+  const firstCode = `(() => {
+    const list = document.querySelector("div.divide-y");
+    if (!list) return null;
+    for (const b of list.querySelectorAll("button")) {
+      const direct = [...b.querySelectorAll(":scope > div")];
+      const holder =
+        direct.length >= 2
+          ? b
+          : direct.length === 1 && direct[0].querySelectorAll(":scope > div").length >= 2
+            ? direct[0]
+            : null;
+      if (!holder) continue;
+      const first = holder.querySelector(":scope > div");
+      return (first?.textContent || "").trim().split(/\s+/)[0] || null;
+    }
+    return null;
+  })()`;
+
+  const [{ lowest, highest }] = await sql`
+    select min(item_code) as lowest, max(item_code) as highest from items where active`;
+
+  if (await clickSort("Item")) {
+    t.ok("the Item column is a control, not a label");
+    await sleep(1500);
+    const asc = await browser.evaluate(firstCode);
+    if (asc === lowest) t.ok(`tapping it sorts by code: ${asc} is first`);
+    else t.bad(`after tapping Item the first row is ${asc}, expected ${lowest}`);
+
+    await clickSort("Item");
+    await sleep(1500);
+    const desc = await browser.evaluate(firstCode);
+    if (desc === highest) t.ok(`tapping again reverses it: ${desc} is first`);
+    else t.bad(`after a second tap the first row is ${desc}, expected ${highest}`);
+  } else {
+    t.bad("no sortable Item header on the catalog — the column is still a label");
+  }
+
+  await browser.send("Emulation.clearDeviceMetricsOverride", {});
+  await sleep(500);
+
   t.step("5. a door that could not be asked does not report a door that never spoke");
   await browser.clickText("Setup");
   await sleep(1500);
