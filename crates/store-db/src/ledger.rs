@@ -89,10 +89,53 @@ pub async fn record(pool: &PgPool, new: &NewMovement) -> Result<MovementReceipt>
     }
 
     let mut tx = pool.begin().await?;
-    let receipt = append(&mut tx, new).await?;
-    tx.commit().await?;
+    let appended = append(&mut tx, new).await;
 
-    Ok(receipt)
+    match appended {
+        Ok(receipt) => {
+            tx.commit().await?;
+            Ok(receipt)
+        }
+        Err(err) => {
+            drop(tx);
+            answer_replay_from_ledger(pool, new, err).await
+        }
+    }
+}
+
+/// A replay that raced the attempt it was replaying, answered from the ledger.
+///
+/// The check at the top of [`record`] loses this race by construction: both
+/// attempts read nothing, both insert, and the second one meets the unique
+/// index on `client_txn_uuid`. The stock is right either way — one row, one
+/// deduction — but the *caller* was being told `Conflict`, and a conflict is
+/// what the terminal shows an operator as a movement that failed. It did not
+/// fail; it committed on the attempt this one raced. An operator who believes
+/// that re-enters the issue by hand, which is the double deduction the dedup
+/// exists to prevent, arriving through the front door.
+///
+/// Not a narrow case: the terminal gives up on its own deadline while the
+/// request may still be running, and then re-sends.
+///
+/// The re-read is the discriminator, and it is why this needs no constraint
+/// name. A row carrying *our* `client_txn_uuid` exists only if this movement is
+/// already in the ledger, whichever index actually fired; if none exists, the
+/// conflict was about something else and the error goes back untouched.
+async fn answer_replay_from_ledger(
+    pool: &PgPool,
+    new: &NewMovement,
+    err: DbError,
+) -> Result<MovementReceipt> {
+    if !matches!(err, DbError::Conflict(_)) {
+        return Err(err);
+    }
+    let Some(client_uuid) = new.client_txn_uuid else {
+        return Err(err);
+    };
+    match find_by_client_uuid(pool, client_uuid).await? {
+        Some(existing) => Ok(existing),
+        None => Err(err),
+    }
 }
 
 /// Append several movements as one atomic step.
@@ -108,6 +151,34 @@ pub async fn record(pool: &PgPool, new: &NewMovement) -> Result<MovementReceipt>
 /// The §7 negative-stock guard therefore applies to the *set*: if the last
 /// split would overdraw the bin, every row rolls back, not just that one.
 pub async fn record_many(
+    pool: &PgPool,
+    movements: &[NewMovement],
+) -> Result<Vec<MovementReceipt>> {
+    match append_batch(pool, movements).await {
+        Ok(receipts) => Ok(receipts),
+        // The same race as [`record`], one transaction wider: the whole batch
+        // rolls back, so its rows are either all present from the attempt that
+        // won or genuinely absent. Answer from the ledger only when every one
+        // of them is there — a partial match is a different failure and must
+        // not be dressed up as a success.
+        Err(err) if matches!(err, DbError::Conflict(_)) => {
+            let mut receipts = Vec::with_capacity(movements.len());
+            for new in movements {
+                let Some(client_uuid) = new.client_txn_uuid else {
+                    return Err(err);
+                };
+                match find_by_client_uuid(pool, client_uuid).await? {
+                    Some(existing) => receipts.push(existing),
+                    None => return Err(err),
+                }
+            }
+            Ok(receipts)
+        }
+        Err(err) => Err(err),
+    }
+}
+
+async fn append_batch(
     pool: &PgPool,
     movements: &[NewMovement],
 ) -> Result<Vec<MovementReceipt>> {

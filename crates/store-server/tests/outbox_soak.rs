@@ -245,3 +245,81 @@ async fn a_long_outage_worth_of_queued_work_reconciles_exactly(pool: sqlx::PgPoo
     let stock = h.get_json(TABLET_A, &format!("/api/v1/items/{item}")).await;
     assert_eq!(dec_of(&stock["on_hand"]), dec!(1000) - expected_out);
 }
+
+/// The replay that arrives *while* the first attempt is still running.
+///
+/// Every other test here sends the retry after the first request has answered,
+/// which is the case the check at the top of `record` covers. That is not the
+/// ordinary shape of a retry: the tablet gives up on its own deadline while the
+/// request may still be running, and re-sends. Both attempts then read nothing,
+/// both insert, and the second meets the unique index on `client_txn_uuid`.
+///
+/// The stock was always right — one row, one deduction, because the index is
+/// what guarantees that rather than the check. What was wrong is what the
+/// *caller* was told: a conflict, which the terminal shows as a movement that
+/// failed. This file's own preamble names the harm — "the operator is told
+/// their issue was not recorded when it was, and re-enters it by hand".
+///
+/// Found in `cloud/` first, measured three times out of three against the
+/// running app, and fixed there in the same shape. This is the parity half.
+#[sqlx::test(migrator = "store_db::MIGRATOR")]
+async fn a_replay_that_races_the_first_attempt_is_still_answered_from_the_ledger(
+    pool: sqlx::PgPool,
+) {
+    let h = Harness::start(pool).await;
+    let operator = h.operator("E1", "1042", "R. Kumar", "OPERATOR").await;
+    let item = h.item("ITEM-1", dec!(0)).await;
+    h.receipt_stock(item, dec!(100), operator).await;
+
+    let session_id = h.punch_and_claim("1042", TABLET_A).await;
+    let txn_id = Uuid::new_v4();
+    let body = json!({
+        "session_id": session_id,
+        "item_id": item,
+        "qty": 4,
+        "client_txn_uuid": txn_id,
+    });
+
+    // Both in flight at once, which is what the deadline-then-retry actually
+    // produces.
+    let (first, second) = tokio::join!(
+        h.post_raw(TABLET_A, "/api/v1/txn/issue", body.clone()),
+        h.post_raw(TABLET_A, "/api/v1/txn/issue", body.clone()),
+    );
+
+    // The half that was never broken. Asserted anyway, because a "fix" that
+    // answered 200 twice by writing twice would be very much worse than the bug.
+    assert_eq!(
+        h.on_hand(item).await,
+        dec!(96),
+        "the bin moved more than once for one transaction id"
+    );
+    let rows: i64 = sqlx::query_scalar!(
+        "select count(*) from stock_ledger where client_txn_uuid = $1",
+        txn_id
+    )
+    .fetch_one(&h.pool)
+    .await
+    .unwrap()
+    .unwrap_or_default();
+    assert_eq!(rows, 1, "one client_txn_uuid must mean one ledger row");
+
+    // The half that was.
+    assert_eq!(
+        (first.0, second.0),
+        (200, 200),
+        "a committed movement was reported as refused: {} / {}",
+        first.1,
+        second.1
+    );
+    assert_eq!(
+        first.1["ledger_id"], second.1["ledger_id"],
+        "both callers must be told about the same row: {} / {}",
+        first.1, second.1
+    );
+
+    assert!(store_db::ledger::reconcile(&h.pool)
+        .await
+        .unwrap()
+        .is_empty());
+}
