@@ -1251,6 +1251,27 @@ way rather than designed in:
   before a reader is installed — had never worked), and the quantity pad
   appended to its default of 1, so tapping 2 booked 12.
 
+- **A session is bound to one tablet by the *writer*, not only by the machine.**
+  §10 says "A claimed session is bound to one `tablet_id`. A second tablet
+  cannot claim it", and the pure machine refuses it — but only when it *reads*
+  ACTIVE. Two tablets claiming the same card together both read UNCLAIMED, both
+  pass, and the cloud writer's guard was `state in ('UNCLAIMED', 'ACTIVE')`,
+  which then matched the row the first claim had just made ACTIVE. **Both
+  tablets were answered `200`, and the loser was handed the winner's tablet id
+  in its own response** — measured six times out of six against the running
+  app, so not a narrow race. Two claims at once is §10's tailgating case, the
+  exact scenario the claim screen exists for.
+
+  `crates/store-db/src/sessions.rs` had it right — `(state = 'UNCLAIMED' or
+  (state = 'ACTIVE' and tablet_id = $2))`, with the zero-rows branch re-reading
+  to name the holder — so the fix was parity, like the `reverse()` machine_id
+  defect before it. `e2e.mjs` pins the *sequential* second-claim 409 and passed
+  throughout, correctly: that case was never broken. Gated now by
+  `tests/session-expiry.mjs` step 4b, which claims from two tablets
+  concurrently and also checks that the row is held by whichever tablet was
+  told it won — a 200/409 pair over a row held by the loser is the same bug
+  with better manners.
+
 - **§10's derive-on-read is enforced by the routes, not only defined.** The
   five files above were written after a coverage sweep found that the split
   issue, `POST /txn/receipt`, the alert ladder, §9's unknown-user and
