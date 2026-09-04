@@ -125,6 +125,22 @@ async function append(db: Db, m: NewMovement): Promise<MovementReceipt> {
   };
 }
 
+/**
+ * Is this the unique index on `client_txn_uuid` refusing a replay?
+ *
+ * Narrow on purpose. `stock_ledger` has other unique constraints, and turning
+ * any 23505 into "you already sent this" would answer a genuinely different
+ * conflict with somebody else's receipt.
+ */
+function isDuplicateReplay(e: unknown): boolean {
+  const pg = e as { code?: string; constraint_name?: string; detail?: string };
+  return (
+    pg?.code === "23505" &&
+    (pg.constraint_name?.includes("client_txn_uuid") === true ||
+      pg.detail?.includes("client_txn_uuid") === true)
+  );
+}
+
 /** Append one movement and return the resulting balance. */
 export async function record(m: NewMovement): Promise<MovementReceipt> {
   // An offline outbox replay must be a no-op, not a second issue. Checking
@@ -135,7 +151,26 @@ export async function record(m: NewMovement): Promise<MovementReceipt> {
     if (existing) return existing;
   }
 
-  return sql.begin((tx) => append(tx, m)) as Promise<MovementReceipt>;
+  try {
+    return await (sql.begin((tx) => append(tx, m)) as Promise<MovementReceipt>);
+  } catch (e) {
+    // The index held and the stock is right — but the *caller* was being told
+    // 409 DUPLICATE, and `outbox.ts` drops a 409 from the queue as rejected and
+    // shows it to the operator as a movement that failed. It did not fail: it
+    // committed, on the attempt this one raced. An operator who believes that
+    // banner re-enters the issue by hand, and *that* is the double deduction
+    // §12's dedup exists to prevent.
+    //
+    // Reachable on the ordinary path, not an exotic one: `fetchOrThrow` aborts
+    // on its own deadline while the request may still be running server-side,
+    // and the retry then races the attempt that is about to commit. Measured
+    // three times out of three against the running app.
+    if (m.clientTxnUuid && isDuplicateReplay(e)) {
+      const existing = await findByClientUuid(sql, m.clientTxnUuid);
+      if (existing) return existing;
+    }
+    throw e;
+  }
 }
 
 /**
@@ -149,6 +184,24 @@ export async function record(m: NewMovement): Promise<MovementReceipt> {
  * first submit.
  */
 export async function recordMany(movements: NewMovement[]): Promise<MovementReceipt[]> {
+  try {
+    return await appendBatch(movements);
+  } catch (e) {
+    // Same race as `record`, one transaction wider: the whole batch rolls back,
+    // so the rows are either all there from the attempt that won or genuinely
+    // absent. Answer from the ledger only if every one of them is present —
+    // a partial match is a different failure and must not be dressed up as a
+    // success.
+    if (!isDuplicateReplay(e)) throw e;
+    const uuids = movements.map((m) => m.clientTxnUuid);
+    if (uuids.some((u) => !u)) throw e;
+    const found = await Promise.all(uuids.map((u) => findByClientUuid(sql, u as string)));
+    if (found.every((r): r is MovementReceipt => r !== null)) return found;
+    throw e;
+  }
+}
+
+async function appendBatch(movements: NewMovement[]): Promise<MovementReceipt[]> {
   return sql.begin(async (tx) => {
     const receipts: MovementReceipt[] = [];
     for (const m of movements) {

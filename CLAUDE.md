@@ -1027,6 +1027,23 @@ Offline: writes queue to a local **IndexedDB** outbox and flush when the LAN ret
 Queued rows are visibly marked pending. Server deduplicates on a client-generated
 `txn_uuid`, generated once before the first attempt and never regenerated.
 
+**A replay usually races the attempt it is replaying, and that is the ordinary
+case rather than the exotic one.** `fetchOrThrow` gives up on its own deadline
+while the request may still be running server-side, so the retry arrives before
+the first attempt commits. The unique index has always made the *stock* right —
+exactly one row is written — but the second caller was answered `409 DUPLICATE`,
+and `outbox.ts` drops a 409 from the queue as **rejected** and shows it to the
+operator as a movement that failed. It did not fail; it committed. An operator
+who believes that banner re-enters the issue by hand, which is the double
+deduction the dedup exists to prevent, arriving through the front door. A raced
+replay now resolves to the same receipt as a sequential one.
+
+A split issue dedups on **one key per row**, not on the request's — the terminal
+mints them with the body and re-sends it verbatim, so a batch acknowledged
+halfway replays row by row. A split body carrying only a request-level key had
+no replay protection at all and was accepted anyway; it is a `400` now, because
+a rejection the operator can see beats a duplicate movement nobody can.
+
 **Live view.** The same app serves a read-only dashboard — activity, stock, alerts —
 updating off the event stream: SSE in `crates/`, the 2 s poll in the cloud (§4).
 It is how the store is demonstrated and audited before the wall tablet exists,
@@ -1204,6 +1221,7 @@ written alongside it are what stop that from being the whole story:
 | `tests/auth-throttle.mjs` | §11's 429: the brake in front of the PIN check | yes |
 | `tests/admin-crud.mjs` | M7's first step: the catalog's write paths, and the ack that is not a resolve | yes |
 | `tests/serials.mjs` | §6's reprint rule, the label batch, and both printer modes | yes |
+| `tests/outbox-replay.mjs` | §12's dedup when the replay races the attempt it replays | yes |
 | `tests/list-paging.mjs` | paging, `X-Total-Count`, and server-side ordering | yes |
 | `tests/route-smoke.mjs` | every GET route answers, and none is unasked | yes |
 | `tests/endpoint-callers.mjs` | §11's dead-wiring rule: no route without a caller | no — it reads the repo |
