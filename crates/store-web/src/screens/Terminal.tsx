@@ -19,6 +19,7 @@ import {
   type Item,
   type Machine,
   type ReasonCode,
+  type TerminalStatus,
   type TxnResponse,
   type UnclaimedSession,
 } from "../lib/api";
@@ -147,6 +148,36 @@ export function Terminal({
       setStep({ name: "idle" });
     }
   }, [cards.length, step.name]);
+
+  /* What this crib is: does it have a door reader (§3), and what has moved
+   * today.
+   *
+   * Fetched when the screen goes idle rather than on a timer. Idle is when
+   * somebody is reading it, and §12's eight-second budget belongs to the steps
+   * after it — a poll running behind a quantity pad spends the operator's
+   * network and tells nobody anything. A failure leaves `status` null, which
+   * renders the screen without any claim about a reader, because a wrong claim
+   * about the reader sends an operator to a wall.
+   */
+  const [status, setStatus] = useState<TerminalStatus | null>(null);
+  useEffect(() => {
+    if (step.name !== "idle") return;
+    let live = true;
+    void api
+      .terminalStatus(localMidnight())
+      .then((next) => {
+        if (live) setStatus(next);
+      })
+      .catch(() => {
+        // Silent by design, and the only silent catch here: the sentence this
+        // feeds is the one thing on the screen that must never be guessed.
+        // `status` stays null and the screen says less, rather than saying
+        // something untrue.
+      });
+    return () => {
+      live = false;
+    };
+  }, [step.name]);
 
   // §12.8: auto-return to idle after 15 s on the success screen.
   useEffect(() => {
@@ -345,6 +376,7 @@ export function Terminal({
           connection={connection}
           pending={pending}
           alerts={alertBanner}
+          status={status}
           onStart={() => (cards.length > 0 ? setStep({ name: "claim" }) : onRefreshCards())}
           onManual={() => setStep({ name: "manual" })}
           banner={banner}
@@ -534,10 +566,18 @@ function describe(err: unknown): string {
 
 // ── 1. Idle (§12.1) ─────────────────────────────────────────────────────
 
+/** The tablet's own midnight — see `api.terminalStatus`. */
+function localMidnight(): string {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+
 function IdleScreen({
   connection,
   pending,
   alerts,
+  status,
   onStart,
   onManual,
   banner,
@@ -545,6 +585,7 @@ function IdleScreen({
   connection: ConnectionState;
   pending: number;
   alerts: { low: number; empty: number };
+  status: TerminalStatus | null;
   onStart: () => void;
   onManual: () => void;
   banner: React.ReactNode;
@@ -554,6 +595,10 @@ function IdleScreen({
     const t = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
+
+  // Until the first answer comes back, say nothing about a reader rather than
+  // guessing. Claiming one exists and being wrong sends an operator to a wall.
+  const reader = status?.reader ?? null;
 
   return (
     <Screen className="justify-between">
@@ -577,8 +622,18 @@ function IdleScreen({
             month: "long",
           })}
         </div>
+        {/* What is actually true of *this* crib (§3). A store with no reader is
+            never told to put a finger on one; a store whose reader has gone
+            quiet is told that instead, because the two need opposite remedies.
+            A store we have not heard about yet is told nothing at all. */}
         <p className="mt-8 max-w-xs text-center text-slate-400">
-          Put your finger on the door reader, then tap your name here.
+          {reader === null
+            ? " "
+            : !reader.installed
+              ? "Tap below and enter your employee number."
+              : reader.online
+                ? "Put your finger on the door reader, then tap your name here."
+                : "The door reader has gone quiet — enter your number instead."}
         </p>
       </div>
 
@@ -601,13 +656,18 @@ function IdleScreen({
             reader is the normal way in, and a typed emp code is weaker
             evidence. It stays reachable at all times anyway, because the
             shift when the reader dies is exactly the shift nobody can afford
-            to stop booking stock. */}
+            to stop booking stock.
+
+            On a crib with no reader it is not a fallback at all — it is the
+            way in — so it does not name a reader that does not exist. */}
         <button
           type="button"
           onClick={onManual}
           className="w-full rounded-xl px-4 py-3 text-sm text-slate-400 active:bg-slate-800"
         >
-          Reader not working? Enter my number
+          {reader?.installed === false
+            ? "Enter my number"
+            : "Reader not working? Enter my number"}
         </button>
       </div>
     </Screen>

@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update devices set last_seen_at = now() - interval '90 minutes'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "cedf526c3a4e6f37bda67c69cb2f07896740a30531b812ce404b1e50f7751cef"
+}
