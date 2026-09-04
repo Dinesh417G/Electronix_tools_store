@@ -1152,10 +1152,19 @@ function QuantityScreen({
   // issue two taps rather than five.
   const [value, setValue] = useState("1");
 
+  // …but the default must not become a prefix. Tapping 2 on a pad showing 1
+  // meant 12, which is the kind of mistake that reaches the ledger looking
+  // deliberate: it is a plausible quantity, nothing refuses it, and the bin is
+  // ten short a week later. The first digit replaces the default; after that
+  // the pad appends normally, so 1→2→5 still types 25.
+  const [pristine, setPristine] = useState(true);
+
   const press = (key: string) => {
+    setPristine(false);
     setValue((current) => {
       if (key === "⌫") return current.length > 1 ? current.slice(0, -1) : "0";
-      if (key === ".") return current.includes(".") ? current : `${current}.`;
+      if (key === ".") return pristine ? "0." : current.includes(".") ? current : `${current}.`;
+      if (pristine) return key;
       if (current === "0") return key;
       // numeric(12,3): refuse a fourth decimal place here rather than letting
       // the server reject the whole transaction after the operator has typed it.
@@ -1165,8 +1174,10 @@ function QuantityScreen({
     });
   };
 
-  const bump = (by: number) =>
+  const bump = (by: number) => {
+    setPristine(false);
     setValue((current) => String((Number.parseFloat(current) || 0) + by));
+  };
 
   const numeric = Number.parseFloat(value) || 0;
   const short = direction === "issue" && numeric > Number.parseFloat(item.on_hand);
