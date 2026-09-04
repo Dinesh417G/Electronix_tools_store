@@ -25,7 +25,14 @@ use rust_decimal_macros::dec;
 
 /// The tablet always sends its own local midnight (§12.1).
 fn since_now() -> String {
-    urlencoding(&Utc::now().date_naive().and_hms_opt(0, 0, 0).unwrap().and_utc().to_rfc3339())
+    urlencoding(
+        &Utc::now()
+            .date_naive()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .to_rfc3339(),
+    )
 }
 
 fn urlencoding(raw: &str) -> String {
@@ -37,7 +44,10 @@ async fn a_crib_with_no_reader_is_never_told_it_has_one(pool: sqlx::PgPool) {
     let h = Harness::start(pool).await;
 
     let body = h
-        .get_json(TABLET_A, &format!("/api/v1/terminal/status?since={}", since_now()))
+        .get_json(
+            TABLET_A,
+            &format!("/api/v1/terminal/status?since={}", since_now()),
+        )
         .await;
 
     // Nothing has ever checked in. Not "offline" — never installed.
@@ -53,11 +63,16 @@ async fn a_reader_that_has_checked_in_is_installed_and_online(pool: sqlx::PgPool
     // The real handshake, not a fixture row: §9's `GET /iclock/cdata` is what
     // a terminal does on boot, and registering the device is a side effect of
     // it that the idle screen now depends on.
-    let hs = h.get_text(TABLET_A, "/iclock/cdata?SN=ZK-DOOR-1&options=all").await;
+    let hs = h
+        .get_text(TABLET_A, "/iclock/cdata?SN=ZK-DOOR-1&options=all")
+        .await;
     assert!(hs.starts_with("GET OPTION FROM:"), "handshake: {hs}");
 
     let body = h
-        .get_json(TABLET_A, &format!("/api/v1/terminal/status?since={}", since_now()))
+        .get_json(
+            TABLET_A,
+            &format!("/api/v1/terminal/status?since={}", since_now()),
+        )
         .await;
 
     assert_eq!(body["reader"]["installed"], true);
@@ -68,7 +83,8 @@ async fn a_reader_that_has_checked_in_is_installed_and_online(pool: sqlx::PgPool
 #[sqlx::test(migrator = "store_db::MIGRATOR")]
 async fn a_reader_gone_quiet_is_still_installed(pool: sqlx::PgPool) {
     let h = Harness::start(pool).await;
-    h.get_text(TABLET_A, "/iclock/cdata?SN=ZK-DOOR-1&options=all").await;
+    h.get_text(TABLET_A, "/iclock/cdata?SN=ZK-DOOR-1&options=all")
+        .await;
 
     // Ninety minutes of silence. An installed reader that has stopped talking
     // is a fault to go and fix; it is not a crib that never had one, and the
@@ -80,7 +96,10 @@ async fn a_reader_gone_quiet_is_still_installed(pool: sqlx::PgPool) {
         .expect("age the device");
 
     let body = h
-        .get_json(TABLET_A, &format!("/api/v1/terminal/status?since={}", since_now()))
+        .get_json(
+            TABLET_A,
+            &format!("/api/v1/terminal/status?since={}", since_now()),
+        )
         .await;
 
     assert_eq!(
@@ -104,7 +123,10 @@ async fn today_counts_trips_each_way_and_never_sums_across_units(pool: sqlx::PgP
     h.receipt_stock(coolant, dec!(20), operator).await;
 
     let body = h
-        .get_json(TABLET_A, &format!("/api/v1/terminal/status?since={}", since_now()))
+        .get_json(
+            TABLET_A,
+            &format!("/api/v1/terminal/status?since={}", since_now()),
+        )
         .await;
 
     assert_eq!(body["today"]["movements"], 2, "two trips to the crib");
@@ -135,7 +157,10 @@ async fn an_implausible_day_falls_back_rather_than_emptying_the_screen(pool: sql
     let body = h
         .get_json(TABLET_A, &format!("/api/v1/terminal/status?since={ahead}"))
         .await;
-    assert_eq!(body["today"]["movements"], 1, "a fast clock emptied the strip");
+    assert_eq!(
+        body["today"]["movements"], 1,
+        "a fast clock emptied the strip"
+    );
 
     // And one whose clock is behind by a week does not get a week-long scan:
     // the window is client-supplied, so it is clamped at both ends.
@@ -174,8 +199,9 @@ async fn the_tablet_may_ask_without_being_an_operator(pool: sqlx::PgPool) {
     // an ADMIN check the terminal can never pass.
     let h = Harness::start(pool).await;
 
-    let (status, _) = h
-        .get_raw(TABLET_A, "", "/api/v1/terminal/status")
-        .await;
-    assert_eq!(status, 401, "the endpoint answered an unauthenticated caller");
+    let (status, _) = h.get_raw(TABLET_A, "", "/api/v1/terminal/status").await;
+    assert_eq!(
+        status, 401,
+        "the endpoint answered an unauthenticated caller"
+    );
 }

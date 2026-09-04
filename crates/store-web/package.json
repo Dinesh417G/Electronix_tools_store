@@ -9,7 +9,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
-    "test:callers": "node tests/endpoint-callers.mjs"
+    "test:callers": "node tests/endpoint-callers.mjs",
+    "test:terminal": "node tests/terminal-flow.mjs"
   },
   "dependencies": {
     "react": "^19.2.0",
