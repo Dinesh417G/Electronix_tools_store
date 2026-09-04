@@ -349,6 +349,14 @@ jobs:
       #                 tripwire: a GET route the file does not ask for fails
       #                 the test by name, which is this project's dead-wiring
       #                 failure mode caught at the door.
+      #   test:replay   §12's dedup when the replay *races* the attempt it is
+      #                 replaying, which is its ordinary shape: fetchOrThrow
+      #                 aborts on its own deadline while the request may still
+      #                 be in flight, and the terminal re-sends. The stock was
+      #                 never wrong — the unique index held — but the second
+      #                 caller was told 409, and outbox.ts drops a 409 as
+      #                 rejected, so the operator saw a movement that had
+      #                 committed reported as failed and re-entered it by hand.
       #   test:paging   both list endpoints answering page two rather than page
       #                 one again. `/stock` read `limit` and ignored `offset`,
       #                 while the terminal's browse-all had been sending one from
@@ -406,6 +414,7 @@ jobs:
           npm run test:catalog
           npm run test:serials
           npm run test:throttle
+          npm run test:replay
           npm run test:paging
           npm run test:routes
           npm run test:session-ui

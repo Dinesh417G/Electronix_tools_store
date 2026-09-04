@@ -86,6 +86,19 @@ async function issueSplit(
     }
   }
 
+  // A split batch dedups on its rows' own keys — the terminal mints one per row
+  // and re-sends the body verbatim, so a half-acknowledged batch replays row by
+  // row. A body carrying only the request-level key therefore has no replay
+  // protection at all, and used to be accepted anyway: silently undeduped,
+  // which is how a retry double-books the bin. Refusing is the lesser harm,
+  // because `outbox.ts` shows a rejection to the operator and a duplicate
+  // movement shows nobody anything.
+  if (body.client_txn_uuid && splits.some((s) => !s.client_txn_uuid)) {
+    throw ApiError.badRequest(
+      "a split issue needs a client_txn_uuid on every split, not one for the request",
+    );
+  }
+
   // A batch whose acknowledgement was lost is answered from the ledger, for the
   // same reason a single transaction is: by now the session has closed on
   // submit, so authorising first would refuse rows that are already recorded.
