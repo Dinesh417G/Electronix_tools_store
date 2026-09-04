@@ -807,6 +807,7 @@ write from a tablet takes its `operator_id` from the session, never from the tok
 | `GET /admin/devices` | yes | yes |
 | `CRUD /admin/machines` | yes | yes |
 | `CRUD /admin/reason-codes` | yes | yes |
+| `GET /terminal/status` (§3) | yes | yes |
 | `GET /sessions/stream` | yes | **deliberately not** — §4's 2 s poll |
 | `/auth/webauthn/*` (§8) | — | yes |
 | serials, printer settings, `/labels/sheet`, `/items/browse`, `/version` | — | yes |
@@ -1233,6 +1234,38 @@ written alongside it are what stop that from being the whole story:
 | `tests/list-paging.mjs` | paging, `X-Total-Count`, and server-side ordering | yes |
 | `tests/route-smoke.mjs` | every GET route answers, and none is unasked | yes |
 | `tests/endpoint-callers.mjs` | §11's dead-wiring rule: no route without a caller | no — it reads the repo |
+
+**And the reference terminal has one too, since 2026-09-04.** It had none, and
+that is exactly what it cost: `crates/store-web`'s quantity pad used its own
+default as a prefix, so tapping **2** on a pad showing **1** booked **12** —
+found by driving the screens in a browser, and confirmed against the ledger.
+Every API-level test passed throughout, correctly: the API was never asked for
+12, the screen sent it. The same session found the reference terminal still
+telling a reader-less crib to use a door reader (§3 had changed in `cloud/`
+only), `Screen` still `min-h-full` so every screen collapsed to its own content,
+and the settings gear still `fixed` over a list, sitting on a visible row's
+quantity in Reports → By item.
+
+| Test | Gate | Needs |
+|---|---|---|
+| `crates/store-server/tests/terminal_status.rs` | §3's three reader branches, and the `since` clamp | Postgres |
+| `crates/store-web/tests/terminal-flow.mjs` | §12's flow through the screens, the pad, and the shell's geometry | Postgres, a seeded catalog, a running server, headless Chrome |
+| `crates/store-web/tests/endpoint-callers.mjs` | §11's dead-wiring rule | nothing — it reads the repo |
+
+`terminal-flow.mjs` runs last in the `test` job because it seeds a catalog, and
+`reconcile` and `backup` above it want a database nobody has written to. It
+emulates a 412×915 phone rather than using whatever window Chrome opened, for
+the reason the cloud's copy does: a desktop-shaped viewport crowds the bottom of
+every screen and reports faults no device would show.
+
+Its geometry assertions were checked against the broken screen, twice, and the
+first attempt was wrong in the way this file keeps warning about. "The page does
+not scroll" cannot see the collapse *once the shell owns the viewport* — a
+screen that fails to fill its region does so inside the content area, leaving
+the page exactly one viewport tall and the bar exactly where it belongs. What
+catches it is comparing the screen's height against the region it was given;
+restoring the shell to a min-height fails that eleven ways, and the version
+without it passed clean.
 
 `tests/terminal-flow.mjs` also pins §3's optional reader: it reads the `devices`
 table and asserts the idle screen's sentence matches it, and separately that a

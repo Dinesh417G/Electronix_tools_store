@@ -3,6 +3,7 @@
 pub mod admin;
 pub mod catalog;
 pub mod sessions;
+pub mod terminal;
 pub mod txn;
 
 use axum::routing::{delete, get, patch, post, put};
@@ -28,6 +29,8 @@ pub fn router(state: AppState) -> Router {
         .route("/sessions/{id}/claim", post(sessions::claim))
         .route("/sessions/{id}/touch", post(sessions::touch))
         .route("/sessions/{id}/close", post(sessions::close))
+        // what kind of crib this is (§3)
+        .route("/terminal/status", get(terminal::status))
         // catalog
         .route("/items/lookup", get(catalog::lookup))
         .route("/items/search", get(catalog::search))

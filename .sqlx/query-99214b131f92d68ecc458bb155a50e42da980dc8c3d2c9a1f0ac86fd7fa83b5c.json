@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        insert into stock_ledger (item_id, delta_qty, txn_type, operator_id, created_at)\n        values ($1, 5, 'OPENING', $2, now() - interval '3 days')\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "99214b131f92d68ecc458bb155a50e42da980dc8c3d2c9a1f0ac86fd7fa83b5c"
+}

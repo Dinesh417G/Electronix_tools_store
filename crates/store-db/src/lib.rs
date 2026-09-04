@@ -20,6 +20,7 @@ pub mod punches;
 pub mod reason_codes;
 pub mod reports;
 pub mod sessions;
+pub mod terminal;
 
 pub use error::{DbError, FoundExt, Result};
 

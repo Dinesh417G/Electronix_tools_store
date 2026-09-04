@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        select count(*)                                       as \"movements!\",\n               count(*) filter (where delta_qty < 0)          as \"out_count!\",\n               count(*) filter (where delta_qty > 0)          as \"in_count!\",\n               max(created_at)                                as last_at\n          from stock_ledger\n         where created_at >= $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "movements!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "out_count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "in_count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "last_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "d9afbde32d62da4abfd260ce98f15257bcb24e4d3a10fe1118bdc724336dd1ca"
+}

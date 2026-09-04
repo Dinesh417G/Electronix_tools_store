@@ -206,6 +206,40 @@ export interface AlertSummary {
   empty: number;
 }
 
+/**
+ * What kind of crib this is, and what it did today (§3).
+ *
+ * `installed` is "a reader has ever checked in", `online` is "one has checked
+ * in lately". They are separate because a reader that is down for an hour is a
+ * fault to fix and a crib that never had one is a configuration, and the
+ * remedies are opposite.
+ */
+export interface TerminalStatus {
+  reader: {
+    installed: boolean;
+    online: boolean;
+    last_seen_at: string | null;
+  };
+  today: {
+    movements: number;
+    /** Trips out, not quantity out — §6's units do not add up. */
+    out_count: number;
+    in_count: number;
+    last_at: string | null;
+  };
+  recent: TerminalMovement[];
+}
+
+export interface TerminalMovement {
+  id: number;
+  delta_qty: string;
+  txn_type: string;
+  item_code: string;
+  uom: string;
+  operator_name: string;
+  created_at: string;
+}
+
 export interface Machine {
   id: string;
   code: string;
@@ -330,6 +364,16 @@ export const api = {
   alerts: () => request<AlertRow[]>("/api/v1/alerts"),
 
   alertSummary: () => request<AlertSummary>("/api/v1/alerts/summary"),
+
+  /**
+   * `since` is the tablet's own local midnight: the server runs in UTC, and a
+   * day counted there rolls at 05:30 in an Indian plant — mid-shift, with every
+   * number dropping to zero while somebody watches.
+   */
+  terminalStatus: (since: string) =>
+    request<TerminalStatus>(
+      `/api/v1/terminal/status?since=${encodeURIComponent(since)}`,
+    ),
 
   machines: () => request<Machine[]>("/api/v1/machines"),
 

@@ -36,6 +36,7 @@ import type {
   adminApi,
 } from "../lib/admin";
 import { Banner, BigButton, Spinner } from "../components/ui";
+import { useRegisterBack } from "../components/chrome";
 
 type Client = ReturnType<typeof adminApi>;
 type Section = "people" | "machines" | "reasons" | "door";
@@ -51,6 +52,10 @@ const describe = (err: unknown) =>
 
 export function Setup({ client, onError, onNotice }: Props) {
   const [section, setSection] = useState<Section | null>(null);
+
+  // Declared here, drawn in the bottom bar (§12) — the same place every other
+  // screen's back lives, rather than a second one halfway up this page.
+  useRegisterBack(section === null ? undefined : () => setSection(null));
 
   if (section === null) {
     return (
@@ -79,13 +84,6 @@ export function Setup({ client, onError, onNotice }: Props) {
 
   return (
     <div className="space-y-3">
-      <button
-        type="button"
-        onClick={() => setSection(null)}
-        className="rounded-lg px-2 py-1 text-sm text-slate-400"
-      >
-        ← Setup
-      </button>
       {section === "people" && (
         <People client={client} onError={onError} onNotice={onNotice} />
       )}

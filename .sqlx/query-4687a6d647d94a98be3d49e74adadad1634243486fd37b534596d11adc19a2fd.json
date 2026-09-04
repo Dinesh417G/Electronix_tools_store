@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        select l.id            as \"id!\",\n               l.delta_qty     as \"delta_qty!\",\n               l.txn_type      as \"txn_type!\",\n               i.item_code     as \"item_code!\",\n               i.uom           as \"uom!\",\n               o.full_name     as \"operator_name!\",\n               l.created_at    as \"created_at!\"\n          from stock_ledger l\n          join items i     on i.id = l.item_id\n          join operators o on o.id = l.operator_id\n         where l.created_at >= $1\n         order by l.created_at desc, l.id desc\n         limit 20\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "delta_qty!",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 2,
+        "name": "txn_type!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "item_code!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "uom!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "operator_name!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "4687a6d647d94a98be3d49e74adadad1634243486fd37b534596d11adc19a2fd"
+}

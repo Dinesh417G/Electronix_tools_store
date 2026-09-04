@@ -537,6 +537,56 @@ jobs:
       - name: Backup round-trips
         run: cargo run -p store-cli -- backup --out-dir "$RUNNER_TEMP/backups" --keep 3
 
+      # §12's flow, driven through the actual screens in a real browser.
+      #
+      # `cargo test` proves the API can do this and cannot prove the terminal
+      # does — which is exactly what that cost: the quantity pad used its own
+      # default as a prefix, so tapping 2 on a pad showing 1 booked 12, and
+      # every API-level test passed throughout, correctly. The API was never
+      # asked for 12; the screen sent it.
+      #
+      # Last in the job because it seeds a catalog, and the two steps above
+      # want a database nobody has written to.
+      #
+      # `tests/cdp.mjs` is dependency-free — it drives Chrome over the DevTools
+      # protocol with node built-ins — but it needs a Node with a global
+      # WebSocket, which is not the runner's default.
+      - name: Install Node 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Seed a demo catalog
+        run: cargo run -p store-cli -- seed --with-stock
+
+      # Built first and then run directly: `cargo run &` backgrounds *cargo*,
+      # and killing cargo does not necessarily stop the server it spawned.
+      - name: Start store-server
+        run: |
+          cargo build -p store-server
+          ./target/debug/store-server &
+          echo $! > "$RUNNER_TEMP/store-server.pid"
+          for _ in $(seq 1 60); do
+            curl -sf http://127.0.0.1:8097/health >/dev/null && exit 0
+            sleep 2
+          done
+          echo "store-server did not come up" >&2
+          exit 1
+        env:
+          STORE_LISTEN: 127.0.0.1:8097
+          STORE_ENROLMENT_SECRET: ci-enrolment-secret
+
+      - name: Terminal flow (headless Chrome)
+        run: npm run test:terminal
+        working-directory: crates/store-web
+        env:
+          STORE_BASE: http://127.0.0.1:8097
+          STORE_ENROLMENT_SECRET: ci-enrolment-secret
+
+      - name: Stop store-server
+        if: always()
+        run: kill "$(cat "$RUNNER_TEMP/store-server.pid")" 2>/dev/null || true
+
   # M9: the deploy scripts are what a shop actually runs. A syntax error in
   # them is discovered at the worst possible moment otherwise.
   deploy-scripts:
