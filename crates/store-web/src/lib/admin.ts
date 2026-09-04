@@ -103,6 +103,88 @@ export async function login(empCode: string, pin: string): Promise<LoginResult> 
   return (await response.json()) as LoginResult;
 }
 
+/** People, machines and reason codes — everything Setup edits. */
+export interface Operator {
+  id: string;
+  emp_code: string;
+  full_name: string;
+  zk_user_id: string | null;
+  role: "OPERATOR" | "STOREKEEPER" | "ADMIN";
+  department: string | null;
+  active: boolean;
+}
+
+export interface OperatorInput {
+  emp_code: string;
+  full_name: string;
+  zk_user_id: string | null;
+  role: string;
+  department: string | null;
+}
+
+export interface MachineRow {
+  id: string;
+  code: string;
+  name: string | null;
+  active: boolean;
+  /** How much history is attached. A rename with three years behind it
+   *  relabels every past consumption report. */
+  txn_count: number;
+}
+
+export interface ReasonRow {
+  id: string;
+  code: string;
+  label: string;
+  applies_to: string;
+  sort_order: number;
+  active: boolean;
+  txn_count: number;
+}
+
+export interface DeviceRow {
+  id: string;
+  serial_no: string;
+  name: string | null;
+  location: string | null;
+  last_seen_at: string | null;
+  firmware: string | null;
+}
+
+export interface UnknownUserPunch {
+  punch_id: string;
+  zk_user_id: string;
+  device_serial: string;
+  received_at: string;
+  occurrences: number;
+}
+
+export interface PunchRow {
+  id: string;
+  zk_user_id: string;
+  device_ts: string | null;
+  received_at: string;
+  verify_mode: string | null;
+  claimed: boolean;
+}
+
+/** One bucket of M8's consumption report. */
+export interface ConsumptionRow {
+  bucket_key: string;
+  bucket_label: string;
+  /** Positive magnitude consumed, as a string — `numeric(12,3)` through a
+   *  JavaScript float is how a ledger stops adding up. */
+  qty: string;
+  value: string;
+  txn_count: number;
+}
+
+export interface DoorView {
+  devices: DeviceRow[];
+  unknown_users: UnknownUserPunch[];
+  recent_punches: PunchRow[];
+}
+
 export function adminApi(token: string) {
   return {
     categories: () => json<Category[]>(token, "/api/v1/admin/categories"),
@@ -150,5 +232,105 @@ export function adminApi(token: string) {
     },
 
     health: () => json<Record<string, unknown>>(token, "/api/v1/admin/health"),
+
+    // ── Setup ────────────────────────────────────────────────────────────
+    //
+    // These endpoints landed on the Rust side before any screen called them,
+    // which is §11's dead-wiring failure mode with the halves the other way
+    // round from usual. This is the other half.
+    //
+    // Retirement is `active = false` throughout, never a delete:
+    // `stock_ledger` points at every operator, machine and reason code, and
+    // §7's claim that the history still answers "who took the forty inserts,
+    // on which machine, and why" survives exactly as long as those rows do.
+
+    operators: () => json<Operator[]>(token, "/api/v1/admin/operators"),
+
+    createOperator: (input: OperatorInput & { pin?: string | null }) =>
+      json<Operator>(token, "/api/v1/admin/operators", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+
+    /// Only what is sent changes. `pin` absent leaves the PIN alone, `null`
+    /// clears it, a string replaces it — the difference between renaming
+    /// somebody and locking them out.
+    patchOperator: (
+      id: string,
+      patch: Partial<OperatorInput> & { active?: boolean; pin?: string | null },
+    ) =>
+      json<Operator>(token, `/api/v1/admin/operators/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      }),
+
+    deactivateOperator: (id: string) =>
+      json<Operator>(token, `/api/v1/admin/operators/${id}`, { method: "DELETE" }),
+
+    machines: () => json<MachineRow[]>(token, "/api/v1/admin/machines"),
+
+    createMachine: (input: { code: string; name: string | null }) =>
+      json<MachineRow>(token, "/api/v1/admin/machines", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+
+    /// Also how a retired machine comes back: send `active: true`.
+    updateMachine: (id: string, input: { code: string; name: string | null; active?: boolean }) =>
+      json<MachineRow>(token, `/api/v1/admin/machines/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(input),
+      }),
+
+    deactivateMachine: (id: string) =>
+      json<MachineRow>(token, `/api/v1/admin/machines/${id}`, { method: "DELETE" }),
+
+    reasonCodes: () => json<ReasonRow[]>(token, "/api/v1/admin/reason-codes"),
+
+    createReason: (input: {
+      code: string;
+      label: string;
+      applies_to: string;
+      sort_order?: number;
+    }) =>
+      json<ReasonRow>(token, "/api/v1/admin/reason-codes", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+
+    updateReason: (
+      id: string,
+      input: {
+        code: string;
+        label: string;
+        applies_to: string;
+        sort_order?: number;
+        active?: boolean;
+      },
+    ) =>
+      json<ReasonRow>(token, `/api/v1/admin/reason-codes/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(input),
+      }),
+
+    deactivateReason: (id: string) =>
+      json<ReasonRow>(token, `/api/v1/admin/reason-codes/${id}`, { method: "DELETE" }),
+
+    door: () => json<DoorView>(token, "/api/v1/admin/devices"),
+
+    /// M8's consumption report (§11), on the *console's* token rather than the
+    /// terminal's. The other admin tabs read through `api.*`, which carries
+    /// whatever this browser was enrolled with — fine on a wall tablet, and
+    /// "this device is not enrolled" on the laptop an admin actually uses.
+    consumption: (params: string) =>
+      json<ConsumptionRow[]>(token, `/api/v1/reports/consumption?${params}`),
+
+    /// Fetched rather than linked: the endpoint needs a token, and a bare href
+    /// carries no Authorization header — it would answer 401 and the browser
+    /// would save the refusal as a file called consumption.csv.
+    consumptionCsv: async (params: string): Promise<Blob> => {
+      const response = await send(token, `/api/v1/reports/consumption.csv?${params}`);
+      return response.blob();
+    },
   };
 }

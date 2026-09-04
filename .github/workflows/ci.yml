@@ -68,6 +68,14 @@ jobs:
         run: npm run typecheck
         working-directory: crates/store-web
 
+      # §11's dead-wiring rule, on this side of the workspace. `cloud/` has had
+      # this since the port; nothing enforced it here, and ten console routes
+      # went in with no screen calling any of them. Reads the router and the
+      # client, fails in both directions, needs no database.
+      - name: endpoint callers
+        run: npm run test:callers
+        working-directory: crates/store-web
+
       - name: build
         run: npm run build
         working-directory: crates/store-web
