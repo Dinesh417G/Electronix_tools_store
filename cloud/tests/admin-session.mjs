@@ -384,6 +384,24 @@ try {
   await browser.clickText("Alerts");
   await sleep(2500);
 
+  /* Make the case that produced the bug, rather than hoping the crib is in it.
+     A seeded database has nothing acknowledged, so every row carries the same
+     two buttons and the widths cannot disagree — the check would pass on the
+     broken build for want of a row to disagree with. */
+  const mixed = await browser.evaluate(`(() => {
+    const rows = [...document.querySelectorAll(".group")];
+    if (rows.length < 2) return "too few alerts";
+    if (rows.some((r) => /acknowledged/.test(r.textContent || ""))) return "already mixed";
+    const first = rows[0];
+    const ack = [...first.querySelectorAll("button")]
+      .find((b) => b.textContent.trim() === "Acknowledge");
+    if (!ack) return "no Acknowledge button";
+    ack.click();
+    return "acknowledged one";
+  })()`);
+  await sleep(2500);
+  console.log(`  ${mixed}`);
+
   const columns = await browser.evaluate(`(() => {
     const header = [...document.querySelectorAll("div")].find(
       (d) => d.className.includes("uppercase") && d.className.includes("sm:flex"));
@@ -430,8 +448,10 @@ try {
     // cannot appear — so say so rather than passing quietly.
     if (columns.rows.some((r) => r.acknowledged) && columns.rows.some((r) => !r.acknowledged)) {
       t.ok("measured across acknowledged and unacknowledged rows");
+    } else if (columns.rows.length < 2) {
+      console.log("  note  only one alert on this crib — nothing to disagree with");
     } else {
-      console.log("  note  every alert row carries the same controls here");
+      t.bad("could not produce a row with different controls, so this proves nothing");
     }
   }
 
