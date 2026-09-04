@@ -803,10 +803,10 @@ write from a tablet takes its `operator_id` from the session, never from the tok
 |---|---|---|
 | `GET /reports/consumption`, `.csv` | yes | yes |
 | `GET`, `POST /admin/operators` | yes | yes |
-| `PATCH`, `DELETE /admin/operators/{id}` | yes — API only, no screen | yes |
+| `PATCH`, `DELETE /admin/operators/{id}` | yes | yes |
 | `GET /admin/devices` | yes | yes |
-| `CRUD /admin/machines` | yes — API only, no screen | yes |
-| `CRUD /admin/reason-codes` | yes — API only, no screen | yes |
+| `CRUD /admin/machines` | yes | yes |
+| `CRUD /admin/reason-codes` | yes | yes |
 | `GET /sessions/stream` | yes | **deliberately not** — §4's 2 s poll |
 | `/auth/webauthn/*` (§8) | — | yes |
 | serials, printer settings, `/labels/sheet`, `/items/browse`, `/version` | — | yes |
@@ -845,15 +845,23 @@ and **Setup → People / Machines / Reasons / Door**. An endpoint with no screen
 is this project's known failure mode — built at both ends, never connected — so
 a new endpoint is not finished until something can call it.
 
-**In `crates/store-web` these five have no screen, and saying so is the point.**
-That console covers the catalog, stock, alerts, reversals, labels and health;
-it has never had a People or a Door screen either, so `GET`/`POST
-/admin/operators` and `GET /admin/devices` were in the same state before this.
-The rule above is not suspended for the reference implementation — it is unpaid,
-and this is the ledger entry. What the parity buys meanwhile is real: §2 calls
-`crates/` the path back if the offline question is answered "the store must work
-without internet", and a reference implementation that cannot retire a machine
-or set a PIN is not that path. The gap is a console, not an API.
+`crates/store-web` now has the same four, reached from a **Setup** tab, plus a
+**Reports** tab for M8's consumption endpoint — which had been served, tested
+against a hand-computed fixture, and reachable only with curl since M8.
+
+**And that side of the workspace now enforces the rule rather than restating
+it.** `crates/store-web/tests/endpoint-callers.mjs` reads the router and the
+client and fails in both directions: a route nothing in `src/` names, or a path
+the client asks for that the router does not serve. It needs no database and
+runs in the `web` CI job. Three endpoints are allowlisted with their reasons —
+`/health` is an installer's probe, and `/items/{id}` and `/sessions/{id}` are
+read by neither client because the scan, the search and the claim response
+already carry what they return. An allowlist entry is meant to be a decision:
+asking "should this have had a screen?" is what produced both new tabs.
+
+It proves reachability, not correctness, and §11's note about the passkey path
+is the standing reminder of that limit — a caller in `admin.ts` says the wiring
+exists, not that a screen calls it.
 
 Status codes the tablet UX depends on:
 

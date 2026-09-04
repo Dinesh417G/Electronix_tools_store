@@ -43,8 +43,12 @@ pub enum DbError {
 
     /// A console edit would have left the store with no active ADMIN (§11).
     /// Maps to `409 Conflict` with the code `LAST_ADMIN`.
+    // One line, because it is read by a person on a screen. It was written as
+    // a wrapped literal and the wrap survived into the message: the console
+    // rendered "…and the console          cannot create one." A message about
+    // a guard nobody expected to hit is the last place to look untidy.
     #[error(
-        "That would leave the store with no active ADMIN, and the console          cannot create one. Promote somebody else first."
+        "That would leave the store with no active ADMIN, and the console cannot create one. Promote somebody else first."
     )]
     LastAdmin,
 

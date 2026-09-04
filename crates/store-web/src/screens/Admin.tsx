@@ -21,8 +21,10 @@ import {
 } from "../lib/api";
 import { adminApi, type Category, type ItemInput } from "../lib/admin";
 import { AlertChip, Banner, BigButton, Header, Spinner } from "../components/ui";
+import { Setup } from "./Setup";
+import { Reports } from "./Reports";
 
-type Tab = "catalog" | "stock" | "alerts" | "activity";
+type Tab = "catalog" | "stock" | "alerts" | "activity" | "reports" | "setup";
 
 interface Props {
   token: string;
@@ -68,20 +70,24 @@ export function Admin({ token, operatorName, onSignOut }: Props) {
         </div>
       )}
 
-      <nav className="flex gap-1 px-4 pb-3">
+      {/* Five tabs at `flex-1` each squeeze "Catalog" to three letters on a
+          412px phone. They scroll instead, sized to their labels. */}
+      <nav className="flex gap-1 overflow-x-auto px-4 pb-3">
         {(
           [
             ["catalog", "Catalog"],
             ["stock", "Stock"],
             ["alerts", "Alerts"],
             ["activity", "Ledger"],
+            ["reports", "Reports"],
+            ["setup", "Setup"],
           ] as const
         ).map(([key, label]) => (
           <button
             key={key}
             type="button"
             onClick={() => setTab(key)}
-            className={`flex-1 rounded-xl px-2 py-2.5 text-sm font-semibold ${
+            className={`shrink-0 rounded-xl px-3 py-2.5 text-sm font-semibold ${
               tab === key ? "bg-sky-600 text-white" : "bg-slate-800 text-slate-300"
             }`}
           >
@@ -98,6 +104,13 @@ export function Admin({ token, operatorName, onSignOut }: Props) {
         {tab === "alerts" && <AlertsTab client={client} onError={setError} />}
         {tab === "activity" && (
           <ActivityTab client={client} onError={setError} onNotice={setNotice} />
+        )}
+        {/* People, machines, reasons and the door. §11's console rules live on
+            the server; this is the half that lets anybody reach them without a
+            Rust toolchain and the database password. */}
+        {tab === "reports" && <Reports client={client} onError={setError} />}
+        {tab === "setup" && (
+          <Setup client={client} onError={setError} onNotice={setNotice} />
         )}
       </div>
     </div>
