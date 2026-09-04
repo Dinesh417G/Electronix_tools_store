@@ -65,7 +65,7 @@ export function LiveView({ connection, revision, lastEvent }: Props) {
   }, [load]);
 
   return (
-    <div className="flex min-h-full flex-col safe-top safe-bottom">
+    <div className="flex h-full min-h-0 flex-col safe-top">
       <header className="flex items-center justify-between px-4 pb-3">
         <div>
           <h1 className="text-xl font-bold">Live view</h1>
@@ -105,7 +105,7 @@ export function LiveView({ connection, revision, lastEvent }: Props) {
         ))}
       </nav>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
         {tab === "activity" && <Activity rows={ledger} />}
         {tab === "stock" && <Stock rows={stock} />}
         {tab === "alerts" && <Alerts rows={alerts} />}

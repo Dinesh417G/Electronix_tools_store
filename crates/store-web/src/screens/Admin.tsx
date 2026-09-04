@@ -21,6 +21,7 @@ import {
 } from "../lib/api";
 import { adminApi, type Category, type ItemInput } from "../lib/admin";
 import { AlertChip, Banner, BigButton, Header, Spinner } from "../components/ui";
+import { useRegisterBack } from "../components/chrome";
 import { Setup } from "./Setup";
 import { Reports } from "./Reports";
 
@@ -40,7 +41,7 @@ export function Admin({ token, operatorName, onSignOut }: Props) {
   const client = useMemo(() => adminApi(token), [token]);
 
   return (
-    <div className="flex min-h-full flex-col safe-top safe-bottom">
+    <div className="flex h-full min-h-0 flex-col safe-top">
       <Header
         title="Admin"
         subtitle={operatorName}
@@ -96,7 +97,7 @@ export function Admin({ token, operatorName, onSignOut }: Props) {
         ))}
       </nav>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
         {tab === "catalog" && (
           <Catalog client={client} onError={setError} onNotice={setNotice} />
         )}
@@ -294,6 +295,10 @@ function ItemForm({
   onDone: (message?: string) => void;
   onError: (m: string) => void;
 }) {
+  // Leaving the editor is a back action like any other, so it is drawn in the
+  // bar with the rest of them rather than in this form's own header (§12).
+  useRegisterBack(() => onDone());
+
   const [form, setForm] = useState<ItemInput>(() => ({
     item_code: item?.item_code ?? "",
     description: item?.description ?? "",
@@ -335,16 +340,7 @@ function ItemForm({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => onDone()}
-          className="tap -ml-2 w-12 rounded-xl text-2xl text-slate-400 active:bg-slate-800"
-        >
-          ←
-        </button>
-        <h2 className="text-lg font-bold">{item ? item.item_code : "New item"}</h2>
-      </div>
+      <h2 className="text-lg font-bold">{item ? item.item_code : "New item"}</h2>
 
       <Field label="ITEM CODE" hint="Also the barcode payload — keep it short enough to print">
         <input

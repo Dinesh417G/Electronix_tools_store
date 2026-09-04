@@ -5,6 +5,7 @@
 
 import type { ReactNode } from "react";
 import type { ConnectionState } from "../lib/events";
+import { useRegisterBack } from "./chrome";
 
 export function Screen({
   children,
@@ -14,9 +15,22 @@ export function Screen({
   className?: string;
 }) {
   return (
-    <div className={`flex min-h-full flex-col safe-top safe-bottom ${className}`}>
-      {children}
-    </div>
+    /* `h-full`, and the shell owns the viewport.
+     *
+     * This was `min-h-full`, and a percentage min-height resolves against the
+     * parent's *height* — the shell wrapped it in a div with a min-height and
+     * no definite height, so the percentage resolved to nothing and every
+     * screen collapsed to its own content. Measured on the idle screen: 438 px
+     * inside a 987 px viewport, with `justify-between` therefore placing
+     * nothing at the bottom. Where a screen was taller than the viewport the
+     * same fault ran the other way: the *page* scrolled, the screen's own
+     * `overflow-y-auto` never engaged, and the fixed settings gear floated
+     * over the middle of the list.
+     *
+     * The shell is now a single `h-dvh` column of [content, bar]; a screen
+     * fills the content half and scrolls inside it. `safe-bottom` went with
+     * the change — the bar is the thing that touches the bottom edge now. */
+    <div className={`flex h-full min-h-0 flex-col safe-top ${className}`}>{children}</div>
   );
 }
 
@@ -159,18 +173,17 @@ export function Header({
   onBack?: () => void;
   right?: ReactNode;
 }) {
+  /* The back action is *declared* here and *drawn* in the bottom bar.
+   *
+   * It belongs to this screen — every Header already knows where back goes —
+   * but a control in the top-left of a 6.7" phone is out of thumb reach, with
+   * gloves on, next to a machine. Registering it lets the shell put it in
+   * reserved space at the bottom, which is both reachable and incapable of
+   * hiding anything (§12). */
+  useRegisterBack(onBack);
+
   return (
-    <header className="flex items-center gap-3 px-4 pb-3">
-      {onBack && (
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label="Back"
-          className="tap -ml-2 flex w-12 items-center justify-center rounded-xl text-2xl text-slate-400 active:bg-slate-800"
-        >
-          ←
-        </button>
-      )}
+    <header className="flex shrink-0 items-center gap-3 px-4 pb-3">
       <div className="min-w-0 flex-1">
         <h1 className="truncate text-xl font-bold">{title}</h1>
         {subtitle && <p className="truncate text-sm text-slate-400">{subtitle}</p>}

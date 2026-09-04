@@ -704,7 +704,7 @@ function ClaimScreen({
       />
       {banner}
 
-      <div className="flex-1 space-y-3 overflow-y-auto px-4">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4">
         {cards.length === 0 && <Spinner label="Waiting for a punch at the door…" />}
 
         {/* §10: every unclaimed punch from the last 90 s is listed. Tailgating
@@ -1019,7 +1019,7 @@ function ItemScreen({
       />
       {banner}
 
-      <div className="flex-1 overflow-y-auto px-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4">
         {notFound && (
           <div className="pb-3">
             <Banner tone="warn" onDismiss={() => setNotFound(null)}>
@@ -1297,7 +1297,7 @@ function OptionalScreen({
       <Header title="Anything else?" subtitle="Optional" onBack={onBack} />
       {banner}
 
-      <div className="flex-1 space-y-5 overflow-y-auto px-4">
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4">
         {direction === "issue" && machines.length > 0 && (
           <section>
             <h2 className="pb-2 text-sm font-semibold text-slate-400">
@@ -1416,7 +1416,7 @@ function SplitScreen({
       <Header title="How many for each?" subtitle={item.item_code} onBack={onBack} />
       {banner}
 
-      <div className="flex-1 space-y-3 overflow-y-auto px-4">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4">
         {machines.map((machine, i) => (
           <div
             key={machine.id}
