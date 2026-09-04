@@ -136,7 +136,11 @@ export function Admin({ token, operatorName, onSignOut }: Props) {
       />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 safe-bottom">
+      {/* `pt-3`: the scroller used to start flush against the tab strip's
+          bottom rule, so the catalog's search field and the alert table's
+          header band sat *on* the tabs with nothing between them. A list
+          that touches its own navigation reads as one control. */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-3 pb-4 safe-bottom">
         <div className={SHELL}>
         {tab === "catalog" && (
           <Catalog client={client} onError={setError} onNotice={setNotice} />
@@ -483,11 +487,18 @@ function Catalog({
 
       {items.length > 0 && (
         <RowList>
+          {/* Both gutters are declared, not just the columns with labels: the
+              rows carry a selection box on the left and a Serials button on the
+              right, and a header that reserves neither labels its columns from
+              48 px to the left of them. */}
           <RowHeader
+            leading=""
+            leadingWidth="w-8"
             title={{ label: "Item", sort: "code" }}
             subtitle={{ label: "Description", sort: "description" }}
             meta={{ label: "Bin", sort: "bin" }}
             value={{ label: "On hand", sort: "on_hand" }}
+            trailing
             sort={sort}
             onSort={onSort}
           />
@@ -674,7 +685,7 @@ function LevelBand({
   const invalid = max.trim() !== "" && Number(max) < Number(min || 0);
 
   return (
-    <div className="w-full space-y-2 rounded-xl bg-surface-2 p-3">
+    <div className="w-full space-y-2 rounded-xl bg-surface-2 p-3 sm:max-w-xl">
       <div className="flex items-end gap-2">
         <label className="flex-1 text-xs text-muted">
           Reorder at
@@ -1040,8 +1051,14 @@ function AlertsTab({
             {/* The severity edge is on a wrapper outside `Row`, so the header
                 needs the same 2px of left inset or its columns sit two pixels
                 left of the ones below it. */}
-            <div className="border-l-2 border-transparent">
-              <RowHeader title="Item" subtitle="Description" meta="Band" value="On hand" />
+            <div className="border-l-2 border-l-transparent">
+              <RowHeader
+                title="Item"
+                subtitle="Description"
+                meta="Band"
+                value="On hand"
+                actions
+              />
             </div>
             {loaded.map((alert) => {
               const short = alert.max_level
@@ -1050,8 +1067,13 @@ function AlertsTab({
               return (
                 <div
                   key={alert.id}
+                  /* `border-l-<colour>`, not `border-<colour>`: the latter sets
+                     the colour on all four edges, and `RowList`'s `divide-y`
+                     draws its hairline *as the child's top border* — so every
+                     divider in this list came out red or amber and the rows
+                     read as stacked boxes rather than one table. */
                   className={`border-l-2 ${
-                    alert.level === "EMPTY" ? "border-danger" : "border-warning"
+                    alert.level === "EMPTY" ? "border-l-danger" : "border-l-warning"
                   }`}
                 >
                   <Row
@@ -1078,7 +1100,12 @@ function AlertsTab({
                     value={formatQty(alert.on_hand)}
                     valueNote="on hand"
                     tone={alert.level === "EMPTY" ? "empty" : "low"}
-                    actions={
+                    /* The editor is a block with two inputs and two buttons,
+                       and it was being rendered into the row's action strip —
+                       a lane sized for buttons. It opens under the row now,
+                       where `detail` already puts the ledger's facts. */
+                    open={editing === alert.item_id}
+                    detail={
                       editing === alert.item_id ? (
                         <LevelBand
                           alert={alert}
@@ -1093,7 +1120,10 @@ function AlertsTab({
                             }
                           }}
                         />
-                      ) : (
+                      ) : undefined
+                    }
+                    actions={
+                      editing === alert.item_id ? undefined : (
                         <>
                           <button
                             type="button"
@@ -1213,6 +1243,7 @@ function ActivityTab({
               subtitle={{ label: "Movement", sort: "operator" }}
               meta="Reason"
               value={{ label: "Qty", sort: "qty" }}
+              actions
               sort={sort}
               onSort={onSort}
             />
@@ -1258,8 +1289,14 @@ function ActivityTab({
                   /* §7: a mistake is corrected by appending the mirror image.
                      There is deliberately no edit and no delete here — the
                      database would refuse anyway. */
+                  /* A reversed movement has nothing to offer, and passing
+                     nothing would collapse its action lane — putting this row's
+                     columns two hundred pixels from the ones above it. It says
+                     why there is no button instead. */
                   actions={
-                    reversed ? undefined : (
+                    reversed ? (
+                      <span className="px-2 text-xs text-faint">Reversed</span>
+                    ) : (
                       <button
                         type="button"
                         onClick={async () => {

@@ -361,6 +361,80 @@ try {
     t.bad("no sortable Item header on the catalog — the column is still a label");
   }
 
+  t.step("4d. the header's columns line up with the rows they label");
+
+  /* Reported by the owner as "not in alignment", from a screenshot of Alerts:
+     Band and On hand landed at a different x on almost every row, and at a
+     third one in the header.
+   *
+   * The cause was that a row's controls were laid out at whatever width they
+   * happened to measure. An acknowledged alert offers one button where an
+   * unacknowledged one offers two, so the flexible description cell absorbed a
+   * different remainder on each row — and the header, which reserved no lane
+   * at all, lined up with neither. The catalog had the same fault twice over:
+   * its rows carry a selection box on the left and a Serials button on the
+   * right, and the header declared neither.
+   *
+   * Measured, not eyeballed, and on Alerts specifically because it is the list
+   * whose rows genuinely differ from one another. Every row must put its cells
+   * at the same x, and those must be the header's. */
+  await browser.send("Emulation.setDeviceMetricsOverride", {
+    width: 1280, height: 900, deviceScaleFactor: 1, mobile: false,
+  });
+  await browser.clickText("Alerts");
+  await sleep(2500);
+
+  const columns = await browser.evaluate(`(() => {
+    const header = [...document.querySelectorAll("div")].find(
+      (d) => d.className.includes("uppercase") && d.className.includes("sm:flex"));
+    if (!header) return { missing: "header" };
+    const left = (el) => Math.round(el.getBoundingClientRect().left);
+    // The header's labelled columns, ignoring the gutters it holds open for
+    // controls — those carry no text to line anything up with.
+    const heads = [...header.children]
+      .filter((c) => (c.textContent || "").trim() !== "")
+      .map(left);
+
+    const rows = [...document.querySelectorAll(".group")].slice(0, 8).map((g) => {
+      const inner = g.firstElementChild;
+      const wrap = [...inner.children].find((c) => c.className.includes("min-w-0"));
+      const text = wrap.className.includes("sm:flex") ? wrap : wrap.firstElementChild;
+      const value = [...inner.children].find((c) => c.className.includes("text-right"));
+      return {
+        cells: [...text.children].map(left).concat(value ? [left(value)] : []),
+        acknowledged: /acknowledged/.test(g.textContent || ""),
+      };
+    });
+    return { heads, rows };
+  })()`);
+
+  if (columns.missing || (columns.rows ?? []).length === 0) {
+    t.bad("could not measure the alert table: " + JSON.stringify(columns));
+  } else {
+    const shapes = new Set(columns.rows.map((r) => r.cells.join(",")));
+    if (shapes.size === 1) {
+      t.ok(`all ${columns.rows.length} alert rows put their cells at the same x`);
+    } else {
+      t.bad(`alert rows disagree on where their columns are: ${[...shapes].join(" / ")}`);
+    }
+
+    // The rows agreeing with each other is half of it; they have to agree with
+    // the labels above them.
+    const row = columns.rows[0].cells;
+    const lined = columns.heads.every((x, i) => Math.abs(x - row[i]) <= 1);
+    if (lined) t.ok(`and with the header: ${columns.heads.join(", ")}`);
+    else t.bad(`header at ${columns.heads.join(", ")}, rows at ${row.join(", ")}`);
+
+    // The case from the screenshot: a row with fewer buttons than its
+    // neighbours. Without one, every row has the same controls and the fault
+    // cannot appear — so say so rather than passing quietly.
+    if (columns.rows.some((r) => r.acknowledged) && columns.rows.some((r) => !r.acknowledged)) {
+      t.ok("measured across acknowledged and unacknowledged rows");
+    } else {
+      console.log("  note  every alert row carries the same controls here");
+    }
+  }
+
   await browser.send("Emulation.clearDeviceMetricsOverride", {});
   await sleep(500);
 

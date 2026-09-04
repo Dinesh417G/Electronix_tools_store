@@ -46,6 +46,27 @@ const CELL_SUBTITLE = "sm:flex-1";
 const CELL_META = "sm:w-56 sm:shrink-0";
 const CELL_VALUE = "sm:w-28";
 
+/* The action lane, and it is a *column* rather than whatever the buttons
+   happen to measure.
+ *
+ * The buttons were laid out in flow at their natural width, and every row in a
+ * list does not carry the same ones: an acknowledged alert offers "Set levels"
+ * where an unacknowledged one offers "Set levels" and "Acknowledge". Different
+ * widths on the right pushed different amounts of room into the flexible
+ * subtitle cell, so Band and On hand landed at a different x on every row —
+ * and at a third one in the header, which reserves no lane at all. A header
+ * whose columns do not line up with its rows is worse than no header.
+ *
+ * Wide enough for the widest pair in the app ("Set levels" + "Acknowledge").
+ * It costs no space that was not already being spent: the lane is `opacity-0`
+ * rather than hidden, so it has always taken its width from the row. */
+const CELL_ACTIONS = "sm:w-60";
+
+/* The per-row control lane (the catalog's "Serials"). Same reasoning as the
+   action lane: a row that has one and a row that does not must still put their
+   numbers in the same place, and the header has to reserve it too. */
+const CELL_TRAILING = "sm:w-16";
+
 /** Tone for the number on the right. */
 type Tone = "plain" | "out" | "in" | "low" | "empty";
 
@@ -116,6 +137,9 @@ export function RowHeader<K extends string>({
   subtitle,
   meta,
   value,
+  actions,
+  trailing,
+  leadingWidth = "w-12",
   sort,
   onSort,
 }: {
@@ -124,6 +148,27 @@ export function RowHeader<K extends string>({
   subtitle?: HeaderCell<K>;
   meta?: HeaderCell<K>;
   value?: HeaderCell<K>;
+  /**
+   * Reserve the action lane, for a list whose rows carry `actions`.
+   *
+   * Unlabelled on purpose — the lane holds controls, not a column of facts —
+   * but it has to be *held open*, or the header's own columns sit to the right
+   * of the ones they label.
+   */
+  actions?: boolean;
+  /**
+   * Reserve the per-row control lane, for a list whose rows carry `trailing`.
+   */
+  trailing?: boolean;
+  /**
+   * Width of the leading gutter, matching whatever the rows put in theirs.
+   *
+   * `w-12` suits the ledger's clock; the catalog's selection box is `w-8`. Get
+   * it wrong and every column in the list sits a few pixels off its heading —
+   * which is how the catalog came to label its rows from four pixels to the
+   * left of them.
+   */
+  leadingWidth?: string;
   sort?: SortState<K>;
   onSort?: (key: K) => void;
 }) {
@@ -161,11 +206,13 @@ export function RowHeader<K extends string>({
     /* No border of its own: it goes inside `RowList`, whose `divide-y` already
        draws the line under it. Two borders there read as a double rule. */
     <div className="hidden items-baseline gap-4 bg-surface-2 px-4 py-2 text-[0.65rem] font-semibold tracking-wider text-faint uppercase sm:flex">
-      {leading !== undefined && cell(leading, "w-12 shrink-0")}
+      {leading !== undefined && cell(leading, `${leadingWidth} shrink-0`)}
       {cell(title, CELL_TITLE)}
       {cell(subtitle, CELL_SUBTITLE)}
       {cell(meta, CELL_META)}
       {value !== undefined && cell(value, `shrink-0 text-right ${CELL_VALUE}`)}
+      {actions && <div className={`shrink-0 ${CELL_ACTIONS}`} aria-hidden />}
+      {trailing && <div className={`shrink-0 ${CELL_TRAILING}`} aria-hidden />}
     </div>
   );
 }
@@ -241,7 +288,10 @@ export function Row({
 
   return (
     <div className="group">
-      <div className="flex items-center gap-3 px-4 py-3">
+      {/* `sm:gap-4` is `RowHeader`'s own gap. At `gap-3` every column after
+          the text block sat four pixels right of the heading above it — small,
+          and exactly the drift that makes a table look hand-assembled. */}
+      <div className="flex items-center gap-3 px-4 py-3 sm:gap-4">
         {leading}
         {/* A button only when the row does something. A div wrapped in a button
             that does nothing is a target that swallows taps and tells a screen
@@ -288,11 +338,21 @@ export function Row({
             Keyboard focus ignores pointer-events, so Tab still reaches them
             and `group-focus-within` brings them back into view. */}
         {actions && (
-          <div className="hidden shrink-0 items-center gap-2 opacity-0 transition-opacity pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 sm:flex">
+          <div
+            className={`hidden shrink-0 items-center justify-end gap-2 opacity-0 transition-opacity pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 sm:flex ${CELL_ACTIONS}`}
+          >
             {actions}
           </div>
         )}
-        {trailing}
+        {trailing && (
+          /* One element, not one per breakpoint: rendering the control twice
+             and hiding one puts two identical buttons in the accessibility
+             tree. Below `sm:` the lane has no width and behaves as it always
+             did. */
+          <div className={`shrink-0 sm:flex sm:justify-end ${CELL_TRAILING}`}>
+            {trailing}
+          </div>
+        )}
       </div>
       {actions && (
         <div className="flex flex-wrap gap-2 px-4 pb-3 sm:hidden">{actions}</div>
