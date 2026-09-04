@@ -5,7 +5,7 @@ pub mod catalog;
 pub mod sessions;
 pub mod txn;
 
-use axum::routing::{delete, get, post, put};
+use axum::routing::{delete, get, patch, post, put};
 use axum::Router;
 
 use crate::state::AppState;
@@ -55,6 +55,19 @@ pub fn router(state: AppState) -> Router {
         .route("/admin/labels/print", post(admin::print_labels))
         .route("/admin/operators", get(admin::list_operators))
         .route("/admin/operators", post(admin::create_operator))
+        .route("/admin/operators/{id}", patch(admin::patch_operator))
+        .route("/admin/operators/{id}", delete(admin::deactivate_operator))
+        .route("/admin/machines", get(admin::list_machines))
+        .route("/admin/machines", post(admin::create_machine))
+        .route("/admin/machines/{id}", put(admin::update_machine))
+        .route("/admin/machines/{id}", delete(admin::deactivate_machine))
+        .route("/admin/reason-codes", get(admin::list_reason_codes))
+        .route("/admin/reason-codes", post(admin::create_reason_code))
+        .route("/admin/reason-codes/{id}", put(admin::update_reason_code))
+        .route(
+            "/admin/reason-codes/{id}",
+            delete(admin::deactivate_reason_code),
+        )
         .route("/admin/devices", get(admin::devices))
         .route("/admin/health", get(admin::health));
 

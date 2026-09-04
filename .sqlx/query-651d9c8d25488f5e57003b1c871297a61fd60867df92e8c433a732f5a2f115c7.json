@@ -1,0 +1,56 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        insert into reason_codes (code, label, applies_to, sort_order, active)\n        values ($1, $2, $3, $4, coalesce($5, true))\n        returning id as \"id!\", code as \"code!\", label as \"label!\",\n                  applies_to as \"applies_to!\", sort_order as \"sort_order!\",\n                  active as \"active!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "code!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "label!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "applies_to!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "sort_order!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "active!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Int4",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "651d9c8d25488f5e57003b1c871297a61fd60867df92e8c433a732f5a2f115c7"
+}

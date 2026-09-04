@@ -10,8 +10,14 @@
 // Both verbs refuse to remove the last active ADMIN. §11 already notes that the
 // first admin cannot come from this API; without this guard the last one can
 // leave through it, and then nobody can create the person who would fix that.
-// The check runs inside the transaction that made the change, so two admins
-// deactivating each other at the same moment cannot both pass it.
+//
+// The check runs inside the transaction that made the change, and behind an
+// advisory lock. **The transaction alone is not enough**, which this comment
+// used to claim: two admins demoting *each other* touch two different rows, so
+// nothing conflicts, and at READ COMMITTED each counts the other as still
+// active until it commits. Both see one admin left, both commit, and the crib
+// has none. `crates/store-server/tests/admin_console.rs` proves the same fix on
+// the Rust side, by holding the lock and watching both writers wait.
 
 import { NextResponse } from "next/server";
 import type { TransactionSql } from "postgres";
@@ -25,6 +31,24 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const PatchBody = OperatorBody.partial().extend({ active: z.boolean().optional() });
+
+/**
+ * The advisory-lock key that serialises every change to who can administer the
+ * crib. One arbitrary constant, taken by both verbs before either touches a
+ * row.
+ *
+ * Advisory rather than `select … for update` on the admin rows, because the two
+ * writers would acquire their locks in opposite orders — demote A then read B,
+ * demote B then read A — which is a deadlock Postgres resolves by aborting one
+ * of them. A lock taken *first*, by everyone, cannot be taken out of order. It
+ * is held for the transaction, so the commit or the rollback releases it.
+ */
+const ADMIN_SET_LOCK = 0x454c454354; // "ELECT"
+
+/** Take {@link ADMIN_SET_LOCK} for the rest of the transaction. */
+async function lockAdminSet(tx: TransactionSql): Promise<void> {
+  await tx`select pg_advisory_xact_lock(${ADMIN_SET_LOCK}::bigint)`;
+}
 
 /** Throws if the crib has been left with nobody who can administer it. */
 async function refuseIfLastAdminGone(tx: TransactionSql): Promise<void> {
@@ -64,6 +88,8 @@ export const PATCH = handler(
     try {
       return NextResponse.json(
         await sql.begin(async (tx) => {
+          await lockAdminSet(tx);
+
           const rows = await tx`
             update operators set ${tx(updates)}
              where id = ${id}
@@ -107,6 +133,8 @@ export const DELETE = handler(
 
     return NextResponse.json(
       await sql.begin(async (tx) => {
+        await lockAdminSet(tx);
+
         const rows = await tx`
           update operators set active = false
            where id = ${id}

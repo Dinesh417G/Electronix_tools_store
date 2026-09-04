@@ -14,8 +14,10 @@ pub mod auth;
 pub mod error;
 pub mod items;
 pub mod ledger;
+pub mod machines;
 pub mod operators;
 pub mod punches;
+pub mod reason_codes;
 pub mod reports;
 pub mod sessions;
 

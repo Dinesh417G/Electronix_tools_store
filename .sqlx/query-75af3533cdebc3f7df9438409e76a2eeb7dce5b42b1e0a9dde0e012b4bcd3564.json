@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        select id as \"id!\", code as \"code!\", label as \"label!\",\n               applies_to as \"applies_to!\", sort_order as \"sort_order!\",\n               active as \"active!\"\n          from reason_codes where id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "code!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "label!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "applies_to!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "sort_order!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "active!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "75af3533cdebc3f7df9438409e76a2eeb7dce5b42b1e0a9dde0e012b4bcd3564"
+}

@@ -202,6 +202,16 @@ impl Harness {
         serde_json::from_str(&body).unwrap_or_else(|e| panic!("GET {path} body {body}: {e}"))
     }
 
+    /// A console GET, which takes an operator token rather than a tablet's.
+    pub async fn get_json_with_token(&self, token: &str, path: &str) -> Value {
+        let (status, body) = self.get_raw("unused", token, path).await;
+        assert!(
+            (200..300).contains(&status),
+            "GET {path} returned {status}: {body}"
+        );
+        serde_json::from_str(&body).unwrap_or_else(|e| panic!("GET {path} body {body}: {e}"))
+    }
+
     pub async fn get_text(&self, tablet: &str, path: &str) -> String {
         let (status, body) = self.get_raw(tablet, self.token_for(tablet), path).await;
         assert!((200..300).contains(&status), "GET {path} returned {status}");
@@ -251,6 +261,48 @@ impl Harness {
             "POST {path} returned {status}: {parsed}"
         );
         parsed
+    }
+
+    /// The verbs the console uses: PATCH, PUT and DELETE.
+    ///
+    /// One helper rather than three, because the only thing that differs is the
+    /// method name and whether there is a body — and a test that has to spell
+    /// out a `Request::builder` inline stops asserting and starts plumbing.
+    pub async fn call_with_token(
+        &self,
+        method: &str,
+        token: &str,
+        path: &str,
+        body: Option<Value>,
+    ) -> (u16, Value) {
+        let mut builder = Request::builder()
+            .method(method)
+            .uri(path)
+            .header("authorization", format!("Bearer {token}"));
+
+        let payload = match body {
+            Some(value) => {
+                builder = builder.header("content-type", "application/json");
+                Body::from(value.to_string())
+            }
+            None => Body::empty(),
+        };
+
+        let (status, text) = self.send(builder.body(payload).unwrap()).await;
+        let parsed = serde_json::from_str(&text).unwrap_or(Value::String(text));
+        (status.as_u16(), parsed)
+    }
+
+    pub async fn patch_raw(&self, token: &str, path: &str, body: Value) -> (u16, Value) {
+        self.call_with_token("PATCH", token, path, Some(body)).await
+    }
+
+    pub async fn put_raw(&self, token: &str, path: &str, body: Value) -> (u16, Value) {
+        self.call_with_token("PUT", token, path, Some(body)).await
+    }
+
+    pub async fn delete_raw(&self, token: &str, path: &str) -> (u16, Value) {
+        self.call_with_token("DELETE", token, path, None).await
     }
 
     /// Log in as an operator and return their bearer token.

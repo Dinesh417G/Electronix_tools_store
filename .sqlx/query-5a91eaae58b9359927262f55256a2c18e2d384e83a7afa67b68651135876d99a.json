@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        select m.id as \"id!\", m.code as \"code!\", m.name, m.active as \"active!\",\n               (select count(*) from stock_ledger l where l.machine_id = m.id)\n                 as \"txn_count!\"\n          from machines m\n         order by m.active desc, m.code\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "code!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "active!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "txn_count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "5a91eaae58b9359927262f55256a2c18e2d384e83a7afa67b68651135876d99a"
+}
