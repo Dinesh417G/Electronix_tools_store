@@ -30,6 +30,7 @@
     "test:write-path": "node --experimental-strip-types tests/write-path.mjs",
     "test:webauthn": "node tests/webauthn.mjs",
     "test:throttle": "node tests/auth-throttle.mjs",
+    "test:paging": "node tests/list-paging.mjs",
     "test:routes": "node tests/route-smoke.mjs",
     "test:callers": "node tests/endpoint-callers.mjs",
     "test:terminal": "node tests/terminal-flow.mjs",

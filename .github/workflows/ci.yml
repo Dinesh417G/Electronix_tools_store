@@ -349,6 +349,15 @@ jobs:
       #                 tripwire: a GET route the file does not ask for fails
       #                 the test by name, which is this project's dead-wiring
       #                 failure mode caught at the door.
+      #   test:paging   both list endpoints answering page two rather than page
+      #                 one again. `/stock` read `limit` and ignored `offset`,
+      #                 while the terminal's browse-all had been sending one from
+      #                 the day it was written — so every "Load more" appended
+      #                 the same forty rows and the button could never retire.
+      #                 Invisible from both ends: route-smoke asks each GET once
+      #                 and a wrong-but-cheerful answer passes it, and
+      #                 endpoint-callers proved `/items/browse` had a caller,
+      #                 which was true — no screen reached it.
       #   test:throttle the brake in front of the PIN check (0010). Both PIN
       #                 endpoints are public and a PIN is four digits, so the
       #                 assertion that matters is that a *locked* code refuses
@@ -397,6 +406,7 @@ jobs:
           npm run test:catalog
           npm run test:serials
           npm run test:throttle
+          npm run test:paging
           npm run test:routes
           npm run test:session-ui
           npm run test:insights

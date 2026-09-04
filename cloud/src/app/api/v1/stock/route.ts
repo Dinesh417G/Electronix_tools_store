@@ -1,4 +1,4 @@
-// GET /api/v1/stock?low=&empty=&category=&bin=&q=&limit=
+// GET /api/v1/stock?low=&empty=&category=&bin=&q=&limit=&offset=
 //
 // Serves two callers with one shape: the live view's stock panel and the admin
 // console's catalog list. The console opens its edit form from the row it
@@ -18,6 +18,13 @@ export const GET = handler(async (request: Request) => {
   const p = new URL(request.url).searchParams;
 
   const limit = Number.parseInt(p.get("limit") ?? "500", 10);
+  // Read, because it was being *sent*. The terminal's browse-all asked for
+  // `offset` from the day it was written and this route dropped it on the
+  // floor, so every "Load more" appended the same first page again — duplicate
+  // rows, and a button that could never retire because a full page always came
+  // back. A parameter a caller can pass and the server silently ignores is
+  // worse than one it rejects: nothing anywhere reports the disagreement.
+  const offset = Number.parseInt(p.get("offset") ?? "0", 10);
 
   return NextResponse.json(
     await stockList({
@@ -26,6 +33,7 @@ export const GET = handler(async (request: Request) => {
       bin: p.get("bin")?.trim() || null,
       category: p.get("category")?.trim() || null,
       limit: Number.isNaN(limit) ? 500 : limit,
+      offset: Number.isNaN(offset) ? 0 : offset,
     }),
   );
 });
