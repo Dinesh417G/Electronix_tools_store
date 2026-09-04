@@ -86,6 +86,20 @@ export async function authoriseSession(auth: Auth, sessionId: string): Promise<s
  *
  * Every write is guarded on the state it expects, so two racing requests
  * cannot both win: the loser's UPDATE matches no rows and it re-reads.
+ *
+ * The claim was the exception, and it is the one that mattered. Its guard read
+ * `state in ('UNCLAIMED', 'ACTIVE')`, which admits exactly the row it exists to
+ * exclude: two tablets claiming the same card both read UNCLAIMED, both pass
+ * the pure machine, and the second UPDATE then matches the row the first had
+ * just made ACTIVE — overwriting `tablet_id`. Both tablets were answered 200,
+ * and the loser was handed the winner's id in its own response. Measured six
+ * times out of six against the running app, so this was not a narrow race; two
+ * claims arriving together is §10's tailgating case, the exact scenario the
+ * claim screen exists for.
+ *
+ * `crates/store-db/src/sessions.rs` had it right all along — the guard below is
+ * that one, and the zero-rows branch reports the holder the way it does. Parity
+ * rather than a new rule, like the `reverse()` machine_id defect before it.
  */
 export async function applyEvent(
   sessionId: string,
@@ -99,16 +113,33 @@ export async function applyEvent(
   const next = result.next;
 
   switch (next.state) {
-    case "ACTIVE":
-      await sql`
+    case "ACTIVE": {
+      // `state = 'ACTIVE' and tablet_id = …` is what keeps a re-claim by the
+      // *same* tablet idempotent — a retry after a reconnect is not a conflict
+      // — without letting a *different* one take the session off it.
+      const claimed = await sql`
         update sessions
            set state = 'ACTIVE',
                tablet_id = ${next.tabletId},
                claimed_at = coalesce(claimed_at, now()),
                last_activity_at = now()
-         where id = ${sessionId} and state in ('UNCLAIMED', 'ACTIVE')
+         where id = ${sessionId}
+           and (state = 'UNCLAIMED' or (state = 'ACTIVE' and tablet_id = ${next.tabletId}))
+        returning id
       `;
+
+      if (claimed.length === 0) {
+        // Somebody else got there between our read and our write. Re-read, so
+        // the answer names whoever actually holds it rather than guessing.
+        const winner = await getSession(sessionId);
+        const holder = winner.tablet_id;
+        if (holder && holder !== next.tabletId) {
+          raise({ ok: false, error: { kind: "ALREADY_CLAIMED", claimedBy: holder } });
+        }
+        raise({ ok: false, error: { kind: "SESSION_CLOSED" } });
+      }
       break;
+    }
     case "CLOSED":
       // Terminal states absorb their own events, so a second close is a no-op
       // rather than an error — which is what a tablet on a flaky LAN needs.

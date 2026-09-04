@@ -110,6 +110,14 @@ const claim = (id, token) =>
     body: JSON.stringify({ tablet_id: TABLET }),
   });
 
+/** The same, for a tablet other than this file's default. */
+const claimAs = (id, token, tabletId) =>
+  call("/api/v1/sessions/" + id + "/claim", {
+    method: "POST",
+    headers: bearer(token),
+    body: JSON.stringify({ tablet_id: tabletId }),
+  });
+
 const issue = (id, itemId, token, qty = "1") =>
   call("/api/v1/txn/issue", {
     method: "POST",
@@ -244,6 +252,70 @@ try {
   else bad("claiming a fresh punch answered " + fine.status + " " + JSON.stringify(fine.body));
   await call("/api/v1/sessions/" + fresh + "/close", {
     method: "POST", headers: bearer(tabletToken), body: JSON.stringify({}),
+  });
+
+
+  step("4b. two tablets claiming one card: exactly one wins (§10)");
+
+  /* §10: "A claimed session is bound to one tablet_id. A second tablet cannot
+     claim it." The pure machine refuses it — but only when it *reads* ACTIVE.
+     Two tablets claiming together both read UNCLAIMED, both pass, and the
+     writer's guard was `state in ('UNCLAIMED', 'ACTIVE')`, which then matched
+     the row the first claim had just made ACTIVE. Both were answered 200 and
+     the loser was handed the winner's tablet id in its own response. Six
+     probes out of six against the running app, so not a narrow race — and two
+     claims at once is the tailgating case the claim screen exists for.
+
+     `e2e.mjs` pins the sequential 409 and passed throughout: it claims one
+     tablet after the other, which is the case that was never broken. */
+  await sql`
+    insert into tablets (tablet_id, name) values ('race-tablet-a', 'race test a'),
+                                                 ('race-tablet-b', 'race test b')
+    on conflict (tablet_id) do nothing`;
+  const tokenA = await mint("TABLET", { tabletId: "race-tablet-a" });
+  const tokenB = await mint("TABLET", { tabletId: "race-tablet-b" });
+
+  const contested = await offer(operator, 5);
+  const [raceA, raceB] = await Promise.all([
+    claimAs(contested, tokenA, "race-tablet-a"),
+    claimAs(contested, tokenB, "race-tablet-b"),
+  ]);
+
+  const winners = [raceA, raceB].filter((r) => r.status === 200);
+  const losers = [raceA, raceB].filter((r) => r.status === 409);
+  if (winners.length === 1 && losers.length === 1) {
+    ok("one claim answered 200 and the other 409");
+  } else {
+    bad(
+      "two tablets claimed one session and got " +
+        raceA.status + " and " + raceB.status +
+        " — §10 binds a session to one tablet",
+    );
+  }
+
+  // The database has to agree with whichever tablet was told it won. A pair of
+  // 200/409 answers over a row that ended up held by the *loser* would be the
+  // same bug with better manners.
+  const [held] = await sql`select tablet_id from sessions where id = ${contested}`;
+  if (winners.length === 1 && held?.tablet_id === winners[0].body?.tablet_id) {
+    ok("and the row is held by the tablet that was told it won: " + held.tablet_id);
+  } else {
+    bad("the session is held by " + held?.tablet_id + ", winners: " +
+        JSON.stringify(winners.map((w) => w.body?.tablet_id)));
+  }
+
+  // The half the loose guard existed for, which the fix must not take away: a
+  // tablet re-claiming a session it already holds is a reconnect, not a
+  // conflict.
+  const again = await claimAs(contested, held?.tablet_id === "race-tablet-a" ? tokenA : tokenB,
+                              held?.tablet_id);
+  if (again.status === 200) ok("the holder re-claiming after a reconnect still succeeds");
+  else bad("a re-claim by the holding tablet answered " + again.status);
+
+  await call("/api/v1/sessions/" + contested + "/close", {
+    method: "POST",
+    headers: bearer(held?.tablet_id === "race-tablet-a" ? tokenA : tokenB),
+    body: JSON.stringify({}),
   });
 
   step("5. the ledger is unmoved by any of the refusals (§7)");
