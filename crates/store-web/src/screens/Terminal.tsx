@@ -47,6 +47,7 @@ interface ActiveSession {
 
 type Step =
   | { name: "idle" }
+  | { name: "shortages"; level: "LOW" | "EMPTY" }
   | { name: "claim" }
   | { name: "manual" }
   | { name: "direction"; session: ActiveSession }
@@ -379,8 +380,14 @@ export function Terminal({
           status={status}
           onStart={() => (cards.length > 0 ? setStep({ name: "claim" }) : onRefreshCards())}
           onManual={() => setStep({ name: "manual" })}
+          onShowShortages={(level) => setStep({ name: "shortages", level })}
           banner={banner}
         />
+      );
+
+    case "shortages":
+      return (
+        <ShortagesScreen level={step.level} onBack={reset} />
       );
 
     case "claim":
@@ -580,6 +587,7 @@ function IdleScreen({
   status,
   onStart,
   onManual,
+  onShowShortages,
   banner,
 }: {
   connection: ConnectionState;
@@ -588,6 +596,7 @@ function IdleScreen({
   status: TerminalStatus | null;
   onStart: () => void;
   onManual: () => void;
+  onShowShortages: (level: "LOW" | "EMPTY") => void;
   banner: React.ReactNode;
 }) {
   const [now, setNow] = useState(() => new Date());
@@ -601,7 +610,7 @@ function IdleScreen({
   const reader = status?.reader ?? null;
 
   return (
-    <Screen className="justify-between">
+    <Screen className="justify-between overflow-hidden">
       <div className="flex items-center justify-between px-4">
         <span className="text-sm font-semibold tracking-wide text-slate-400">
           ELECTRONIX TOOL STORE
@@ -611,46 +620,75 @@ function IdleScreen({
 
       {banner}
 
-      <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4">
-        <div className="text-7xl font-bold tabular-nums sm:text-8xl">
-          {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-        </div>
-        <div className="text-lg text-slate-400">
-          {now.toLocaleDateString([], {
-            weekday: "long",
-            day: "numeric",
-            month: "long",
+      {/* The clock shrinks to a line. It was the largest thing on a screen that
+          sits six pixels under the phone's own clock, and §12's budget is eight
+          seconds from scan to confirm — the time of day never spends any of it.
+          On a wall tablet read across a workshop it earns its size again, which
+          is what the sm: breakpoint is for. */}
+      <div className="flex items-baseline justify-center gap-3 px-4 pt-2">
+        <span className="text-4xl font-bold tabular-nums sm:text-6xl">
+          {now.toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
           })}
+        </span>
+        <span className="text-sm text-slate-400 sm:text-lg">
+          {now.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })}
+        </span>
+      </div>
+      {/* Not centred. Centring left the button floating between two voids on a
+          tall phone; the sign-in belongs high, where a thumb reaches it, and
+          the space that is left belongs to the activity list. */}
+      <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 pt-6 pb-4">
+        <div>
+          <BigButton onClick={onStart} variant="primary" className="w-full py-4">
+            I&apos;m here — sign me in
+          </BigButton>
+          {/* What is actually true of *this* crib (§3). A store with no reader
+              is never told to put a finger on one; a store whose reader has
+              gone quiet is told that instead, because the two need opposite
+              remedies. A store we have not heard about yet is told nothing. */}
+          <p className="pt-2 text-center text-sm text-slate-400">
+            {reader === null
+              ? "\u00a0"
+              : !reader.installed
+                ? "Sign in with your employee number and PIN."
+                : reader.online
+                  ? "Put your finger on the door reader, then tap your name."
+                  : "The door reader has gone quiet — use your number instead."}
+          </p>
         </div>
-        {/* What is actually true of *this* crib (§3). A store with no reader is
-            never told to put a finger on one; a store whose reader has gone
-            quiet is told that instead, because the two need opposite remedies.
-            A store we have not heard about yet is told nothing at all. */}
-        <p className="mt-8 max-w-xs text-center text-slate-400">
-          {reader === null
-            ? " "
-            : !reader.installed
-              ? "Tap below and enter your employee number."
-              : reader.online
-                ? "Put your finger on the door reader, then tap your name here."
-                : "The door reader has gone quiet — enter your number instead."}
-        </p>
+
+        {/* Tappable, because a count nobody can open is a nag. "2 items are
+            EMPTY" tells a storekeeper there is a problem and nothing about
+            which bin, which is the one thing they need in order to act. */}
+        {(alerts.empty > 0 || alerts.low > 0) && (
+          <div className="flex gap-3">
+            {alerts.empty > 0 && (
+              <ShortageChip
+                tone="error"
+                n={alerts.empty}
+                label="EMPTY"
+                onClick={() => onShowShortages("EMPTY")}
+              />
+            )}
+            {alerts.low > 0 && (
+              <ShortageChip
+                tone="warn"
+                n={alerts.low}
+                label="LOW"
+                onClick={() => onShowShortages("LOW")}
+              />
+            )}
+          </div>
+        )}
+
+        {status && <TodayStrip status={status} />}
+        {/* Nothing below it: the strip grows into whatever is left. */}
       </div>
 
-      <div className="space-y-3 px-4">
-        {alerts.empty > 0 && (
-          <Banner tone="error">
-            <strong>{alerts.empty}</strong> item{alerts.empty === 1 ? " is" : "s are"} EMPTY.
-          </Banner>
-        )}
-        {alerts.low > 0 && (
-          <Banner tone="warn">
-            <strong>{alerts.low}</strong> item{alerts.low === 1 ? " is" : "s are"} low on stock.
-          </Banner>
-        )}
-        <BigButton onClick={onStart} variant="ghost" className="w-full">
-          I'm here — show me
-        </BigButton>
+      <div className="px-4 pb-2">
 
         {/* §10's fallback. Deliberately quieter than the button above: the
             reader is the normal way in, and a typed emp code is weaker
@@ -669,6 +707,227 @@ function IdleScreen({
             ? "Enter my number"
             : "Reader not working? Enter my number"}
         </button>
+      </div>
+    </Screen>
+  );
+}
+
+function ShortageChip({
+  tone,
+  n,
+  label,
+  onClick,
+}: {
+  tone: "error" | "warn";
+  n: number;
+  label: string;
+  onClick: () => void;
+}) {
+  const tones = {
+    error: "border-red-700 bg-red-950 text-red-100",
+    warn: "border-amber-600 bg-amber-950 text-amber-100",
+  };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`tap flex-1 rounded-xl border-2 px-4 py-3 text-left ${tones[tone]}`}
+    >
+      <div className="text-2xl font-bold tabular-nums">{n}</div>
+      <div className="text-xs tracking-wide opacity-80">{label} · tap to see</div>
+    </button>
+  );
+}
+
+/**
+ * What the crib did today.
+ *
+ * It fills the band under the button that was empty, and it earns the space by
+ * answering the question the green "Live" pill only gestures at: is anything
+ * actually reaching the server. A storekeeper opening the console to ask "what
+ * went out this morning" is a round trip this saves.
+ */
+function TodayStrip({ status }: { status: TerminalStatus }) {
+  const { today, recent } = status;
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col rounded-xl bg-slate-900 py-3">
+      <div className="flex shrink-0 items-center justify-between px-4 text-xs tracking-wide text-slate-500">
+        <span>TODAY</span>
+        {today.last_at && (
+          <span>
+            last{" "}
+            {new Date(today.last_at).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: false,
+            })}
+          </span>
+        )}
+      </div>
+
+      {today.movements === 0 ? (
+        <p className="px-4 pt-2 text-sm text-slate-400">Nothing has moved yet today.</p>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col">
+          {/* Trips to the crib, each way — not quantities. Summing `delta_qty`
+              adds twenty-litre drums of coolant to carbide inserts, which is a
+              number with no unit and no meaning (§6). */}
+          <div className="flex shrink-0 items-baseline gap-3 px-4 pt-1 text-sm">
+            <span>
+              <strong className="tabular-nums">{today.movements}</strong>{" "}
+              <span className="text-slate-400">
+                movement{today.movements === 1 ? "" : "s"}
+              </span>
+            </span>
+            <span className="text-slate-600">·</span>
+            <span className="text-slate-400">
+              <strong className="tabular-nums text-red-400">{today.out_count}</strong> out
+            </span>
+            <span className="text-slate-400">
+              <strong className="tabular-nums text-emerald-400">{today.in_count}</strong> in
+            </span>
+          </div>
+
+          {/* A real table, for the reason a watchlist is one: a column the eye
+              can run down beats a row it has to read. Four columns, each with
+              one alignment and one job — time and quantity are `tabular-nums`
+              so digits stack, the item code takes the width that is left, and
+              the operator trails, truncating rather than wrapping.
+
+              The direction lives *in* the quantity, signed and coloured, the
+              way a price change carries its own sign. An arrow column at a
+              fixed position with the quantity right-aligned after it leaves a
+              two-character gap after "1" and none after "11", and every row
+              looks kicked out of line. */}
+          <div className="mt-2 flex min-h-0 flex-1 flex-col">
+            <div className="flex shrink-0 items-baseline gap-3 border-b border-slate-800 px-4 pb-1 text-[0.65rem] tracking-wider text-slate-500 uppercase">
+              <span className="w-11 shrink-0">Time</span>
+              <span className="w-12 shrink-0 text-right">Qty</span>
+              <span className="min-w-0 flex-1">Item</span>
+              <span className="w-20 shrink-0 text-right">By</span>
+            </div>
+
+            <ul className="min-h-0 flex-1 divide-y divide-slate-800 overflow-y-auto">
+              {recent.map((row) => {
+                const out = row.delta_qty.startsWith("-");
+                const qty = formatQty(row.delta_qty.replace("-", ""));
+                return (
+                  <li key={row.id} className="flex items-baseline gap-3 px-4 py-1.5 text-sm">
+                    {/* The time is what tells two otherwise identical rows
+                        apart. Three reading "1 16IR-AG60-TT9030 R. Kumar" look
+                        like a rendering fault; three times are three trips to
+                        the crib, which is what they were. */}
+                    <span className="w-11 shrink-0 tabular-nums text-xs text-slate-500">
+                      {new Date(row.created_at).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        hour12: false,
+                      })}
+                    </span>
+                    <span
+                      className={`w-12 shrink-0 text-right font-semibold tabular-nums ${
+                        out ? "text-red-400" : "text-emerald-400"
+                      }`}
+                    >
+                      {out ? "\u2212" : "+"}
+                      {qty}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate font-medium">{row.item_code}</span>
+                    <span className="w-20 shrink-0 truncate text-right text-xs text-slate-500">
+                      {row.operator_name}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * What the chips open.
+ *
+ * A count that cannot be tapped is a nag: "2 items are EMPTY" tells a
+ * storekeeper there is a problem and nothing about which bin, which is the one
+ * thing they need in order to do anything about it.
+ */
+function ShortagesScreen({
+  level,
+  onBack,
+}: {
+  level: "LOW" | "EMPTY";
+  onBack: () => void;
+}) {
+  const [rows, setRows] = useState<Item[] | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    setRows(null);
+    setFailed(null);
+    api
+      .stock(level === "EMPTY" ? "empty=true&limit=100" : "low=true&limit=100")
+      .then((all) => {
+        if (!live) return;
+        // `low=true` on the server means LOW *or* EMPTY, which is right for a
+        // stock screen and wrong for this one: the chip that opened it counted
+        // seven and this would list nine. A count that does not survive being
+        // tapped is worse than no count.
+        setRows(all.filter((item) => item.alert_state === level));
+      })
+      .catch((err) => {
+        // Named, not swallowed: an empty list here reads "nothing is short",
+        // which is a claim about the crib. Drawing it from a request that
+        // failed is the one outcome this screen must not produce.
+        if (live) setFailed(describe(err));
+      });
+    return () => {
+      live = false;
+    };
+  }, [level]);
+
+  return (
+    <Screen>
+      <Header
+        title={level === "EMPTY" ? "Empty bins" : "Low on stock"}
+        subtitle={
+          level === "EMPTY" ? "Nothing left in the system" : "At or below the reorder level"
+        }
+        onBack={onBack}
+      />
+
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 pb-4">
+        {failed !== null && <Banner tone="error">{failed}</Banner>}
+        {failed === null && rows === null && <Spinner label="Reading stock" />}
+        {rows !== null && rows.length === 0 && (
+          <p className="py-10 text-center text-slate-500">
+            Nothing is {level === "EMPTY" ? "empty" : "low"} right now.
+          </p>
+        )}
+        {rows?.map((item) => (
+          <div
+            key={item.id}
+            className="flex items-baseline gap-3 rounded-xl bg-slate-900 px-4 py-3"
+          >
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-semibold">{item.item_code}</div>
+              <div className="truncate text-sm text-slate-400">{item.description}</div>
+              {item.bin_location && (
+                <div className="text-xs text-slate-500">Bin {item.bin_location}</div>
+              )}
+            </div>
+            <div className="shrink-0 text-right">
+              <div className="text-lg font-bold tabular-nums">{formatQty(item.on_hand)}</div>
+              <div className="text-xs text-slate-500">
+                of {formatQty(item.reorder_level)}
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     </Screen>
   );
