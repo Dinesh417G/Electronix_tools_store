@@ -1,0 +1,56 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        select r.id as \"id!\", r.code as \"code!\", r.label as \"label!\",\n               r.applies_to as \"applies_to!\", r.sort_order as \"sort_order!\",\n               r.active as \"active!\",\n               (select count(*) from stock_ledger l where l.reason_id = r.id)\n                 as \"txn_count!\"\n          from reason_codes r\n         order by r.applies_to, r.active desc, r.sort_order, r.code\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "code!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "label!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "applies_to!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "sort_order!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "active!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "txn_count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "426687f07ec990630e99d837a1290ce4b3e407f7c2f410ddc6382333389ca8c7"
+}

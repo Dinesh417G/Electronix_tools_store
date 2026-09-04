@@ -324,6 +324,160 @@ pub async fn create_operator(
     ))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct PatchOperatorRequest {
+    #[serde(flatten)]
+    pub patch: store_db::operators::OperatorPatch,
+    /// Absent leaves the PIN alone, `null` clears it, a string replaces it.
+    #[serde(default, deserialize_with = "store_db::operators::double_option")]
+    pub pin: Option<Option<String>>,
+}
+
+/// `PATCH /api/v1/admin/operators/{id}` — edit, including setting or clearing
+/// a PIN.
+///
+/// Refuses to demote or switch off the last active ADMIN (§11). The check runs
+/// inside the transaction that made the change, so the refusal takes the edit
+/// back with it.
+pub async fn patch_operator(
+    State(state): State<AppState>,
+    auth: Auth,
+    Path(id): Path<Uuid>,
+    Json(body): Json<PatchOperatorRequest>,
+) -> ApiResult<impl IntoResponse> {
+    auth.require_admin()?;
+
+    if let Some(role) = body.patch.role.as_deref() {
+        if !matches!(role, "OPERATOR" | "STOREKEEPER" | "ADMIN") {
+            return Err(ApiError::BadRequest(format!("unknown role {role:?}")));
+        }
+    }
+
+    // Hash before the transaction opens: argon2 is deliberately slow (§6), and
+    // holding a row lock on `operators` while it runs would serialise every
+    // other console edit behind it.
+    let pin_hash = match &body.pin {
+        None => None,
+        Some(None) => Some(None),
+        Some(Some(pin)) => Some(Some(store_db::auth::hash_pin(pin)?)),
+    };
+
+    let updated = store_db::operators::update(
+        &state.pool,
+        id,
+        &body.patch,
+        pin_hash.as_ref().map(|h| h.as_deref()),
+    )
+    .await?;
+
+    Ok(Json(updated))
+}
+
+/// `DELETE /api/v1/admin/operators/{id}` — retire, never delete.
+pub async fn deactivate_operator(
+    State(state): State<AppState>,
+    auth: Auth,
+    Path(id): Path<Uuid>,
+) -> ApiResult<impl IntoResponse> {
+    auth.require_admin()?;
+    Ok(Json(
+        store_db::operators::deactivate(&state.pool, id).await?,
+    ))
+}
+
+/// `GET /api/v1/admin/machines` — retired ones included, with usage counts.
+///
+/// Distinct from `GET /api/v1/machines`, which is the terminal's picker and
+/// serves the active rows only (§12.6). A retired machine has to disappear from
+/// the picker and stay in the console, which is why these are two endpoints
+/// rather than one with a flag.
+pub async fn list_machines(
+    State(state): State<AppState>,
+    auth: Auth,
+) -> ApiResult<impl IntoResponse> {
+    auth.require_storekeeper()?;
+    Ok(Json(store_db::machines::list_admin(&state.pool).await?))
+}
+
+/// `POST /api/v1/admin/machines`
+pub async fn create_machine(
+    State(state): State<AppState>,
+    auth: Auth,
+    Json(input): Json<store_db::machines::MachineInput>,
+) -> ApiResult<impl IntoResponse> {
+    auth.require_storekeeper()?;
+    let machine = store_db::machines::create(&state.pool, &input).await?;
+    Ok((axum::http::StatusCode::CREATED, Json(machine)))
+}
+
+/// `PUT /api/v1/admin/machines/{id}` — rename, or bring a retired one back.
+pub async fn update_machine(
+    State(state): State<AppState>,
+    auth: Auth,
+    Path(id): Path<Uuid>,
+    Json(input): Json<store_db::machines::MachineInput>,
+) -> ApiResult<impl IntoResponse> {
+    auth.require_storekeeper()?;
+    Ok(Json(
+        store_db::machines::update(&state.pool, id, &input).await?,
+    ))
+}
+
+/// `DELETE /api/v1/admin/machines/{id}` — retire.
+pub async fn deactivate_machine(
+    State(state): State<AppState>,
+    auth: Auth,
+    Path(id): Path<Uuid>,
+) -> ApiResult<impl IntoResponse> {
+    auth.require_storekeeper()?;
+    Ok(Json(store_db::machines::deactivate(&state.pool, id).await?))
+}
+
+/// `GET /api/v1/admin/reason-codes` — retired ones included.
+pub async fn list_reason_codes(
+    State(state): State<AppState>,
+    auth: Auth,
+) -> ApiResult<impl IntoResponse> {
+    auth.require_storekeeper()?;
+    Ok(Json(store_db::reason_codes::list_admin(&state.pool).await?))
+}
+
+/// `POST /api/v1/admin/reason-codes`
+pub async fn create_reason_code(
+    State(state): State<AppState>,
+    auth: Auth,
+    Json(input): Json<store_db::reason_codes::ReasonCodeInput>,
+) -> ApiResult<impl IntoResponse> {
+    auth.require_storekeeper()?;
+    let reason = store_db::reason_codes::create(&state.pool, &input).await?;
+    Ok((axum::http::StatusCode::CREATED, Json(reason)))
+}
+
+/// `PUT /api/v1/admin/reason-codes/{id}`
+pub async fn update_reason_code(
+    State(state): State<AppState>,
+    auth: Auth,
+    Path(id): Path<Uuid>,
+    Json(input): Json<store_db::reason_codes::ReasonCodeInput>,
+) -> ApiResult<impl IntoResponse> {
+    auth.require_storekeeper()?;
+    Ok(Json(
+        store_db::reason_codes::update(&state.pool, id, &input).await?,
+    ))
+}
+
+/// `DELETE /api/v1/admin/reason-codes/{id}` — retire.
+pub async fn deactivate_reason_code(
+    State(state): State<AppState>,
+    auth: Auth,
+    Path(id): Path<Uuid>,
+) -> ApiResult<impl IntoResponse> {
+    auth.require_storekeeper()?;
+    Ok(Json(
+        store_db::reason_codes::deactivate(&state.pool, id).await?,
+    ))
+}
+
 /// `GET /api/v1/admin/devices` — including the unknown-user notices (§9.4).
 pub async fn devices(
     State(state): State<AppState>,

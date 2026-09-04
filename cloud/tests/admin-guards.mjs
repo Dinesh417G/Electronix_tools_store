@@ -181,6 +181,67 @@ try {
   } else {
     bad("no active OPERATOR to check the role gate with");
   }
+  step("9. the last-admin count is taken behind a lock, not merely in a transaction");
+  // The guard used to be a count inside the transaction that made the change,
+  // and the comment above it claimed that was enough against two admins
+  // demoting each other. It is not: they touch two *different* rows, so nothing
+  // conflicts, and at READ COMMITTED each counts the other as still active
+  // until it commits. Both see one admin left, both commit, and the crib has
+  // none. ADMIN_SET_LOCK is what makes the count exact.
+  //
+  // Only PATCH is driven over HTTP here. `db.ts` runs `max: 1`, so a second
+  // request while the first is blocked would be waiting on the connection pool
+  // rather than on the lock — an assertion that passes for the wrong reason.
+  // Both verbs are checked directly in
+  // `crates/store-server/tests/admin_console.rs`.
+  const ADMIN_SET_LOCK = 0x454c454354; // "ELECT", the same number the route uses
+  const holder = postgres(process.env.DATABASE_URL, { prepare: false, max: 1, connect_timeout: 20 });
+  try {
+    // Both halves matter. `acquired` is what the first version of this step got
+    // wrong: it fired the PATCH straight after calling begin(), before the
+    // holding transaction had connected, so the route sailed through an
+    // unlocked database and the step failed against correct code.
+    let release;
+    let acquired;
+    const held = new Promise((resolve) => { release = resolve; });
+    const locked = new Promise((resolve) => { acquired = resolve; });
+    const holding = holder.begin(async (tx) => {
+      await tx`select pg_advisory_xact_lock(${ADMIN_SET_LOCK}::bigint)`;
+      acquired();
+      await held;
+    });
+    await locked;
+
+    const patch = (signal) =>
+      fetch(BASE + "/api/v1/admin/operators/" + spareId, {
+        method: "PATCH",
+        headers: bearer(spareToken),
+        body: JSON.stringify({ department: "Lock Test" }),
+        signal,
+      });
+
+    const blocked = await patch(AbortSignal.timeout(1500)).then(
+      (res) => "answered " + res.status,
+      (err) => (err?.name === "TimeoutError" || err?.name === "AbortError" ? "waited" : "threw " + err?.name),
+    );
+    if (blocked === "waited") ok("PATCH waits while the admin set is locked");
+    else bad("PATCH did not wait for the lock: " + blocked);
+
+    release();
+    await holding;
+
+    // The control. Without this the assertion above proves only that something
+    // was slow, which a broken route can also be.
+    const after = await patch(AbortSignal.timeout(10_000)).then(
+      (res) => res.status,
+      (err) => "threw " + err?.name,
+    );
+    if (after === 200) ok("and goes straight through once the lock is released");
+    else bad("PATCH after release answered " + after);
+  } finally {
+    await holder.end({ timeout: 5 });
+  }
+
 } catch (err) {
   bad("threw: " + (err?.message ?? err));
 } finally {

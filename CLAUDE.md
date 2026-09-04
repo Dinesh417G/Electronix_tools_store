@@ -779,31 +779,57 @@ write from a tablet takes its `operator_id` from the session, never from the tok
 |---|---|---|
 | `GET /reports/consumption`, `.csv` | yes | yes |
 | `GET`, `POST /admin/operators` | yes | yes |
-| `PATCH`, `DELETE /admin/operators/{id}` | — | yes |
+| `PATCH`, `DELETE /admin/operators/{id}` | yes — API only, no screen | yes |
 | `GET /admin/devices` | yes | yes |
-| `CRUD /admin/machines` | — | yes |
-| `CRUD /admin/reason-codes` | — | yes |
+| `CRUD /admin/machines` | yes — API only, no screen | yes |
+| `CRUD /admin/reason-codes` | yes — API only, no screen | yes |
 | `GET /sessions/stream` | yes | **deliberately not** — §4's 2 s poll |
 | `/auth/webauthn/*` (§8) | — | yes |
 | serials, printer settings, `/labels/sheet`, `/items/browse`, `/version` | — | yes |
 
-Two rules the cloud side adds, both of which exist because the console can now
-reach places the CLI used to guard:
+Two rules the console adds, both of which exist because it can now reach places
+the CLI used to guard. They were written for `cloud/` and are now enforced in
+both, by the same words in two languages — `cloud/src/lib/admin.ts` and
+`crates/store-db/src/{operators,machines,reason_codes}.rs`, gated by
+`cloud/tests/admin-guards.mjs` and `crates/store-server/tests/admin_console.rs`:
 
 - **Deactivate, never delete** — operators, machines and reason codes all retire
   by `active = false`. Every one of them is pointed at by `stock_ledger`, and
   §7's claim that the history still answers "who took the forty inserts, on
   which machine, and why" survives exactly as long as those rows do.
-- **The last active ADMIN cannot be removed or demoted**, by either verb, and
-  the check runs inside the same transaction as the change so two admins cannot
-  remove each other simultaneously. §11 already says the first admin cannot come
-  from this API; without the guard, the last one can leave through it, and then
-  nothing can create the person who would fix that.
+- **The last active ADMIN cannot be removed or demoted**, by either verb. §11
+  already says the first admin cannot come from this API; without the guard, the
+  last one can leave through it, and then nothing can create the person who
+  would fix that.
 
-Every one of these is reachable from the console: a **Reports** tab, and
-**Setup → People / Machines / Reasons / Door**. An endpoint with no screen is
-this project's known failure mode — built at both ends, never connected — so a
-new endpoint is not finished until something can call it.
+  The check is a count of active admins, and **a transaction around it is not
+  enough** — which both implementations claimed in a comment until the Rust
+  parity work went looking. Two admins demoting *each other* touch two different
+  rows, so nothing conflicts; at READ COMMITTED each counts the other as still
+  active until it commits; both see one admin left, both commit, and the crib
+  has none. Only same-row edits were ever serialised, which is the one case the
+  guard did not need. So every write that can change `active` or `role` takes
+  one advisory lock (`ADMIN_SET_LOCK`, `pg_advisory_xact_lock`) *before* it
+  touches a row — advisory rather than `select … for update` on the admin rows,
+  because those two writers would take their locks in opposite orders and
+  deadlock. Gated on both sides by holding the lock and watching the writers
+  wait, which is the assertion that fails on a build without it; the race itself
+  can be won by luck.
+
+Every one of these is reachable from the **cloud** console: a **Reports** tab,
+and **Setup → People / Machines / Reasons / Door**. An endpoint with no screen
+is this project's known failure mode — built at both ends, never connected — so
+a new endpoint is not finished until something can call it.
+
+**In `crates/store-web` these five have no screen, and saying so is the point.**
+That console covers the catalog, stock, alerts, reversals, labels and health;
+it has never had a People or a Door screen either, so `GET`/`POST
+/admin/operators` and `GET /admin/devices` were in the same state before this.
+The rule above is not suspended for the reference implementation — it is unpaid,
+and this is the ledger entry. What the parity buys meanwhile is real: §2 calls
+`crates/` the path back if the offline question is answered "the store must work
+without internet", and a reference implementation that cannot retire a machine
+or set a PIN is not that path. The gap is a console, not an API.
 
 Status codes the tablet UX depends on:
 

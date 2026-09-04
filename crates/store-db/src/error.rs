@@ -41,6 +41,13 @@ pub enum DbError {
     #[error("{entity} not found")]
     NotFound { entity: &'static str },
 
+    /// A console edit would have left the store with no active ADMIN (§11).
+    /// Maps to `409 Conflict` with the code `LAST_ADMIN`.
+    #[error(
+        "That would leave the store with no active ADMIN, and the console          cannot create one. Promote somebody else first."
+    )]
+    LastAdmin,
+
     /// A uniqueness rule was broken — a duplicate item code, a second claim on
     /// one punch.
     #[error("{0} already exists")]

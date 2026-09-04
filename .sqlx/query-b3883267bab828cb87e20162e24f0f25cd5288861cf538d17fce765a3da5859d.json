@@ -1,0 +1,68 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        update operators\n           set emp_code   = coalesce($2, emp_code),\n               full_name  = coalesce($3, full_name),\n               role       = coalesce($4, role),\n               active     = coalesce($5::bool, active),\n               zk_user_id = case when $6::bool then $7 else zk_user_id end,\n               department = case when $8::bool then $9 else department end,\n               pin_hash   = case when $10::bool then $11 else pin_hash end\n         where id = $1\n        returning id as \"id!\", emp_code as \"emp_code!\", full_name as \"full_name!\",\n                  zk_user_id, role as \"role!\", department, active as \"active!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "emp_code!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "full_name!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "zk_user_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "role!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "department",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "active!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Bool",
+        "Bool",
+        "Text",
+        "Bool",
+        "Text",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "b3883267bab828cb87e20162e24f0f25cd5288861cf538d17fce765a3da5859d"
+}

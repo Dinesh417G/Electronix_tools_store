@@ -34,6 +34,13 @@ pub enum ApiError {
     #[error("{0}")]
     Conflict(String),
 
+    /// A conflict the client is expected to branch on rather than merely show:
+    /// the console needs to tell "that code is taken" apart from "that would
+    /// lock everybody out of the console". Same status, different remedy, so
+    /// the difference has to survive the trip as something other than English.
+    #[error("{message}")]
+    CodedConflict { code: &'static str, message: String },
+
     /// §10: the session is closed or expired.
     #[error("{0}")]
     Gone(String),
@@ -60,6 +67,7 @@ impl ApiError {
             ApiError::Forbidden(_) => (StatusCode::FORBIDDEN, "forbidden"),
             ApiError::NotFound(_) => (StatusCode::NOT_FOUND, "not_found"),
             ApiError::Conflict(_) => (StatusCode::CONFLICT, "conflict"),
+            ApiError::CodedConflict { code, .. } => (StatusCode::CONFLICT, code),
             ApiError::Gone(_) => (StatusCode::GONE, "session_gone"),
             ApiError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         }
@@ -95,6 +103,12 @@ impl From<DbError> for ApiError {
             ),
 
             DbError::NotFound { entity } => ApiError::NotFound(entity.to_owned()),
+
+            // §11: the last active ADMIN cannot leave through this API.
+            DbError::LastAdmin => ApiError::CodedConflict {
+                code: "LAST_ADMIN",
+                message: DbError::LastAdmin.to_string(),
+            },
 
             DbError::Conflict(what) => ApiError::Conflict(format!("{what} already exists")),
 
