@@ -144,8 +144,11 @@ export async function stockList(filters: {
   bin?: string | null;
   category?: string | null;
   limit?: number;
+  /** Rows to skip. Absent means the first page. */
+  offset?: number;
 }): Promise<ItemRow[]> {
-  const { states = null, q = null, bin = null, category = null, limit = 500 } = filters;
+  const { states = null, q = null, bin = null, category = null, limit = 500, offset = 0 } =
+    filters;
 
   return sql<ItemRow[]>`
     ${select()}
@@ -161,5 +164,6 @@ export async function stockList(filters: {
              (coalesce(s.alert_state,'OK') = 'LOW') desc,
              i.item_code
     limit ${Math.min(Math.max(limit, 1), 500)}
+    offset ${Math.max(offset, 0)}
   `;
 }

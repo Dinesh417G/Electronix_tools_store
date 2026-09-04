@@ -1327,7 +1327,12 @@ function ItemScreen({
     setLoadingMore(true);
     try {
       const offset = catalog.length;
-      const page = await api.stock(`limit=${PAGE}&offset=${offset}`);
+      // `/items/browse` rather than `/stock`: this is the endpoint written
+      // for exactly this list — paged, stable order, active items only — and
+      // until now nothing called it. `endpoint-callers.mjs` passed throughout,
+      // correctly: `api.browse` names the path, so the wiring existed. No
+      // screen reached it, which is the half that check cannot see.
+      const page = await api.browse(offset, PAGE);
       setCatalog((current) => [...current, ...page]);
       if (page.length < PAGE) setCatalogDone(true);
     } catch {
