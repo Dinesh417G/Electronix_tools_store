@@ -231,22 +231,44 @@ export function Field({
  * to tell.
  *
  * It says nothing when the list came back short of its cap, because then the
- * page really is everything and a note would be noise. `shown === limit` is
- * the only honest signal available without a count from the server: it means
- * "at least this many", never a total, so the wording promises no number it
- * cannot support.
+ * page really is everything and a note would be noise.
+ *
+ * `total` is what the list is a cap *of*, from the server's `X-Total-Count`
+ * (`src/lib/paging.ts`). With one, the note can name a number — "60 of 4,231" —
+ * which is the difference between knowing you are looking at a corner of the
+ * ledger and knowing how big the rest is.
+ *
+ * Without one it falls back to the older wording, and that fallback is not
+ * dead code: §11 serves these routes from `crates/` as well, which answers a
+ * bare array with no such header. `shown === limit` was always the only honest
+ * signal available in that case — it means "at least this many", never a
+ * total — so the sentence promises no number it cannot support.
  */
 export function ListCap({
   shown,
   limit,
+  total,
   children,
 }: {
   shown: number;
   limit: number;
+  total?: number | null;
   children: ReactNode;
 }) {
   if (shown < limit) return null;
-  return <p className="pt-2 text-xs text-faint">{children}</p>;
+  return (
+    <p className="pt-2 text-xs text-faint">
+      {children}
+      {typeof total === "number" && total > shown && (
+        <>
+          {" "}
+          <span className="text-ink-2">
+            Showing {shown.toLocaleString()} of {total.toLocaleString()}.
+          </span>
+        </>
+      )}
+    </p>
+  );
 }
 
 /**

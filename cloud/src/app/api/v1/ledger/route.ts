@@ -1,4 +1,4 @@
-// GET /api/v1/ledger?item=&operator=&machine=&reason=&from=&to=&limit=&offset=
+// GET /api/v1/ledger?item=&operator=&machine=&reason=&from=&to=&limit=&offset=&sort=&dir=
 //
 // The history view. §7 makes this and "current stock" the same object rather
 // than two things that quietly disagree after six months.
@@ -7,6 +7,7 @@ import { NextResponse } from "next/server";
 import { authenticate } from "@/lib/auth";
 import { sql } from "@/lib/db";
 import { handler } from "@/lib/errors";
+import { LEDGER_SORTS, resolveSort, splitTotal, TOTAL_HEADER } from "@/lib/paging";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,14 +28,39 @@ export const GET = handler(async (request: Request) => {
   const limit = Math.min(Math.max(Number.parseInt(p.get("limit") ?? "50", 10) || 50, 1), 500);
   const offset = Math.max(Number.parseInt(p.get("offset") ?? "0", 10) || 0, 0);
 
-  const rows = await sql`
+  // Whitelisted, so nothing the caller sends reaches the query. `time` is the
+  // default and descending is its default direction: somebody opening the
+  // ledger wants what just happened, not the first movement the crib ever
+  // recorded.
+  //
+  // `l.id` rather than `l.created_at` for time, because two rows written in the
+  // same transaction share a timestamp and `id` is the tiebreak that makes the
+  // order total — without one, two pages of the same query can overlap or skip
+  // a row. Every other column gets `l.id` appended for the same reason.
+  const { key, descending } = resolveSort(
+    p.get("sort"),
+    p.get("dir"),
+    LEDGER_SORTS,
+    "time",
+    true,
+  );
+  const order = {
+    time: sql`l.id`,
+    item: sql`i.item_code`,
+    qty: sql`l.delta_qty`,
+    operator: sql`o.full_name`,
+    type: sql`l.txn_type`,
+  }[key];
+
+  const rows = await sql<(Record<string, unknown> & { total_count: number })[]>`
     select l.id::text as id, l.item_id, i.item_code, i.description,
            l.delta_qty::text as delta_qty, l.txn_type,
            l.operator_id, o.full_name as operator_name, o.emp_code,
            l.session_id, s.manual_identity,
            m.code as machine_code, r.code as reason_code,
            l.note, l.unit_cost::text as unit_cost, l.created_at,
-           l.reverses_id::text as reverses_id
+           l.reverses_id::text as reverses_id,
+           count(*) over()::int as total_count
       from stock_ledger l
       join items i on i.id = l.item_id
       join operators o on o.id = l.operator_id
@@ -47,9 +73,13 @@ export const GET = handler(async (request: Request) => {
        and (${reason}::text is null or r.code = ${reason}::text)
        and (${from}::timestamptz is null or l.created_at >= ${from}::timestamptz)
        and (${to}::timestamptz is null or l.created_at < ${to}::timestamptz)
-     order by l.id desc
+     order by ${order} ${descending ? sql`desc` : sql`asc`} nulls last, l.id desc
      limit ${limit} offset ${offset}
   `;
 
-  return NextResponse.json(rows);
+  // The array body is unchanged; the count of matching rows travels in a
+  // header, so a reader that predates this is unaffected and the console can
+  // stop saying "the 60 most recent" when it can say "60 of 4,231".
+  const page = splitTotal(rows);
+  return NextResponse.json(page.rows, { headers: { [TOTAL_HEADER]: String(page.total) } });
 });

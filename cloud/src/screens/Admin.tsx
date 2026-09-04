@@ -35,6 +35,7 @@ import {
   TabStrip,
 } from "../components/ui";
 import { DetailGrid, DetailGroup, Row, RowHeader, RowList } from "../components/row";
+import type { LedgerSort, SortState, StockSort } from "../lib/paging";
 import { PrinterSettings } from "./PrinterSettings";
 import { Serials } from "./Serials";
 import { People } from "./People";
@@ -317,11 +318,34 @@ function Catalog({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
+  /** How many items the catalog holds, not how many arrived. */
+  const [total, setTotal] = useState<number | null>(null);
+  const [sort, setSort] = useState<SortState<StockSort>>({ key: "alerts", dir: "asc" });
+
+  // Tapping the active column flips it; tapping another switches to it in that
+  // column's natural direction — codes and bins read A first, a quantity reads
+  // largest first. Making somebody tap twice to get the obvious order is the
+  // kind of small rudeness that adds up on a shop floor.
+  const onSort = (key: StockSort) =>
+    setSort((current) =>
+      current.key === key
+        ? { key, dir: current.dir === "asc" ? "desc" : "asc" }
+        : { key, dir: key === "on_hand" ? "desc" : "asc" },
+    );
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setItems(query.trim().length >= 2 ? await api.search(query) : await api.stock("limit=200"));
+      if (query.trim().length >= 2) {
+        // A search is answered by the server's own matching, so there is no cap
+        // to describe and no total to show.
+        setItems(await api.search(query));
+        setTotal(null);
+      } else {
+        const page = await api.stock(`limit=200&sort=${sort.key}&dir=${sort.dir}`);
+        setItems(page.rows);
+        setTotal(page.total);
+      }
       setFailed(false);
     } catch (err) {
       // Recorded on the screen as well as raised as a banner. A banner can be
@@ -332,7 +356,7 @@ function Catalog({
     } finally {
       setLoading(false);
     }
-  }, [query, onError]);
+  }, [query, sort, onError]);
 
   // The tab was backgrounded for the print dialogue, or the radio dropped.
   // Coming back should fix itself rather than need a reload.
@@ -459,7 +483,14 @@ function Catalog({
 
       {items.length > 0 && (
         <RowList>
-          <RowHeader title="Item" subtitle="Description" meta="Bin" value="On hand" />
+          <RowHeader
+            title={{ label: "Item", sort: "code" }}
+            subtitle={{ label: "Description", sort: "description" }}
+            meta={{ label: "Bin", sort: "bin" }}
+            value={{ label: "On hand", sort: "on_hand" }}
+            sort={sort}
+            onSort={onSort}
+          />
           {items.map((item) => (
             <Row
               key={item.id}
@@ -518,7 +549,7 @@ function Catalog({
           matching, so "200" would be describing a cap this list is not
           under. */}
       {query.trim().length < 2 && (
-        <ListCap shown={items.length} limit={200}>
+        <ListCap shown={items.length} limit={200} total={total}>
           The first 200 items. Search for a code, description, ISO code or
           grade to reach the rest.
         </ListCap>
@@ -949,7 +980,7 @@ function StockTab() {
         {(loaded) => (
           <RowList>
             <RowHeader title="Item" subtitle="Description" meta="Activity" value="On hand" />
-            {loaded.map((item) => (
+            {loaded.rows.map((item) => (
               <Row
                 key={item.id}
                 title={item.item_code}
@@ -974,7 +1005,7 @@ function StockTab() {
       {/* Every one of these views is a ranking — busiest, oldest, furthest
           above the line — so a cap is a cut in that ranking, not a slice of
           the catalog. Saying which end you are looking at is the whole point. */}
-      <ListCap shown={stockState.data?.length ?? 0} limit={200}>
+      <ListCap shown={stockState.data?.rows.length ?? 0} limit={200} total={stockState.data?.total}>
         The top 200 by this ranking. Items further down it are not on this
         screen.
       </ListCap>
@@ -1122,12 +1153,28 @@ function ActivityTab({
   // that note is read.
   const [reason, setReason] = useState<string | null>(null);
   const [openRow, setOpenRow] = useState<number | null>(null);
+  const [sort, setSort] = useState<SortState<LedgerSort>>({ key: "time", dir: "desc" });
   const reasons = useLoadable(() => api.reasonCodes(), []);
   const state = useLoadable(
-    () => api.ledger(reason ? `limit=60&reason=${encodeURIComponent(reason)}` : "limit=60"),
-    [reason],
+    () =>
+      api.ledger(
+        `limit=60&sort=${sort.key}&dir=${sort.dir}` +
+          (reason ? `&reason=${encodeURIComponent(reason)}` : ""),
+      ),
+    [reason, sort],
   );
   const load = state.reload;
+
+  // Tapping the active column flips it; tapping another switches to it, in that
+  // column's natural direction — a time column wants newest first, a name
+  // column wants A first, and making somebody tap twice to get there is the
+  // kind of small rudeness that adds up on a shop floor.
+  const onSort = (key: LedgerSort) =>
+    setSort((current) =>
+      current.key === key
+        ? { key, dir: current.dir === "asc" ? "desc" : "asc" }
+        : { key, dir: key === "time" || key === "qty" ? "desc" : "asc" },
+    );
 
   return (
     <div className="space-y-2">
@@ -1161,13 +1208,15 @@ function ActivityTab({
         {(loaded) => (
           <RowList>
             <RowHeader
-              leading="Time"
-              title="Item"
-              subtitle="Movement"
+              leading={{ label: "Time", sort: "time" }}
+              title={{ label: "Item", sort: "item" }}
+              subtitle={{ label: "Movement", sort: "operator" }}
               meta="Reason"
-              value="Qty"
+              value={{ label: "Qty", sort: "qty" }}
+              sort={sort}
+              onSort={onSort}
             />
-            {loaded.map((row) => {
+            {loaded.rows.map((row) => {
               const out = row.delta_qty.startsWith("-");
               const reversed = row.reverses_id !== null;
               return (
@@ -1239,7 +1288,7 @@ function ActivityTab({
           answer "where did forty inserts go", and it was showing sixty rows
           out of however many exist while looking exactly like the whole
           ledger. The reason filter narrows the same sixty, so it says so. */}
-      <ListCap shown={state.data?.length ?? 0} limit={60}>
+      <ListCap shown={state.data?.rows.length ?? 0} limit={60} total={state.data?.total}>
         The 60 most recent movements
         {reason ? " under this reason" : ""}. Older ones are in the ledger but
         not on this screen — the consumption report covers a whole period.

@@ -36,6 +36,11 @@ export function LiveView({ connection, revision, lastEvent }: Props) {
   const [stock, setStock] = useState<Item[] | null>(null);
   const [alerts, setAlerts] = useState<AlertRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // What each panel is a window on. The dashboard's whole job is telling
+  // somebody what is going on in the crib, and "40 movements" reads very
+  // differently against 60 than against 4,000.
+  const [ledgerTotal, setLedgerTotal] = useState<number | null>(null);
+  const [stockTotal, setStockTotal] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -44,8 +49,10 @@ export function LiveView({ connection, revision, lastEvent }: Props) {
         api.stock("limit=200"),
         api.alerts(),
       ]);
-      setLedger(l);
-      setStock(s);
+      setLedger(l.rows);
+      setStock(s.rows);
+      setLedgerTotal(l.total);
+      setStockTotal(s.total);
       setAlerts(a);
       setError(null);
     } catch (err) {
@@ -103,8 +110,8 @@ export function LiveView({ connection, revision, lastEvent }: Props) {
       </nav>
 
       <div className="flex-1 overflow-y-auto px-4 pb-4">
-        {tab === "activity" && <Activity rows={ledger} />}
-        {tab === "stock" && <Stock rows={stock} />}
+        {tab === "activity" && <Activity rows={ledger} total={ledgerTotal} />}
+        {tab === "stock" && <Stock rows={stock} total={stockTotal} />}
         {tab === "alerts" && <Alerts rows={alerts} />}
       </div>
     </div>
@@ -141,7 +148,7 @@ function EventTicker({ event }: { event: ServerEvent }) {
   return <div className={`rounded-xl px-3 py-2 text-sm ${tone}`}>{text}</div>;
 }
 
-function Activity({ rows }: { rows: LedgerRow[] | null }) {
+function Activity({ rows, total }: { rows: LedgerRow[] | null; total: number | null }) {
   if (!rows) return <Spinner label="Loading activity…" />;
   if (rows.length === 0) {
     return <Empty>Nothing has moved yet.</Empty>;
@@ -180,7 +187,7 @@ function Activity({ rows }: { rows: LedgerRow[] | null }) {
         );
       })}
     </RowList>
-    <ListCap shown={rows.length} limit={40}>
+    <ListCap shown={rows.length} limit={40} total={total}>
       The 40 most recent movements. This view is a window on the shop, not the
       whole ledger — the console&apos;s Ledger tab and the reports go further back.
     </ListCap>
@@ -188,7 +195,7 @@ function Activity({ rows }: { rows: LedgerRow[] | null }) {
   );
 }
 
-function Stock({ rows }: { rows: Item[] | null }) {
+function Stock({ rows, total }: { rows: Item[] | null; total: number | null }) {
   if (!rows) return <Spinner label="Loading stock…" />;
   if (rows.length === 0) return <Empty>No items in the catalog yet.</Empty>;
 
@@ -207,7 +214,7 @@ function Stock({ rows }: { rows: Item[] | null }) {
         />
       ))}
     </RowList>
-    <ListCap shown={rows.length} limit={200}>
+    <ListCap shown={rows.length} limit={200} total={total}>
       The first 200 items. The console&apos;s Catalog tab can search the rest.
     </ListCap>
     </>

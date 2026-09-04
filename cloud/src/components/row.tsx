@@ -35,6 +35,7 @@
 // row that happens to be missing one.
 
 import type { ReactNode } from "react";
+import type { SortState } from "../lib/paging";
 
 /* Wide enough for the longest thing a crib actually calls a tool —
    `LNMU0303ZER-MP6120` is 18 characters — *plus* its badge. At `w-52` the
@@ -81,30 +82,90 @@ export function RowList({ children }: { children: ReactNode }) {
  * list has one, and keep the two widths the same (the ledger's time gutter is
  * `w-12` in both).
  */
-export function RowHeader({
+/**
+ * A header cell: a label, or a label that sorts.
+ *
+ * A plain string stays plain text, so a column with no server-side ordering
+ * behind it cannot accidentally look clickable. Only the ones given a `sort`
+ * key become buttons — and only when the list is also given an `onSort`, so a
+ * screen that has not wired the state yet renders labels rather than controls
+ * that do nothing.
+ */
+export type HeaderCell<K extends string> = string | { label: string; sort: K };
+
+const label = <K extends string>(cell: HeaderCell<K> | undefined) =>
+  typeof cell === "string" ? cell : cell?.label;
+
+/**
+ * The column headings, optionally sortable.
+ *
+ * The sort is applied by the server, over the whole table, and that is the
+ * reason this took as long to arrive as it did: a header that reordered the
+ * rows already on screen would reorder sixty of four thousand while looking
+ * exactly like a ranking of all of them. Wrong, and invisibly so — the worst
+ * combination for a screen somebody uses to answer "where did forty inserts
+ * go".
+ *
+ * Tapping the active column flips its direction; tapping another switches to
+ * it. The arrow is drawn only on the active one, because an arrow on every
+ * column tells the reader nothing about which is in force.
+ */
+export function RowHeader<K extends string>({
   leading,
   title,
   subtitle,
   meta,
   value,
+  sort,
+  onSort,
 }: {
-  leading?: string;
-  title: string;
-  subtitle?: string;
-  meta?: string;
-  value?: string;
+  leading?: HeaderCell<K>;
+  title: HeaderCell<K>;
+  subtitle?: HeaderCell<K>;
+  meta?: HeaderCell<K>;
+  value?: HeaderCell<K>;
+  sort?: SortState<K>;
+  onSort?: (key: K) => void;
 }) {
+  const cell = (content: HeaderCell<K> | undefined, className: string) => {
+    if (content === undefined) return <div className={className} />;
+    if (typeof content === "string" || !onSort) {
+      return <div className={className}>{label(content)}</div>;
+    }
+    const active = sort?.key === content.sort;
+    return (
+      <div className={className}>
+        <button
+          type="button"
+          onClick={() => onSort(content.sort)}
+          aria-label={`Sort by ${content.label}`}
+          /* `.admin .tap` is `inline-flex` and beats a single class, so this
+             deliberately does not use `tap` — a header control is text-sized,
+             not a 3.5rem target. */
+          className={`inline-flex items-baseline gap-1 tracking-wider uppercase ${
+            active ? "text-ink" : "text-faint hover:text-ink-2"
+          }`}
+        >
+          {content.label}
+          {/* Reserved either way, so the label does not shift left when the
+              sort moves to another column. */}
+          <span aria-hidden className={active ? "" : "opacity-0"}>
+            {sort?.dir === "desc" ? "▾" : "▴"}
+          </span>
+        </button>
+      </div>
+    );
+  };
+
   return (
     /* No border of its own: it goes inside `RowList`, whose `divide-y` already
        draws the line under it. Two borders there read as a double rule. */
     <div className="hidden items-baseline gap-4 bg-surface-2 px-4 py-2 text-[0.65rem] font-semibold tracking-wider text-faint uppercase sm:flex">
-      {leading !== undefined && <div className="w-12 shrink-0">{leading}</div>}
-      <div className={CELL_TITLE}>{title}</div>
-      <div className={CELL_SUBTITLE}>{subtitle}</div>
-      <div className={CELL_META}>{meta}</div>
-      {value !== undefined && (
-        <div className={`shrink-0 text-right ${CELL_VALUE}`}>{value}</div>
-      )}
+      {leading !== undefined && cell(leading, "w-12 shrink-0")}
+      {cell(title, CELL_TITLE)}
+      {cell(subtitle, CELL_SUBTITLE)}
+      {cell(meta, CELL_META)}
+      {value !== undefined && cell(value, `shrink-0 text-right ${CELL_VALUE}`)}
     </div>
   );
 }

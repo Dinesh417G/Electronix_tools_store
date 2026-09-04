@@ -18,6 +18,7 @@
 // with the opposite sign and is excluded.
 
 import { sql } from "./db.ts";
+import { splitTotal, type Page } from "./paging.ts";
 import type { AlertState } from "./ledger.ts";
 
 /** How many recent issues define "recently". Ranking window for `frequent`. */
@@ -71,7 +72,7 @@ export interface InsightRow {
 export async function itemInsights(
   view: InsightView,
   limit = 50,
-): Promise<InsightRow[]> {
+): Promise<Page<InsightRow>> {
   const capped = Math.min(Math.max(limit, 1), 200);
 
   // Whitelisted fragments — `view` is checked by `isInsightView` at the route
@@ -112,7 +113,8 @@ export async function itemInsights(
                      or w.last_issued_at < now() - make_interval(days => ${STALE_DAYS}))`
           : sql``;
 
-  return sql<InsightRow[]>`
+  return splitTotal(
+    await sql<(InsightRow & { total_count: number })[]>`
     with recent as (
       -- The last N issues, newest first. A reversing row is an ISSUE with the
       -- opposite sign; counting it as an issue would inflate exactly the items
@@ -145,14 +147,23 @@ export async function itemInsights(
            w.last_issued_at,
            case when w.last_issued_at is null then null
                 else extract(day from now() - w.last_issued_at)::int
-           end as days_since_issue
+           end as days_since_issue,
+           -- How many items are in this ranking at all, so a capped list can
+           -- say "the top 200 of 412" instead of "the top 200" and leave the
+           -- reader to guess whether that is most of the crib or a corner of
+           -- it. Counted after the having clause, which is the point: the
+           -- frequent view excludes items that have never moved, and a total
+           -- including them would describe a different list from the one on
+           -- screen.
+           count(*) over()::int as total_count
       from items i
       left join item_stock s on s.item_id = i.id
       left join windowed w on w.item_id = i.id
      where i.active ${having}
      order by ${order}
      limit ${capped}
-  `;
+  `,
+  );
 }
 
 export interface MachineUsageRow {

@@ -1,4 +1,4 @@
-// GET /api/v1/stock?low=&empty=&category=&bin=&q=&limit=&offset=
+// GET /api/v1/stock?low=&empty=&category=&bin=&q=&limit=&offset=&sort=&dir=
 //
 // Serves two callers with one shape: the live view's stock panel and the admin
 // console's catalog list. The console opens its edit form from the row it
@@ -9,6 +9,7 @@ import { NextResponse } from "next/server";
 import { authenticate } from "@/lib/auth";
 import { handler } from "@/lib/errors";
 import { stockList } from "@/lib/items";
+import { resolveSort, STOCK_SORTS, TOTAL_HEADER } from "@/lib/paging";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,15 +26,21 @@ export const GET = handler(async (request: Request) => {
   // back. A parameter a caller can pass and the server silently ignores is
   // worse than one it rejects: nothing anywhere reports the disagreement.
   const offset = Number.parseInt(p.get("offset") ?? "0", 10);
+  const { key, descending } = resolveSort(p.get("sort"), p.get("dir"), STOCK_SORTS, "alerts");
 
-  return NextResponse.json(
-    await stockList({
+  const page = await stockList({
       states: p.get("empty") ? ["EMPTY"] : p.get("low") ? ["LOW", "EMPTY"] : null,
       q: p.get("q")?.trim() || null,
       bin: p.get("bin")?.trim() || null,
       category: p.get("category")?.trim() || null,
       limit: Number.isNaN(limit) ? 500 : limit,
       offset: Number.isNaN(offset) ? 0 : offset,
-    }),
-  );
+      sort: key,
+      descending,
+  });
+
+  // The body is the array it always was; the count rides in a header, so every
+  // reader that predates this keeps working and `crates/` can serve the same
+  // route unchanged (`src/lib/paging.ts`).
+  return NextResponse.json(page.rows, { headers: { [TOTAL_HEADER]: String(page.total) } });
 });

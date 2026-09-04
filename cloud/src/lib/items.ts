@@ -5,6 +5,7 @@
 // stock read model.
 
 import { sql } from "./db.ts";
+import { splitTotal, type Page, type StockSort } from "./paging.ts";
 import { ApiError } from "./api-error.ts";
 import type { AlertState } from "./ledger.ts";
 
@@ -38,8 +39,13 @@ export interface ItemRow {
  * lazy client in `db.ts` and fails `next build`, where no DATABASE_URL exists
  * and none is needed. Local builds hid it behind a populated .env.local; CI
  * did not.
+ *
+ * `withTotal` adds `count(*) over()` — how many rows matched, evaluated before
+ * `limit` takes its slice. One round trip rather than a second `count(*)`
+ * query, which on this platform would queue behind the first rather than run
+ * beside it (`db.ts` runs `max: 1`).
  */
-const select = () => sql`
+const select = (withTotal = false) => sql`
   select i.id, i.item_code, i.description, i.uom,
          i.category_id, c.name as category_name,
          i.iso_code, i.grade, i.manufacturer, i.mfr_part_no,
@@ -50,6 +56,7 @@ const select = () => sql`
          coalesce(s.on_hand, 0)::text as on_hand,
          coalesce(s.alert_state, 'OK') as alert_state,
          s.last_txn_at
+         ${withTotal ? sql`, count(*) over()::int as total_count` : sql``}
     from items i
     left join item_categories c on c.id = i.category_id
     left join item_stock s on s.item_id = i.id
@@ -120,15 +127,41 @@ export async function searchItems(query: string, limit = 25): Promise<ItemRow[]>
 }
 
 /** The browse-all list: paged, stable order, active items only. */
-export async function browseItems(offset = 0, limit = 25): Promise<ItemRow[]> {
-  return sql<ItemRow[]>`
-    ${select()}
-    where i.active
-    order by i.item_code
-    limit ${Math.min(Math.max(limit, 1), 100)}
-    offset ${Math.max(offset, 0)}
-  `;
+export async function browseItems(offset = 0, limit = 25): Promise<Page<ItemRow>> {
+  return splitTotal(
+    await sql<(ItemRow & { total_count: number })[]>`
+      ${select(true)}
+      where i.active
+      order by i.item_code
+      limit ${Math.min(Math.max(limit, 1), 100)}
+      offset ${Math.max(offset, 0)}
+    `,
+  );
 }
+
+/**
+ * The columns this list can be ordered by, and the only ones.
+ *
+ * Nothing a caller sends reaches the query — `sort` picks a key out of this
+ * map, and {@link resolveSort} refuses anything not in it. Every fragment is
+ * written as a single ascending expression so one `desc` composes onto it, and
+ * `i.item_code` is always the tiebreak: without a total order, two pages of the
+ * same query can overlap or skip a row, which is the paging bug again wearing a
+ * different hat.
+ *
+ * `alerts` is the default and reproduces the ordering this list always had —
+ * EMPTY first, then LOW, then the rest — as one CASE rather than three clauses,
+ * so it can take a direction like the others.
+ */
+const stockOrder = (sort: StockSort) =>
+  ({
+    alerts: sql`case coalesce(s.alert_state, 'OK')
+                  when 'EMPTY' then 0 when 'LOW' then 1 else 2 end`,
+    code: sql`i.item_code`,
+    description: sql`i.description`,
+    on_hand: sql`coalesce(s.on_hand, 0)`,
+    bin: sql`i.bin_location`,
+  })[sort];
 
 /**
  * The stock view, and also the admin console's catalog list.
@@ -146,12 +179,24 @@ export async function stockList(filters: {
   limit?: number;
   /** Rows to skip. Absent means the first page. */
   offset?: number;
-}): Promise<ItemRow[]> {
-  const { states = null, q = null, bin = null, category = null, limit = 500, offset = 0 } =
-    filters;
+  /** One of {@link STOCK_SORTS}. Anything else falls back to `alerts`. */
+  sort?: StockSort;
+  descending?: boolean;
+}): Promise<Page<ItemRow>> {
+  const {
+    states = null,
+    q = null,
+    bin = null,
+    category = null,
+    limit = 500,
+    offset = 0,
+    sort = "alerts",
+    descending = false,
+  } = filters;
 
-  return sql<ItemRow[]>`
-    ${select()}
+  return splitTotal(
+    await sql<(ItemRow & { total_count: number })[]>`
+    ${select(true)}
     where i.active
       and (${states}::text[] is null
            or coalesce(s.alert_state, 'OK') = any(${states}::text[]))
@@ -160,10 +205,10 @@ export async function stockList(filters: {
       and (${q}::text is null
            or i.item_code ilike '%' || ${q} || '%'
            or i.description ilike '%' || ${q} || '%')
-    order by (coalesce(s.alert_state,'OK') = 'EMPTY') desc,
-             (coalesce(s.alert_state,'OK') = 'LOW') desc,
+    order by ${stockOrder(sort)} ${descending ? sql`desc` : sql`asc`} nulls last,
              i.item_code
     limit ${Math.min(Math.max(limit, 1), 500)}
     offset ${Math.max(offset, 0)}
-  `;
+  `,
+  );
 }
