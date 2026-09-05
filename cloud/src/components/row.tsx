@@ -172,12 +172,39 @@ export function RowHeader<K extends string>({
   sort?: SortState<K>;
   onSort?: (key: K) => void;
 }) {
-  const cell = (content: HeaderCell<K> | undefined, className: string) => {
+  const cell = (
+    content: HeaderCell<K> | undefined,
+    className: string,
+    /**
+     * Which edge of the cell the label is aligned to, which decides which side
+     * of it the sort arrow sits on.
+     *
+     * The arrow is reserved whether or not this column is the active one, so
+     * on a right-aligned column it was ~14px of invisible ink hanging off the
+     * right end of the label — and the label is what a reader lines up against
+     * the numbers below it. Measured from the owner's screenshots: Catalog's
+     * On hand ended at x=1064 over numbers ending at 1079, Ledger's Qty at 893
+     * over 907. Stock, whose header is plain text, was out by one pixel — the
+     * arrow was the whole difference.
+     *
+     * Step 4d of `tests/admin-session.mjs` compared the *boxes* and passed
+     * throughout, correctly: the cells were always in the right place. What
+     * was off was what sat inside one.
+     */
+    align: "left" | "right" = "left",
+  ) => {
     if (content === undefined) return <div className={className} />;
     if (typeof content === "string" || !onSort) {
       return <div className={className}>{label(content)}</div>;
     }
     const active = sort?.key === content.sort;
+    /* Reserved either way, so the label does not shift when the sort moves to
+       another column. */
+    const arrow = (
+      <span aria-hidden className={active ? "" : "opacity-0"}>
+        {sort?.dir === "desc" ? "▾" : "▴"}
+      </span>
+    );
     return (
       <div className={className}>
         <button
@@ -191,12 +218,11 @@ export function RowHeader<K extends string>({
             active ? "text-ink" : "text-faint hover:text-ink-2"
           }`}
         >
-          {content.label}
-          {/* Reserved either way, so the label does not shift left when the
-              sort moves to another column. */}
-          <span aria-hidden className={active ? "" : "opacity-0"}>
-            {sort?.dir === "desc" ? "▾" : "▴"}
-          </span>
+          {align === "right" && arrow}
+          {/* A span rather than a bare string, so the label's own edges can be
+              measured against the column below it. */}
+          <span>{content.label}</span>
+          {align === "left" && arrow}
         </button>
       </div>
     );
@@ -210,7 +236,8 @@ export function RowHeader<K extends string>({
       {cell(title, CELL_TITLE)}
       {cell(subtitle, CELL_SUBTITLE)}
       {cell(meta, CELL_META)}
-      {value !== undefined && cell(value, `shrink-0 text-right ${CELL_VALUE}`)}
+      {value !== undefined &&
+        cell(value, `shrink-0 text-right ${CELL_VALUE}`, "right")}
       {actions && <div className={`shrink-0 ${CELL_ACTIONS}`} aria-hidden />}
       {trailing && <div className={`shrink-0 ${CELL_TRAILING}`} aria-hidden />}
     </div>

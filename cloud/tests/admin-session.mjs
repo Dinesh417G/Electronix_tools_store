@@ -458,6 +458,106 @@ try {
   await browser.send("Emulation.clearDeviceMetricsOverride", {});
   await sleep(500);
 
+  t.step("4e. and the number columns line up with their own headings");
+
+  /* Reported by the owner from three screenshots: Catalog's "ON HAND" and
+     Ledger's "QTY" sat left of the figures under them; Stock's "ON HAND" did
+     not. Measured off those PNGs before touching anything — Catalog's heading
+     ended at x=1064 over numbers ending at 1079, Ledger's at 893 over 907,
+     Stock's at 1169 over 1170.
+   *
+   * Stock is the one that explains it: its heading is plain text, because that
+   * list has no server-side ordering behind it. The other two are sort
+   * buttons, and the arrow is reserved on the inactive column as well as the
+   * active one, so on a *right-aligned* cell ~14px of invisible ink hung off
+   * the right end of the label and pushed it off the column it names.
+   *
+   * Step 4d measured the cells' `left` edges and passed throughout, correctly:
+   * the boxes were never in the wrong place. This measures the ink — a Range
+   * over the label against a Range over the figure — because that is the only
+   * thing a reader can see. Restoring the arrow to the right of the label
+   * fails this step by 14px on both tabs, which is how it was checked. */
+  await browser.send("Emulation.setDeviceMetricsOverride", {
+    width: 1280, height: 900, deviceScaleFactor: 1, mobile: false,
+  });
+
+  const numberColumn = () =>
+    browser.evaluate(`(() => {
+      const header = [...document.querySelectorAll("div")].find(
+        (d) => d.className.includes("uppercase") && d.className.includes("sm:flex"));
+      if (!header) return { missing: "header" };
+      const cell = [...header.children].find((c) => c.className.includes("text-right"));
+      if (!cell) return { missing: "a right-aligned column in the header" };
+
+      /* The ink, not the box: a Range over the text reports where the glyphs
+         actually end, which is what the eye lines up. */
+      const inkRight = (el) => {
+        const r = document.createRange();
+        r.selectNodeContents(el);
+        return Math.round(r.getBoundingClientRect().right);
+      };
+
+      const button = cell.querySelector("button");
+      const labelEl = button
+        ? [...button.children].find((c) => !c.hasAttribute("aria-hidden")) || button
+        : cell;
+
+      const rows = [...document.querySelectorAll(".group")]
+        .slice(0, 6)
+        .map((g) => {
+          const inner = g.firstElementChild;
+          const v = [...inner.children].find((c) => c.className.includes("text-right"));
+          return v && v.firstElementChild ? inkRight(v.firstElementChild) : null;
+        })
+        .filter((x) => x !== null);
+
+      return {
+        sortable: Boolean(button),
+        label: (cell.textContent || "").trim(),
+        head: inkRight(labelEl),
+        rows,
+      };
+    })()`);
+
+  for (const tab of ["Catalog", "Ledger"]) {
+    await browser.clickText(tab);
+    await sleep(1500);
+
+    /* Wait for the list rather than assuming a fixed sleep reached it. A run
+       that measured before the tab had rendered reported "missing: header",
+       which reads exactly like the fault this step is looking for and is not
+       one. */
+    let col = await numberColumn();
+    for (let i = 0; i < 8 && (col.missing || (col.rows ?? []).length === 0); i++) {
+      await sleep(1000);
+      col = await numberColumn();
+    }
+
+    if (col.missing || (col.rows ?? []).length === 0) {
+      t.bad(`could not measure ${tab}'s number column: ${JSON.stringify(col)}`);
+      continue;
+    }
+    /* Non-vacuity, in the project's usual sense: a plain-text heading cannot
+       have this fault, so measuring one would pass for the wrong reason. */
+    if (!col.sortable) {
+      t.bad(`${tab}'s ${col.label} heading is not a sort control — this proves nothing`);
+      continue;
+    }
+
+    const off = col.rows.map((r) => Math.abs(r - col.head));
+    const worst = Math.max(...off);
+    if (worst <= 3) {
+      t.ok(`${tab}: ${col.label} ends at ${col.head}, its ${col.rows.length} figures within ${worst}px`);
+    } else {
+      t.bad(
+        `${tab}: ${col.label} ends at ${col.head}, its figures at ${col.rows.join(", ")} — out by ${worst}px`,
+      );
+    }
+  }
+
+  await browser.send("Emulation.clearDeviceMetricsOverride", {});
+  await sleep(500);
+
   t.step("5. a door that could not be asked does not report a door that never spoke");
   await browser.clickText("Setup");
   await sleep(1500);
