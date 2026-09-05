@@ -1402,6 +1402,28 @@ asks. It is gated now, in `tests/admin-session.mjs`, by geometry — every word 
 present either way, so only the boxes can tell: stacked lines have each line's
 top at or below the previous line's bottom.
 
+**A column can be in the right place and still be wrong, and the test that
+proved the first cannot see the second.** Reported 2026-09-05 from three
+screenshots: Catalog's "ON HAND" and Ledger's "QTY" sat left of the figures
+under them, while Stock's "ON HAND" did not. Measured off the PNGs before
+touching code — 1064 against 1079, 893 against 907, and 1169 against 1170.
+
+Stock is what explains it. Its heading is plain text, because that list has no
+server-side ordering behind it; the other two are sort buttons, and the arrow
+is reserved on the inactive column as well as the active one so the label does
+not jump when the sort moves. In a *right-aligned* cell that reservation is
+~14 px of invisible ink hanging off the end of the label, pushing it off the
+column it names. The arrow now sits to the left of the label when the cell is
+right-aligned.
+
+Step 4d of `tests/admin-session.mjs` compares the cells' `left` edges and
+passed throughout, correctly: the boxes were never in the wrong place. Step 4e
+measures the *ink* — a Range over the header label against a Range over the
+figure — because that is the only thing a reader can see. It fails by 14 px on
+both tabs with the arrow put back, which is how it was checked, and it refuses
+to measure a heading that is not a sort control, because a plain-text one
+cannot have this fault and would pass for the wrong reason.
+
 `typecheck` still cannot see the database, so a column rename is a build that
 passes and a screen that breaks. `tests/route-smoke.mjs` is the cheap answer:
 it asks every GET route once, with parameters real enough to reach SQL, and
