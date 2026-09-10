@@ -34,6 +34,7 @@
     "test:replay": "node tests/outbox-replay.mjs",
     "test:routes": "node tests/route-smoke.mjs",
     "test:callers": "node tests/endpoint-callers.mjs",
+    "test:scanner": "node --experimental-strip-types tests/scanner-restart.mjs",
     "test:terminal": "node tests/terminal-flow.mjs",
     "operator": "node --experimental-strip-types scripts/operator.mts",
     "probe": "node --experimental-strip-types scripts/probe-live.mts"

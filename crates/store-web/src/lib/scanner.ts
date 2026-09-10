@@ -96,6 +96,7 @@ export async function startScanner({
 
   const detector = new Ctor({ formats: FORMATS });
   let running = true;
+  let stopped = false;
   let lastValue = "";
   let lastAt = 0;
   let frame = 0;
@@ -124,10 +125,24 @@ export async function startScanner({
 
   return {
     stop: () => {
+      // Idempotent: one handle is routinely stopped twice — once by the
+      // effect's cleanup, once by the late `cancelled` branch of the promise
+      // that produced it.
+      if (stopped) return;
+      stopped = true;
       running = false;
       cancelAnimationFrame(frame);
       for (const track of stream.getTracks()) track.stop();
-      video.srcObject = null;
+      // Hand the element back only if it is still showing *our* stream.
+      //
+      // `getUserMedia` takes about a second on a phone. A scanner whose effect
+      // is torn down inside that window resolves *after* its replacement has
+      // already attached a live stream to the same `<video>`, and clearing
+      // unconditionally blanked that live camera: `readyState` stayed 0, so
+      // `detect()` never ran and the swallowed-frame catch above reported
+      // nothing. That is the black rectangle the first scan of every session
+      // showed until the operator toggled to search and back.
+      if (video.srcObject === stream) video.srcObject = null;
     },
   };
 }

@@ -1206,6 +1206,22 @@ function ItemScreen({
     [onPick],
   );
 
+  // The camera must be opened by `mode` alone, never by the identity of a
+  // callback.
+  //
+  // `resolve` closes over `onPick`, which the parent passes as an inline
+  // arrow, so it is a new function on every render of the whole terminal —
+  // and depending on it restarted `getUserMedia` each time. That is around a
+  // second of camera startup on a phone, and entering this screen coincides
+  // with a burst of parent renders, so the restart landed inside the window
+  // and the stale handle blanked the live stream. First scan of every
+  // session: a black rectangle. Held in a ref instead, so the running scanner
+  // always calls the current one.
+  const resolveRef = useRef(resolve);
+  useEffect(() => {
+    resolveRef.current = resolve;
+  }, [resolve]);
+
   useEffect(() => {
     if (mode !== "scan") return;
     const video = videoRef.current;
@@ -1216,7 +1232,7 @@ function ItemScreen({
 
     void startScanner({
       video,
-      onDetect: (code) => void resolve(code),
+      onDetect: (code) => void resolveRef.current(code),
       onError: (e) => {
         setScanError(e);
         setMode("search");
@@ -1230,7 +1246,7 @@ function ItemScreen({
       cancelled = true;
       handle?.stop();
     };
-  }, [mode, resolve]);
+  }, [mode]);
 
   const PAGE = 40;
 

@@ -205,6 +205,16 @@ jobs:
         run: npm run test:offline
         working-directory: cloud
 
+      # The camera that stayed black until the operator toggled to search
+      # and back (reported from a Pixel 6a). The scanner effect depended on
+      # a callback rebuilt every parent render, so the camera reopened every
+      # render, and a stale handle cleared the <video> its replacement had
+      # already attached a live stream to. Both halves are pinned here, for
+      # both terminals. No database and no browser — the DOM is stubbed.
+      - name: scanner restart race
+        run: npm run test:scanner
+        working-directory: cloud
+
       # From here down the job has a database. Everything above deliberately
       # does not, and the `build` step in particular must stay that way.
 
