@@ -1234,6 +1234,43 @@ written alongside it are what stop that from being the whole story:
 | `tests/list-paging.mjs` | paging, `X-Total-Count`, and server-side ordering | yes |
 | `tests/route-smoke.mjs` | every GET route answers, and none is unasked | yes |
 | `tests/endpoint-callers.mjs` | §11's dead-wiring rule: no route without a caller | no — it reads the repo |
+| `tests/scanner-restart.mjs` | §12.4's camera: the restart race, in both terminals | no — DOM stubbed, and it reads the repo |
+
+**§12.4's camera was blank on the first scan of every session**, reported
+2026-09-10 from a Pixel 6a on Chrome — a device with everything scanning needs.
+Press TAKE OUT and the viewfinder is a black rectangle that never detects;
+press Search, press Scan, and the same camera works perfectly. Two faults, one
+symptom, and the second is the one worth remembering:
+
+- `ItemScreen`'s scanner effect depended on `resolve`, which closes over the
+  `onPick` the parent passes as an **inline arrow** — a new function on every
+  render of the whole terminal. The camera was therefore torn down and
+  reopened on every parent render, and entering the item screen is precisely
+  when the parent is busiest: the poll dropping the card just claimed, the
+  revision bump, the connection pill going live.
+- `startScanner`'s handle then cleared `video.srcObject` **unconditionally**.
+  `getUserMedia` takes about a second on a phone, so the restart resolved
+  *after* its replacement had attached a live stream to the same element, and
+  the stale handle blanked it. `readyState` stayed 0, so `detect()` never ran —
+  and `tick`'s catch, which exists because a single failed frame is normal,
+  swallowed the rest. A handle now stops idempotently and gives the element
+  back only when `video.srcObject === stream`.
+
+The general rule, because this is the third time this repo has paid for it: **a
+cleanup that mutates shared state must prove it still owns that state.** The
+`cancelled` flag was already there and was not enough — it stops a stale
+scanner from being *installed*, not from reaching across into the live one on
+its way out.
+
+Nothing in the suite could see it. Every API-level test passed, correctly: the
+API was never asked for a lookup. `terminal-flow.mjs` cannot reach scan mode at
+all — headless Chrome on CI has no `BarcodeDetector`, so `isScanningSupported()`
+is false and the screen opens on search, which is the branch that always
+worked. So `scanner-restart.mjs` stubs the four DOM globals the module actually
+touches, replays the interleaving directly, and checks the dependency array of
+both terminals by reading them. Verified the way §14 demands: putting `resolve`
+back in the deps fails it by name, and removing the ownership guard fails it on
+the black-rectangle assertion.
 
 **And the reference terminal has one too, since 2026-09-04.** It had none, and
 that is exactly what it cost: `crates/store-web`'s quantity pad used its own
